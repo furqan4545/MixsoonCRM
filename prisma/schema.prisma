@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── INFLUENCERS ───────────────────────────────────────────
+
+model Influencer {
+  id             String   @id @default(cuid())
+  username       String   @unique
+  profileUrl     String?
+  avatarUrl      String?  // profile picture URL
+  biolink        String?
+  followers      Int?
+  email          String?
+  sourceFilename String?  // which CSV file this influencer came from
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  videos   Video[]
+  import   Import? @relation(fields: [importId], references: [id], onDelete: SetNull)
+  importId String?
+
+  @@index([username])
+  @@index([importId])
+}
+
+// ─── VIDEOS ────────────────────────────────────────────────
+
+model Video {
+  id           String   @id @default(cuid())
+  influencerId String
+  influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+
+  username     String   // denormalized for easy lookup
+
+  title        String?  // "signature" from Apify
+  views        Int?
+  bookmarks    Int?
+  uploadedAt   DateTime?
+  thumbnailUrl String?  // video cover image URL
+  createdAt    DateTime @default(now())
+
+  @@index([influencerId])
+  @@index([username])
+}
+
+// ─── IMPORTS ───────────────────────────────────────────────
+
+model Import {
+  id             String       @id @default(cuid())
+  sourceFilename String
+  rowCount       Int          @default(0)
+  processedCount Int          @default(0)
+  status         ImportStatus @default(PENDING)
+  usernameLimit  Int          @default(-1)
+  videoCount     Int          @default(20)
+  errorMessage   String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  influencers Influencer[]
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ─── RBAC ──────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  roleId    String
+  role      Role     @relation(fields: [roleId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([roleId])
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  name        String       @unique // "Admin", "PIC", "Viewer"
+  permissions Permission[]
+  users       User[]
+  createdAt   DateTime     @default(now())
+}
+
+model Permission {
+  id      String @id @default(cuid())
+  feature String // e.g. "data-scraper", "csv-upload"
+  action  String // e.g. "read", "write", "delete"
+  roleId  String
+  role    Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, feature, action])
+  @@index([roleId])
+}
