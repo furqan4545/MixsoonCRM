@@ -1,12 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 import convert from "heic-convert";
 
-// GET /api/thumbnail?url=... — Fetch TikTok thumbnail, convert HEIC to JPEG, serve it
+// In-memory cache: same URL = serve converted result, no re-fetch or re-convert
+const MAX_CACHE_SIZE = 1000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+type CacheEntry = { body: ArrayBuffer; contentType: string; expiresAt: number };
+const thumbnailCache = new Map<string, CacheEntry>();
+
+function getCached(url: string): CacheEntry | null {
+  const entry = thumbnailCache.get(url);
+  if (!entry || Date.now() > entry.expiresAt) return null;
+  return entry;
+}
+
+function setCache(url: string, body: ArrayBuffer, contentType: string) {
+  if (thumbnailCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = thumbnailCache.keys().next().value;
+    if (firstKey) thumbnailCache.delete(firstKey);
+  }
+  thumbnailCache.set(url, {
+    body,
+    contentType,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  });
+}
+
+// GET /api/thumbnail?url=... — Fetch TikTok thumbnail, convert HEIC to JPEG if needed, serve it
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get("url");
 
   if (!url) {
     return NextResponse.json({ error: "Missing url param" }, { status: 400 });
+  }
+
+  const cached = getCached(url);
+  if (cached) {
+    return new NextResponse(cached.body, {
+      status: 200,
+      headers: {
+        "Content-Type": cached.contentType,
+        "Cache-Control": "public, max-age=86400, s-maxage=604800",
+        "X-Thumbnail-Cache": "HIT",
+      },
+    });
   }
 
   try {
@@ -18,6 +55,26 @@ export async function GET(request: NextRequest) {
     });
 
     if (!response.ok) {
+      if (url.includes(".heic")) {
+        const jpegUrl = url.replace(/\.heic(\?|$)/, ".jpeg$1");
+        const jpegRes = await fetch(jpegUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          },
+        });
+        if (jpegRes.ok) {
+          const buf = await jpegRes.arrayBuffer();
+          setCache(url, buf, "image/jpeg");
+          return new NextResponse(buf, {
+            status: 200,
+            headers: {
+              "Content-Type": "image/jpeg",
+              "Cache-Control": "public, max-age=86400, s-maxage=604800",
+            },
+          });
+        }
+      }
       return NextResponse.json(
         { error: `Upstream returned ${response.status}` },
         { status: 502 },
@@ -27,24 +84,62 @@ export async function GET(request: NextRequest) {
     const arrayBuffer = await response.arrayBuffer();
     const contentType = response.headers.get("content-type") ?? "";
 
-    // If HEIC, convert to JPEG
     if (contentType.includes("heic") || url.includes(".heic")) {
-      const jpegBuffer = await convert({
-        buffer: Buffer.from(arrayBuffer),
-        format: "JPEG",
-        quality: 0.8,
-      });
+      try {
+        const jpegBuffer = await convert({
+          buffer: Buffer.from(arrayBuffer),
+          format: "JPEG",
+          quality: 0.8,
+        });
 
-      return new NextResponse(jpegBuffer, {
-        status: 200,
-        headers: {
-          "Content-Type": "image/jpeg",
-          "Cache-Control": "public, max-age=86400, s-maxage=604800",
-        },
-      });
+        const out =
+          jpegBuffer instanceof ArrayBuffer
+            ? jpegBuffer
+            : (jpegBuffer as Buffer).buffer.slice(
+                (jpegBuffer as Buffer).byteOffset,
+                (jpegBuffer as Buffer).byteOffset + (jpegBuffer as Buffer).byteLength,
+              );
+
+        setCache(url, out, "image/jpeg");
+
+        return new NextResponse(out, {
+          status: 200,
+          headers: {
+            "Content-Type": "image/jpeg",
+            "Cache-Control": "public, max-age=86400, s-maxage=604800",
+          },
+        });
+      } catch (convertErr) {
+        const jpegUrl = url.replace(/\.heic(\?|$)/, ".jpeg$1");
+        if (jpegUrl !== url) {
+          const jpegRes = await fetch(jpegUrl, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            },
+          });
+          if (jpegRes.ok) {
+            const buf = await jpegRes.arrayBuffer();
+            setCache(url, buf, "image/jpeg");
+            return new NextResponse(buf, {
+              status: 200,
+              headers: {
+                "Content-Type": "image/jpeg",
+                "Cache-Control": "public, max-age=86400, s-maxage=604800",
+              },
+            });
+          }
+        }
+        console.error("Thumbnail HEIC convert error:", convertErr);
+        return NextResponse.json(
+          { error: "Image conversion failed" },
+          { status: 502 },
+        );
+      }
     }
 
-    // Otherwise pass through as-is
+    setCache(url, arrayBuffer, contentType || "image/jpeg");
+
     return new NextResponse(arrayBuffer, {
       status: 200,
       headers: {
@@ -55,8 +150,8 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Thumbnail proxy error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch/convert thumbnail" },
-      { status: 500 },
+      { error: "Failed to fetch thumbnail" },
+      { status: 502 },
     );
   }
 }

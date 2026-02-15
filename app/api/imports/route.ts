@@ -58,6 +58,32 @@ export async function POST(request: NextRequest) {
         ? uniqueUsernames.slice(0, usernameLimit)
         : uniqueUsernames;
 
+    // Look up existing influencers + their video counts for incremental scraping
+    const keys = finalUsernames.map((u) => u.toLowerCase().trim());
+    const existing = await prisma.influencer.findMany({
+      where: { username: { in: keys } },
+      select: { username: true, _count: { select: { videos: true } } },
+    });
+    const existingMap = new Map(
+      existing.map((e) => [e.username, e._count.videos]),
+    );
+
+    const toScrape: string[] = [];
+    const toRescrape: string[] = [];
+    const skipped: string[] = [];
+
+    for (const u of finalUsernames) {
+      const key = u.toLowerCase().trim();
+      const existingCount = existingMap.get(key);
+      if (existingCount == null) {
+        toScrape.push(u);
+      } else if (existingCount < videoCount) {
+        toRescrape.push(u);
+      } else {
+        skipped.push(u);
+      }
+    }
+
     // Create import record
     const importRecord = await prisma.import.create({
       data: {
@@ -77,6 +103,10 @@ export async function POST(request: NextRequest) {
       uniqueCount: uniqueUsernames.length,
       finalCount: finalUsernames.length,
       usernames: finalUsernames,
+      toScrape,
+      toRescrape,
+      skipped,
+      videoCount,
       status: importRecord.status,
     });
   } catch (error) {

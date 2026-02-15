@@ -40,7 +40,17 @@ interface ImportData {
   influencers: InfluencerData[];
 }
 
-type Step = "upload" | "processing" | "results";
+interface UploadResponse {
+  id: string;
+  sourceFilename: string;
+  finalCount: number;
+  toScrape: string[];
+  toRescrape: string[];
+  skipped: string[];
+  videoCount: number;
+}
+
+type Step = "upload" | "confirm" | "processing" | "results";
 
 export default function DataScraperPage() {
   const router = useRouter();
@@ -49,17 +59,21 @@ export default function DataScraperPage() {
   const [usernameLimit, setUsernameLimit] = useState<number>(50);
   const [videoCount, setVideoCount] = useState<number>(20);
   const [importData, setImportData] = useState<ImportData | null>(null);
+  const [uploadResponse, setUploadResponse] = useState<UploadResponse | null>(
+    null,
+  );
   const [progress, setProgress] = useState("");
+  const [progressCurrent, setProgressCurrent] = useState(0);
+  const [progressTotal, setProgressTotal] = useState(0);
+  const [progressUsername, setProgressUsername] = useState("");
   const [error, setError] = useState("");
 
-  const handleUploadAndScrape = useCallback(async () => {
+  const handleUpload = useCallback(async () => {
     if (!file) return;
     setError("");
-    setStep("processing");
     setProgress("Uploading CSV...");
 
     try {
-      // Step 1: Upload CSV
       const formData = new FormData();
       formData.append("file", file);
       formData.append("usernameLimit", String(usernameLimit));
@@ -75,39 +89,111 @@ export default function DataScraperPage() {
         throw new Error(err.error ?? "Upload failed");
       }
 
-      const uploadData = await uploadRes.json();
-      setProgress(
-        `CSV parsed: ${uploadData.finalCount} usernames. Starting scrape...`,
-      );
+      const data: UploadResponse = await uploadRes.json();
+      setUploadResponse(data);
+      setStep("confirm");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    }
+  }, [file, usernameLimit, videoCount]);
 
-      // Step 2: Start scraping
+  const handleStartScraping = useCallback(async () => {
+    if (!uploadResponse) return;
+    setError("");
+    setStep("processing");
+    setProgress("Starting scrape...");
+    setProgressCurrent(0);
+    setProgressTotal(
+      uploadResponse.toScrape.length + uploadResponse.toRescrape.length,
+    );
+    setProgressUsername("");
+
+    try {
       const scrapeRes = await fetch("/api/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          importId: uploadData.id,
-          usernames: uploadData.usernames,
+          importId: uploadResponse.id,
+          toScrape: uploadResponse.toScrape,
+          toRescrape: uploadResponse.toRescrape,
+          skipped: uploadResponse.skipped,
+          videoCount: uploadResponse.videoCount,
         }),
       });
 
       if (!scrapeRes.ok) {
         const err = await scrapeRes.json();
-        throw new Error(err.error ?? "Scraping failed");
+        throw new Error(err.error ?? err.details ?? "Scraping failed");
       }
 
-      setProgress("Scraping complete! Loading results...");
+      const contentType = scrapeRes.headers.get("content-type") ?? "";
+      if (contentType.includes("application/json")) {
+        await scrapeRes.json();
+        setProgress("Loading results...");
+        const resultRes = await fetch(`/api/imports/${uploadResponse.id}`);
+        const resultData: ImportData = await resultRes.json();
+        setImportData(resultData);
+        setStep("results");
+        return;
+      }
 
-      // Step 3: Fetch full results
-      const resultRes = await fetch(`/api/imports/${uploadData.id}`);
+      const reader = scrapeRes.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) throw new Error("No response body");
+
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const payload = JSON.parse(line.slice(6));
+              if (payload.type === "progress") {
+                setProgressCurrent(payload.processed);
+                setProgressTotal(payload.total);
+                setProgressUsername(payload.username ?? "");
+                setProgress(
+                  `Scraping @${payload.username ?? "..."} (${payload.processed} / ${payload.total})`,
+                );
+              } else if (payload.type === "complete") {
+                setProgress("Scraping complete! Loading results...");
+                const resultRes = await fetch(
+                  `/api/imports/${uploadResponse.id}`,
+                );
+                const resultData: ImportData = await resultRes.json();
+                setImportData(resultData);
+                setStep("results");
+                return;
+              } else if (payload.type === "error") {
+                throw new Error(payload.error ?? "Scraping failed");
+              }
+            } catch (e) {
+              if (e instanceof SyntaxError) continue;
+              throw e;
+            }
+          }
+        }
+      }
+
+      setProgress("Loading results...");
+      const resultRes = await fetch(`/api/imports/${uploadResponse.id}`);
       const resultData: ImportData = await resultRes.json();
-
       setImportData(resultData);
       setStep("results");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
-      setStep("upload");
+      setStep("confirm");
     }
-  }, [file, usernameLimit, videoCount]);
+  }, [uploadResponse]);
+
+  const toScrapeCount = uploadResponse?.toScrape.length ?? 0;
+  const toRescrapeCount = uploadResponse?.toRescrape.length ?? 0;
+  const skippedCount = uploadResponse?.skipped.length ?? 0;
+  const hasWork = toScrapeCount + toRescrapeCount > 0;
 
   return (
     <div className="p-6">
@@ -126,7 +212,6 @@ export default function DataScraperPage() {
               Import TikTok Influencers
             </h2>
 
-            {/* File Drop Zone */}
             <label
               htmlFor="csv-upload"
               className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border px-6 py-10 transition-colors hover:border-muted-foreground/50"
@@ -159,7 +244,6 @@ export default function DataScraperPage() {
               />
             </label>
 
-            {/* Settings */}
             <div className="mt-6 grid grid-cols-2 gap-4">
               <div>
                 <label
@@ -199,36 +283,108 @@ export default function DataScraperPage() {
               </div>
             </div>
 
-            {/* Error Message */}
             {error && (
               <div className="mt-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 {error}
               </div>
             )}
 
-            {/* Submit */}
             <Button
-              onClick={handleUploadAndScrape}
+              onClick={handleUpload}
               disabled={!file}
               className="mt-6 w-full"
               size="lg"
             >
-              Upload &amp; Start Scraping
+              Upload CSV
             </Button>
           </div>
         </div>
       )}
 
-      {/* Processing Step */}
+      {/* Confirm Step — breakdown before scraping */}
+      {step === "confirm" && uploadResponse && (
+        <div className="mx-auto max-w-xl">
+          <div className="rounded-xl border bg-card p-8">
+            <h2 className="mb-4 text-lg font-semibold">
+              Ready to scrape
+            </h2>
+            <p className="mb-4 text-sm text-muted-foreground">
+              {uploadResponse.sourceFilename} — {uploadResponse.finalCount}{" "}
+              usernames, up to {uploadResponse.videoCount} videos each.
+            </p>
+
+            <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm">New usernames to scrape</span>
+                <Badge variant="default">{toScrapeCount}</Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Need more videos</span>
+                <Badge variant="secondary">{toRescrapeCount}</Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Already complete (skipped)</span>
+                <Badge variant="outline">{skippedCount}</Badge>
+              </div>
+            </div>
+
+            {error && (
+              <div className="mt-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            <div className="mt-6 flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setStep("upload");
+                  setUploadResponse(null);
+                  setError("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleStartScraping}
+                disabled={!hasWork}
+              >
+                {hasWork
+                  ? "Start Scraping"
+                  : "Nothing to scrape (all skipped)"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Processing Step — real-time progress */}
       {step === "processing" && (
         <div className="mx-auto max-w-xl">
           <div className="rounded-xl border bg-card p-8 text-center">
             <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-muted border-t-primary" />
-            <h2 className="text-lg font-semibold">Processing...</h2>
+            <h2 className="text-lg font-semibold">Scraping...</h2>
             <p className="mt-2 text-sm text-muted-foreground">{progress}</p>
+            {progressTotal > 0 && (
+              <>
+                <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{
+                      width: `${Math.round((progressCurrent / progressTotal) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {progressCurrent} / {progressTotal} influencers
+                  {progressUsername ? ` — @${progressUsername}` : ""}
+                </p>
+              </>
+            )}
             <p className="mt-4 text-xs text-muted-foreground">
-              This may take several minutes depending on the number of
-              usernames.
+              This may take several minutes. Do not close this page.
             </p>
           </div>
         </div>
@@ -237,7 +393,6 @@ export default function DataScraperPage() {
       {/* Results Step */}
       {step === "results" && importData && (
         <div>
-          {/* Summary Bar */}
           <div className="mb-6 flex items-center justify-between rounded-xl border bg-card px-6 py-4">
             <div className="flex items-center gap-6">
               <div>
@@ -276,6 +431,7 @@ export default function DataScraperPage() {
                   setStep("upload");
                   setFile(null);
                   setImportData(null);
+                  setUploadResponse(null);
                 }}
               >
                 New Import
@@ -283,14 +439,12 @@ export default function DataScraperPage() {
             </div>
           </div>
 
-          {/* Influencer Cards */}
           <div className="space-y-6">
             {importData.influencers.map((influencer) => (
               <div
                 key={influencer.id}
                 className="overflow-hidden rounded-xl border bg-card"
               >
-                {/* Influencer Header */}
                 <div className="flex items-center gap-4 border-b px-6 py-4">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-sm font-bold">
                     {influencer.username.charAt(0).toUpperCase()}
@@ -325,7 +479,6 @@ export default function DataScraperPage() {
                   </Badge>
                 </div>
 
-                {/* 8-Column Thumbnail Grid */}
                 {influencer.videos.length > 0 && (
                   <div className="p-4">
                     <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">

@@ -53,7 +53,7 @@ export default async function InfluencerDetailPage({
           {/* Avatar */}
           {influencer.avatarUrl ? (
             <img
-              src={influencer.avatarUrl}
+              src={fixThumbnailUrl(influencer.avatarUrl)!}
               alt={influencer.username}
               referrerPolicy="no-referrer"
               className="h-20 w-20 rounded-full object-cover border-2 border-border"

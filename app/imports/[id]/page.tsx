@@ -85,7 +85,7 @@ export default async function ImportDetailPage({
               <div className="flex items-center gap-4 border-b px-6 py-4">
                 {influencer.avatarUrl ? (
                   <img
-                    src={influencer.avatarUrl}
+                    src={fixThumbnailUrl(influencer.avatarUrl)!}
                     alt={influencer.username}
                     referrerPolicy="no-referrer"
                     className="h-10 w-10 rounded-full object-cover border border-border"
