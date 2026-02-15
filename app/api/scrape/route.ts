@@ -9,9 +9,20 @@ interface ApifyChannel {
   username?: string;
   url?: string;
   bio?: string;
+  signature?: string; // some actors use this for bio
   followers?: number;
   avatar?: string;
   profilePicture?: string;
+  email?: string;
+  phone?: string;
+  link?: string;
+  bioLink?: string | { url?: string };
+  bioLinkUrl?: string;
+  website?: string;
+  linkInBio?: string;
+  profileLink?: string;
+  externalLink?: string;
+  socialLinks?: string[] | string;
 }
 
 interface ApifyVideo {
@@ -35,6 +46,113 @@ function extractEmail(text: string | undefined | null): string | null {
   return match?.[0] ?? null;
 }
 
+function extractPhone(text: string | undefined | null): string | null {
+  if (!text) return null;
+  const match = text.match(
+    /(?:\+?[\d\s\-()]{10,20}|[\d]{3}[\s.-][\d]{3}[\s.-][\d]{4})/,
+  );
+  return match?.[0]?.trim() ?? null;
+}
+
+/** True if URL is the TikTok profile page (we use this for profileUrl only, not bioLinkUrl). */
+function isTiktokProfileUrl(url: string | null | undefined): boolean {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.includes("tiktok.com");
+  } catch {
+    return false;
+  }
+}
+
+/** Extract first URL from bio text (https, www., or short links like feedlink.io/lonefoxhome) so we capture bio link when actor doesn't return a separate field. */
+function extractUrlFromBio(text: string | undefined | null): string | null {
+  if (!text) return null;
+  const withProtocol = text.match(
+    /https?:\/\/[^\s\]\)]+/i,
+  );
+  if (withProtocol?.[0]) return withProtocol[0].replace(/[.,;:!?)]+$/, "");
+  const wwwMatch = text.match(
+    /(?:^|\s)(www\.[a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,}(?:\/[^\s\]\)]*)?)/i,
+  );
+  if (wwwMatch?.[1]) return `https://${wwwMatch[1].trim()}`;
+  // Short links without www (feedlink.io/lonefoxhome, linktr.ee/username) — require /path so we don't grab email domains like rangemp.com
+  const shortLink = text.match(
+    /(?:^|\s)([a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,}\/[^\s\]\)]*)/i,
+  );
+  if (shortLink?.[1]) return `https://${shortLink[1].trim()}`;
+  // domain.tld only (no path) — allow if it looks like a link domain, not an email domain (e.g. maxfosh.co)
+  const domainOnly = text.match(
+    /(?:^|\s)([a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,})(?:\s|$|\)|\])/i,
+  );
+  if (domainOnly?.[1]) return `https://${domainOnly[1].trim()}`;
+  return null;
+}
+
+/** Parse bio for IG, YT, FB, X, TT etc. and return canonical URLs so we don't miss social links. */
+function extractSocialHandlesFromBio(bio: string | undefined | null): string[] {
+  if (!bio) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  const add = (url: string) => {
+    const norm = url.toLowerCase().replace(/\/+$/, "");
+    if (!seen.has(norm)) {
+      seen.add(norm);
+      out.push(url);
+    }
+  };
+
+  // Instagram (Instagram: / IG:)
+  const igLong = bio.matchAll(/(?:Instagram|insta)[:\s]*@?([a-zA-Z0-9_.]+)/gi);
+  for (const m of igLong) add(`https://instagram.com/${m[1]}`);
+  const igShort = bio.matchAll(/\bIG[:\s]*@?([a-zA-Z0-9_.]+)/gi);
+  for (const m of igShort) add(`https://instagram.com/${m[1]}`);
+
+  // YouTube (YouTube: / YT:)
+  const ytLong = bio.matchAll(/(?:YouTube|Youtube)[:\s]*@?([a-zA-Z0-9_.]+)/gi);
+  for (const m of ytLong) add(`https://youtube.com/@${m[1]}`);
+  const ytShort = bio.matchAll(/\bYT[:\s]*@?([a-zA-Z0-9_.]+)/gi);
+  for (const m of ytShort) add(`https://youtube.com/@${m[1]}`);
+
+  // Facebook (Facebook: / FB:)
+  const fbLong = bio.matchAll(/(?:Facebook|facebook)[:\s]*@?([a-zA-Z0-9.]+)/gi);
+  for (const m of fbLong) add(`https://facebook.com/${m[1]}`);
+  const fbShort = bio.matchAll(/\bFB[:\s]*@?([a-zA-Z0-9.]+)/gi);
+  for (const m of fbShort) add(`https://facebook.com/${m[1]}`);
+
+  // X / Twitter
+  const xMatch = bio.matchAll(/(?:X|Twitter)[:\s]*@?([a-zA-Z0-9_]+)/gi);
+  for (const m of xMatch) add(`https://x.com/${m[1]}`);
+
+  // TikTok (TT: / TikTok:)
+  const ttShort = bio.matchAll(/\bTT[:\s]*@?([a-zA-Z0-9_.]+)/gi);
+  for (const m of ttShort) add(`https://tiktok.com/@${m[1]}`);
+  const ttLong = bio.matchAll(/(?:TikTok|tiktok)[:\s]*@?([a-zA-Z0-9_.]+)/gi);
+  for (const m of ttLong) add(`https://tiktok.com/@${m[1]}`);
+
+  return out;
+}
+
+function normalizeSocialLinks(
+  links: string[] | string | undefined | null,
+  bio?: string | null,
+): string | null {
+  const arr = links ? (Array.isArray(links) ? links : [links]) : [];
+  const urls = arr.filter((u) => typeof u === "string" && u.startsWith("http"));
+  const fromBio = bio ? extractSocialHandlesFromBio(bio) : [];
+  const combined = [...urls];
+  const seen = new Set(urls.map((u) => u.toLowerCase().replace(/\/+$/, "")));
+  for (const u of fromBio) {
+    const n = u.toLowerCase().replace(/\/+$/, "");
+    if (!seen.has(n)) {
+      seen.add(n);
+      combined.push(u);
+    }
+  }
+  return combined.length > 0 ? JSON.stringify(combined) : null;
+}
+
 // POST /api/scrape — Run Apify scrape with SSE progress; incremental writes for existing influencers
 export async function POST(request: NextRequest) {
   let importId: string | null = null;
@@ -47,12 +165,14 @@ export async function POST(request: NextRequest) {
       toRescrape = [],
       skipped = [],
       videoCount: requestedVideoCount,
+      refreshSkippedProfiles = false,
     } = body as {
       importId: string;
       toScrape?: string[];
       toRescrape?: string[];
       skipped?: string[];
       videoCount?: number;
+      refreshSkippedProfiles?: boolean;
     };
 
     importId = id;
@@ -64,8 +184,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const usernamesToScrape = [...toScrape, ...toRescrape];
     const setRescrape = new Set(toRescrape.map((u) => u.toLowerCase().trim()));
+    const setSkipped = new Set(skipped.map((u) => u.toLowerCase().trim()));
+    const usernamesToScrape =
+      refreshSkippedProfiles && skipped.length > 0
+        ? [...toScrape, ...toRescrape, ...skipped]
+        : [...toScrape, ...toRescrape];
 
     if (usernamesToScrape.length === 0 && skipped.length === 0) {
       await prisma.import.update({
@@ -97,8 +221,8 @@ export async function POST(request: NextRequest) {
         };
 
         try {
-          // Link skipped influencers to this import (no scrape)
-          if (skipped.length > 0) {
+          // Link skipped influencers to this import only when not refreshing their profiles (we'll link when processing)
+          if (skipped.length > 0 && !refreshSkippedProfiles) {
             await prisma.influencer.updateMany({
               where: {
                 username: { in: skipped.map((u) => u.toLowerCase().trim()) },
@@ -194,79 +318,167 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          /** Merge channel from all items so we don't miss link/bio when actor puts them on a different item than the first. */
+          function mergedChannel(
+            items: ApifyItem[],
+          ): Record<string, unknown> {
+            const out: Record<string, unknown> = {};
+            for (const item of items) {
+              const ch = item.channel ?? {};
+              for (const [k, v] of Object.entries(ch)) {
+                if (v != null && v !== "" && out[k] == null) out[k] = v;
+              }
+            }
+            return out;
+          }
+
           const totalToProcess = influencerMap.size;
           let processedCount = 0;
           let totalVideosWritten = 0;
+          const debugScrape = process.env.DEBUG_SCRAPE === "1";
 
           for (const [username, data] of influencerMap) {
-            const profile = data.profile;
-            const bio = profile.channel?.bio ?? null;
+            const allItems = [data.profile, ...data.videos];
+            const channel = mergedChannel(allItems) as ApifyChannel;
+            const bio = channel.bio ?? channel.signature ?? null;
             const avatarUrl =
-              profile.channel?.avatar ?? profile.channel?.profilePicture ?? null;
+              channel.avatar ?? channel.profilePicture ?? null;
+
+            const email =
+              channel.email ?? extractEmail(bio);
+            const phone =
+              channel.phone ?? extractPhone(bio);
+            const linkCandidates: (string | null | undefined)[] = [
+              channel.bioLinkUrl,
+              channel.link,
+              typeof channel.bioLink === "string"
+                ? channel.bioLink
+                : channel.bioLink?.url,
+              channel.website,
+              channel.linkInBio,
+              channel.profileLink,
+              channel.externalLink,
+            ];
+            let rawBioLink: string | null = null;
+            for (const v of linkCandidates) {
+              if (
+                typeof v === "string" &&
+                v.startsWith("http") &&
+                !isTiktokProfileUrl(v)
+              ) {
+                rawBioLink = v;
+                break;
+              }
+            }
+            if (!rawBioLink && typeof channel === "object") {
+              for (const [k, v] of Object.entries(channel)) {
+                if (
+                  typeof v === "string" &&
+                  v.startsWith("http") &&
+                  !isTiktokProfileUrl(v) &&
+                  (k.toLowerCase().includes("link") ||
+                    k.toLowerCase().includes("url") ||
+                    k.toLowerCase().includes("website"))
+                ) {
+                  rawBioLink = v;
+                  break;
+                }
+              }
+            }
+            const bioLinkUrl = rawBioLink ?? extractUrlFromBio(bio);
+            const socialLinks = normalizeSocialLinks(channel.socialLinks, bio);
+
+            if (debugScrape && processedCount < 3) {
+              const debugPayload = {
+                username,
+                channelKeys: Object.keys(channel),
+                bio: bio ? `${bio.slice(0, 120)}` : null,
+                rawBioLink,
+                fromBio: extractUrlFromBio(bio),
+                bioLinkUrl,
+              };
+              console.log("[scrape] channel sample for", username, debugPayload);
+              send({ type: "debug", ...debugPayload });
+            }
+
+            const isSkippedProfileOnly = setSkipped.has(username);
 
             const influencer = await prisma.influencer.upsert({
               where: { username },
               create: {
                 username,
-                profileUrl: profile.channel?.url ?? null,
+                profileUrl: channel.url ?? null,
                 avatarUrl,
                 biolink: bio,
-                followers: profile.channel?.followers ?? null,
-                email: extractEmail(bio),
+                bioLinkUrl,
+                followers: channel.followers ?? null,
+                email,
+                phone,
+                socialLinks,
                 sourceFilename,
                 importId,
               },
               update: {
-                profileUrl: profile.channel?.url ?? null,
+                profileUrl: channel.url ?? null,
                 avatarUrl,
                 biolink: bio,
-                followers: profile.channel?.followers ?? null,
-                email: extractEmail(bio),
+                bioLinkUrl,
+                followers: channel.followers ?? null,
+                email,
+                phone,
+                socialLinks,
                 sourceFilename,
                 importId,
               },
             });
 
-            const videoData = data.videos.map((v) => ({
-              influencerId: influencer.id,
-              username,
-              title: v.title ?? null,
-              views: v.views ?? null,
-              bookmarks: v.bookmarks ?? null,
-              uploadedAt: v.uploadedAtFormatted
-                ? new Date(v.uploadedAtFormatted)
-                : null,
-              thumbnailUrl: v.video?.cover ?? null,
-            }));
+            // For "skipped" users we only refresh profile/contact; do not touch videos
+            if (!isSkippedProfileOnly) {
+              const videoData = data.videos.map((v) => ({
+                influencerId: influencer.id,
+                username,
+                title: v.title ?? null,
+                views: v.views ?? null,
+                bookmarks: v.bookmarks ?? null,
+                uploadedAt: v.uploadedAtFormatted
+                  ? new Date(v.uploadedAtFormatted)
+                  : null,
+                thumbnailUrl: v.video?.cover ?? null,
+              }));
 
-            const isRescrape = setRescrape.has(username);
+              const isRescrape = setRescrape.has(username);
 
-            if (isRescrape) {
-              const existingVideos = await prisma.video.findMany({
-                where: { influencerId: influencer.id },
-                select: { title: true, uploadedAt: true },
-              });
-              const existingSet = new Set(
-                existingVideos.map(
-                  (v) => `${v.title ?? ""}|${v.uploadedAt?.toISOString() ?? ""}`,
-                ),
-              );
-              const newVideos = videoData.filter(
-                (v) =>
-                  !existingSet.has(
-                    `${v.title ?? ""}|${v.uploadedAt?.toISOString() ?? ""}`,
+              if (isRescrape) {
+                const existingVideos = await prisma.video.findMany({
+                  where: { influencerId: influencer.id },
+                  select: { title: true, uploadedAt: true },
+                });
+                const existingSet = new Set(
+                  existingVideos.map(
+                    (v) =>
+                      `${v.title ?? ""}|${v.uploadedAt?.toISOString() ?? ""}`,
                   ),
-              );
-              const slotsAvailable = videoCount - existingVideos.length;
-              const toInsert = newVideos.slice(0, Math.max(0, slotsAvailable));
-              if (toInsert.length > 0) {
-                await prisma.video.createMany({ data: toInsert });
-                totalVideosWritten += toInsert.length;
-              }
-            } else {
-              if (videoData.length > 0) {
-                await prisma.video.createMany({ data: videoData });
-                totalVideosWritten += videoData.length;
+                );
+                const newVideos = videoData.filter(
+                  (v) =>
+                    !existingSet.has(
+                      `${v.title ?? ""}|${v.uploadedAt?.toISOString() ?? ""}`,
+                    ),
+                );
+                const slotsAvailable = videoCount - existingVideos.length;
+                const toInsert = newVideos.slice(
+                  0,
+                  Math.max(0, slotsAvailable),
+                );
+                if (toInsert.length > 0) {
+                  await prisma.video.createMany({ data: toInsert });
+                  totalVideosWritten += toInsert.length;
+                }
+              } else {
+                if (videoData.length > 0) {
+                  await prisma.video.createMany({ data: videoData });
+                  totalVideosWritten += videoData.length;
+                }
               }
             }
 

@@ -67,6 +67,7 @@ export default function DataScraperPage() {
   const [progressTotal, setProgressTotal] = useState(0);
   const [progressUsername, setProgressUsername] = useState("");
   const [error, setError] = useState("");
+  const [refreshSkippedProfiles, setRefreshSkippedProfiles] = useState(false);
 
   const handleUpload = useCallback(async () => {
     if (!file) return;
@@ -103,9 +104,12 @@ export default function DataScraperPage() {
     setStep("processing");
     setProgress("Starting scrape...");
     setProgressCurrent(0);
-    setProgressTotal(
-      uploadResponse.toScrape.length + uploadResponse.toRescrape.length,
-    );
+    const totalToProcess = refreshSkippedProfiles
+      ? uploadResponse.toScrape.length +
+        uploadResponse.toRescrape.length +
+        uploadResponse.skipped.length
+      : uploadResponse.toScrape.length + uploadResponse.toRescrape.length;
+    setProgressTotal(totalToProcess);
     setProgressUsername("");
 
     try {
@@ -118,6 +122,7 @@ export default function DataScraperPage() {
           toRescrape: uploadResponse.toRescrape,
           skipped: uploadResponse.skipped,
           videoCount: uploadResponse.videoCount,
+          refreshSkippedProfiles,
         }),
       });
 
@@ -159,6 +164,18 @@ export default function DataScraperPage() {
                 setProgress(
                   `Scraping @${payload.username ?? "..."} (${payload.processed} / ${payload.total})`,
                 );
+              } else if (payload.type === "debug") {
+                console.log(
+                  "[Apify channel sample]",
+                  payload.username,
+                  {
+                    channelKeys: payload.channelKeys,
+                    bio: payload.bio,
+                    rawBioLink: payload.rawBioLink,
+                    fromBio: payload.fromBio,
+                    bioLinkUrl: payload.bioLinkUrl,
+                  },
+                );
               } else if (payload.type === "complete") {
                 setProgress("Scraping complete! Loading results...");
                 const resultRes = await fetch(
@@ -188,12 +205,14 @@ export default function DataScraperPage() {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setStep("confirm");
     }
-  }, [uploadResponse]);
+  }, [uploadResponse, refreshSkippedProfiles]);
 
   const toScrapeCount = uploadResponse?.toScrape.length ?? 0;
   const toRescrapeCount = uploadResponse?.toRescrape.length ?? 0;
   const skippedCount = uploadResponse?.skipped.length ?? 0;
-  const hasWork = toScrapeCount + toRescrapeCount > 0;
+  const hasWork =
+    toScrapeCount + toRescrapeCount > 0 ||
+    (refreshSkippedProfiles && skippedCount > 0);
 
   return (
     <div className="p-6">
@@ -328,6 +347,21 @@ export default function DataScraperPage() {
               </div>
             </div>
 
+            {skippedCount > 0 && (
+              <label className="mt-4 flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={refreshSkippedProfiles}
+                  onChange={(e) => setRefreshSkippedProfiles(e.target.checked)}
+                  className="h-4 w-4 rounded border-input"
+                />
+                <span className="text-sm">
+                  Also refresh contact data for skipped influencers ({skippedCount}
+                  ) — email, phone, bio link
+                </span>
+              </label>
+            )}
+
             {error && (
               <div className="mt-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 {error}
@@ -352,7 +386,9 @@ export default function DataScraperPage() {
                 disabled={!hasWork}
               >
                 {hasWork
-                  ? "Start Scraping"
+                  ? refreshSkippedProfiles && skippedCount > 0
+                    ? `Start (${toScrapeCount + toRescrapeCount + skippedCount} influencers)`
+                    : "Start Scraping"
                   : "Nothing to scrape (all skipped)"}
               </Button>
             </div>

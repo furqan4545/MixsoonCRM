@@ -15,9 +15,12 @@ model Influencer {
   username       String   @unique
   profileUrl     String?
   avatarUrl      String?  // profile picture URL
-  biolink        String?
+  biolink        String?  // raw bio text
+  bioLinkUrl     String?  // main link in bio (e.g. linktree)
   followers      Int?
   email          String?
+  phone          String?
+  socialLinks    String?  // JSON array of URLs
   sourceFilename String?  // which CSV file this influencer came from
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

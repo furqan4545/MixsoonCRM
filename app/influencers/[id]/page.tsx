@@ -4,7 +4,8 @@ import { prisma } from "../../lib/prisma";
 import { fixThumbnailUrl } from "../../lib/thumbnail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ExternalLink, Mail, Users, Eye, Bookmark, Calendar } from "lucide-react";
+import { InfluencerContactSection } from "@/components/influencer-contact-section";
+import { ArrowLeft, ExternalLink, Users, Eye, Bookmark, Calendar } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -87,19 +88,13 @@ export default async function InfluencerDetailPage({
               </p>
             )}
 
-            {/* Meta tags */}
+            {/* Meta: followers + source tags */}
             <div className="mt-3 flex flex-wrap items-center gap-3">
               {influencer.followers != null && (
                 <div className="inline-flex items-center gap-1.5 text-sm">
                   <Users className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="font-semibold">{formatNumber(influencer.followers)}</span>
                   <span className="text-muted-foreground">followers</span>
-                </div>
-              )}
-              {influencer.email && (
-                <div className="inline-flex items-center gap-1.5 text-sm">
-                  <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span>{influencer.email}</span>
                 </div>
               )}
               {influencer.sourceFilename && (
@@ -112,6 +107,22 @@ export default async function InfluencerDetailPage({
                   </Badge>
                 </Link>
               )}
+            </div>
+
+            {!influencer.email && !influencer.phone && (influencer.biolink || influencer.bioLinkUrl || influencer.socialLinks) && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Email & phone not on TikTok profile; only shown if in bio.
+              </p>
+            )}
+
+            {/* Contact & socials — tap to open, copy button for all */}
+            <div className="mt-4">
+              <InfluencerContactSection
+                email={influencer.email}
+                phone={influencer.phone}
+                bioLinkUrl={influencer.bioLinkUrl}
+                socialLinksJson={influencer.socialLinks}
+              />
             </div>
           </div>
         </div>
