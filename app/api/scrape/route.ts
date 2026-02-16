@@ -58,34 +58,47 @@ function extractPhone(text: string | undefined | null): string | null {
 function isTiktokProfileUrl(url: string | null | undefined): boolean {
   if (!url || typeof url !== "string") return false;
   try {
-    const host = new URL(url).hostname.toLowerCase();
-    return host.includes("tiktok.com");
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (!host.includes("tiktok.com")) return false;
+    // Exclude only profile links like https://www.tiktok.com/@username
+    return /^\/@[^/]+\/?$/i.test(parsed.pathname);
   } catch {
     return false;
   }
 }
 
+/** Normalize link-like value to a full URL, supporting protocol-less domains. */
+function normalizeUrlCandidate(value: string | null | undefined): string | null {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim().replace(/[.,;:!?)]+$/, "");
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
+  if (/^[a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,}(?:\/[^\s\]\)]*)?$/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return null;
+}
+
 /** Extract first URL from bio text (https, www., or short links like feedlink.io/lonefoxhome) so we capture bio link when actor doesn't return a separate field. */
 function extractUrlFromBio(text: string | undefined | null): string | null {
   if (!text) return null;
-  const withProtocol = text.match(
-    /https?:\/\/[^\s\]\)]+/i,
+  // Remove emails first so we don't treat their domain as website links.
+  const withoutEmails = text.replace(
+    /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+    " ",
   );
-  if (withProtocol?.[0]) return withProtocol[0].replace(/[.,;:!?)]+$/, "");
-  const wwwMatch = text.match(
-    /(?:^|\s)(www\.[a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,}(?:\/[^\s\]\)]*)?)/i,
+  const matches = withoutEmails.match(
+    /https?:\/\/[^\s\]\)]+|www\.[^\s\]\)]+|[a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,}(?:\/[^\s\]\)]*)?/gi,
   );
-  if (wwwMatch?.[1]) return `https://${wwwMatch[1].trim()}`;
-  // Short links without www (feedlink.io/lonefoxhome, linktr.ee/username) — require /path so we don't grab email domains like rangemp.com
-  const shortLink = text.match(
-    /(?:^|\s)([a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,}\/[^\s\]\)]*)/i,
-  );
-  if (shortLink?.[1]) return `https://${shortLink[1].trim()}`;
-  // domain.tld only (no path) — allow if it looks like a link domain, not an email domain (e.g. maxfosh.co)
-  const domainOnly = text.match(
-    /(?:^|\s)([a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,})(?:\s|$|\)|\])/i,
-  );
-  if (domainOnly?.[1]) return `https://${domainOnly[1].trim()}`;
+  if (!matches) return null;
+  for (const raw of matches) {
+    const normalized = normalizeUrlCandidate(raw);
+    if (!normalized) continue;
+    if (isTiktokProfileUrl(normalized)) continue;
+    return normalized;
+  }
   return null;
 }
 
@@ -361,26 +374,24 @@ export async function POST(request: NextRequest) {
             ];
             let rawBioLink: string | null = null;
             for (const v of linkCandidates) {
-              if (
-                typeof v === "string" &&
-                v.startsWith("http") &&
-                !isTiktokProfileUrl(v)
-              ) {
-                rawBioLink = v;
+              const normalized = normalizeUrlCandidate(v);
+              if (normalized && !isTiktokProfileUrl(normalized)) {
+                rawBioLink = normalized;
                 break;
               }
             }
             if (!rawBioLink && typeof channel === "object") {
               for (const [k, v] of Object.entries(channel)) {
+                const normalized =
+                  typeof v === "string" ? normalizeUrlCandidate(v) : null;
                 if (
-                  typeof v === "string" &&
-                  v.startsWith("http") &&
-                  !isTiktokProfileUrl(v) &&
+                  normalized &&
+                  !isTiktokProfileUrl(normalized) &&
                   (k.toLowerCase().includes("link") ||
                     k.toLowerCase().includes("url") ||
                     k.toLowerCase().includes("website"))
                 ) {
-                  rawBioLink = v;
+                  rawBioLink = normalized;
                   break;
                 }
               }
