@@ -197,20 +197,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const setRescrape = new Set(toRescrape.map((u) => u.toLowerCase().trim()));
-    const setSkipped = new Set(skipped.map((u) => u.toLowerCase().trim()));
+    let setRescrape = new Set(toRescrape.map((u) => u.toLowerCase().trim()));
+    let setSkipped = new Set(skipped.map((u) => u.toLowerCase().trim()));
+
+    // When refresh is enabled, wipe all existing data for these usernames and scrape fresh
+    if (refreshSkippedProfiles) {
+      const allUsernames = [...toScrape, ...toRescrape, ...skipped].map((u) =>
+        u.toLowerCase().trim(),
+      );
+      if (allUsernames.length > 0) {
+        const existing = await prisma.influencer.findMany({
+          where: { username: { in: allUsernames } },
+          select: { id: true },
+        });
+        if (existing.length > 0) {
+          const ids = existing.map((i) => i.id);
+          await prisma.influencerAiEvaluation.deleteMany({
+            where: { influencerId: { in: ids } },
+          });
+          await prisma.video.deleteMany({
+            where: { influencerId: { in: ids } },
+          });
+          await prisma.influencer.deleteMany({
+            where: { id: { in: ids } },
+          });
+        }
+      }
+      setRescrape = new Set();
+      setSkipped = new Set();
+    }
+
     const usernamesToScrape =
-      refreshSkippedProfiles && skipped.length > 0
+      refreshSkippedProfiles
         ? [...toScrape, ...toRescrape, ...skipped]
         : [...toScrape, ...toRescrape];
 
     if (usernamesToScrape.length === 0 && skipped.length === 0) {
       await prisma.import.update({
         where: { id: importId },
-        data: { status: "COMPLETED", processedCount: 0 },
+        data: { status: "DRAFT", processedCount: 0 },
       });
       return NextResponse.json({
-        status: "COMPLETED",
+        status: "DRAFT",
         processedCount: 0,
         totalVideos: 0,
         message: "Nothing to scrape",
@@ -254,7 +282,7 @@ export async function POST(request: NextRequest) {
             controller.close();
             await prisma.import.update({
               where: { id: importId! },
-              data: { status: "COMPLETED", processedCount: skipped.length },
+              data: { status: "DRAFT", processedCount: skipped.length },
             });
             return;
           }
@@ -398,6 +426,7 @@ export async function POST(request: NextRequest) {
             }
             const bioLinkUrl = rawBioLink ?? extractUrlFromBio(bio);
             const socialLinks = normalizeSocialLinks(channel.socialLinks, bio);
+            const storedAvatarUrl = avatarUrl;
 
             if (debugScrape && processedCount < 3) {
               const debugPayload = {
@@ -419,7 +448,7 @@ export async function POST(request: NextRequest) {
               create: {
                 username,
                 profileUrl: channel.url ?? null,
-                avatarUrl,
+                avatarUrl: storedAvatarUrl,
                 biolink: bio,
                 bioLinkUrl,
                 followers: channel.followers ?? null,
@@ -431,7 +460,7 @@ export async function POST(request: NextRequest) {
               },
               update: {
                 profileUrl: channel.url ?? null,
-                avatarUrl,
+                avatarUrl: storedAvatarUrl,
                 biolink: bio,
                 bioLinkUrl,
                 followers: channel.followers ?? null,
@@ -445,31 +474,67 @@ export async function POST(request: NextRequest) {
 
             // For "skipped" users we only refresh profile/contact; do not touch videos
             if (!isSkippedProfileOnly) {
-              const videoData = data.videos.map((v) => ({
-                influencerId: influencer.id,
-                username,
-                title: v.title ?? null,
-                views: v.views ?? null,
-                bookmarks: v.bookmarks ?? null,
-                uploadedAt: v.uploadedAtFormatted
-                  ? new Date(v.uploadedAtFormatted)
-                  : null,
-                thumbnailUrl: v.video?.cover ?? null,
-              }));
+              const videoData = await Promise.all(
+                data.videos.map(async (v) => {
+                  const thumbnailUrl = v.video?.cover ?? null;
+
+                  return {
+                    influencerId: influencer.id,
+                    username,
+                    title: v.title ?? null,
+                    views: v.views ?? null,
+                    bookmarks: v.bookmarks ?? null,
+                    uploadedAt: v.uploadedAtFormatted
+                      ? new Date(v.uploadedAtFormatted)
+                      : null,
+                    thumbnailUrl,
+                  };
+                }),
+              );
 
               const isRescrape = setRescrape.has(username);
 
               if (isRescrape) {
                 const existingVideos = await prisma.video.findMany({
                   where: { influencerId: influencer.id },
-                  select: { title: true, uploadedAt: true },
+                  select: { id: true, title: true, uploadedAt: true, thumbnailUrl: true },
                 });
+                const incomingByKey = new Map(
+                  videoData.map((v) => [
+                    `${v.title ?? ""}|${v.uploadedAt?.toISOString() ?? ""}`,
+                    v,
+                  ]),
+                );
                 const existingSet = new Set(
                   existingVideos.map(
                     (v) =>
                       `${v.title ?? ""}|${v.uploadedAt?.toISOString() ?? ""}`,
                   ),
                 );
+
+                // Refresh thumbnails for already-existing videos so old expiring TikTok URLs
+                // get replaced with current (GCS-cached) URLs even when no new slots are available.
+                const thumbUpdates = existingVideos
+                  .map((v) => {
+                    const key = `${v.title ?? ""}|${v.uploadedAt?.toISOString() ?? ""}`;
+                    const incoming = incomingByKey.get(key);
+                    if (!incoming?.thumbnailUrl) return null;
+                    if (incoming.thumbnailUrl === v.thumbnailUrl) return null;
+                    return { id: v.id, thumbnailUrl: incoming.thumbnailUrl };
+                  })
+                  .filter((u): u is { id: string; thumbnailUrl: string } => u !== null);
+
+                if (thumbUpdates.length > 0) {
+                  await prisma.$transaction(
+                    thumbUpdates.map((u) =>
+                      prisma.video.update({
+                        where: { id: u.id },
+                        data: { thumbnailUrl: u.thumbnailUrl },
+                      }),
+                    ),
+                  );
+                }
+
                 const newVideos = videoData.filter(
                   (v) =>
                     !existingSet.has(
@@ -502,19 +567,20 @@ export async function POST(request: NextRequest) {
             });
           }
 
+          const skippedNotRescraped = refreshSkippedProfiles ? 0 : skipped.length;
           await prisma.import.update({
             where: { id: importId! },
             data: {
-              status: "COMPLETED",
-              processedCount: processedCount + skipped.length,
+              status: "DRAFT",
+              processedCount: processedCount + skippedNotRescraped,
             },
           });
 
           send({
             type: "complete",
-            processedCount: processedCount + skipped.length,
+            processedCount: processedCount + skippedNotRescraped,
             totalVideos: totalVideosWritten,
-            skipped: skipped.length,
+            skipped: skippedNotRescraped,
           });
         } catch (err) {
           console.error("Scrape error:", err);

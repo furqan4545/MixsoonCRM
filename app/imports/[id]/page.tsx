@@ -1,8 +1,10 @@
-import { notFound } from "next/navigation";
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { Badge } from "@/components/ui/badge";
+import { ThumbnailImage } from "@/components/thumbnail-image";
 import { prisma } from "../../lib/prisma";
 import { fixThumbnailUrl } from "../../lib/thumbnail";
-import { Badge } from "@/components/ui/badge";
+import { AiFilterPanel } from "./ai-filter-panel";
 import { ImportActions } from "./import-actions";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +30,15 @@ export default async function ImportDetailPage({
 
   if (!importRecord) notFound();
 
+  const latestRuns = await prisma.aiFilterRun.findMany({
+    where: { importId: id },
+    include: {
+      campaign: { select: { id: true, name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+  });
+
   return (
     <div className="p-6">
       {/* Header */}
@@ -43,19 +54,17 @@ export default async function ImportDetailPage({
                   ? "default"
                   : importRecord.status === "FAILED"
                     ? "destructive"
-                    : "secondary"
+                    : importRecord.status === "DRAFT"
+                      ? "outline"
+                      : "secondary"
               }
             >
               {importRecord.status}
             </Badge>
             <span>{importRecord.rowCount} rows</span>
             <span>{importRecord.processedCount} processed</span>
-            <span>
-              {importRecord.influencers.length} influencers linked
-            </span>
-            <span>
-              {new Date(importRecord.createdAt).toLocaleString()}
-            </span>
+            <span>{importRecord.influencers.length} influencers linked</span>
+            <span>{new Date(importRecord.createdAt).toLocaleString()}</span>
           </div>
           {importRecord.errorMessage && (
             <p className="mt-2 text-sm text-destructive">
@@ -68,6 +77,9 @@ export default async function ImportDetailPage({
           influencerCount={importRecord.influencers.length}
         />
       </div>
+
+      {/* Influencer Cards with Thumbnail Grid */}
+      <AiFilterPanel importId={importRecord.id} latestRuns={latestRuns} />
 
       {/* Influencer Cards with Thumbnail Grid */}
       {importRecord.influencers.length === 0 ? (
@@ -142,12 +154,10 @@ export default async function ImportDetailPage({
                         className="group relative aspect-9/16 overflow-hidden rounded-lg bg-muted"
                       >
                         {video.thumbnailUrl ? (
-                          <img
+                          <ThumbnailImage
                             src={fixThumbnailUrl(video.thumbnailUrl)!}
                             alt={video.title ?? "Video thumbnail"}
-                            referrerPolicy="no-referrer"
                             className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                            loading="lazy"
                           />
                         ) : (
                           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
@@ -160,9 +170,7 @@ export default async function ImportDetailPage({
                           </p>
                           <div className="flex items-center gap-2 text-[10px] text-zinc-300">
                             {video.views != null && (
-                              <span>
-                                {video.views.toLocaleString()} views
-                              </span>
+                              <span>{video.views.toLocaleString()} views</span>
                             )}
                             {video.bookmarks != null && (
                               <span>

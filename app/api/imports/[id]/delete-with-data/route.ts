@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { deleteImportMediaFromGcs } from "../../../../lib/gcs-media";
 import { prisma } from "../../../../lib/prisma";
 
 // DELETE /api/imports/:id/delete-with-data — Hard delete: remove import + all linked influencers + their videos
@@ -8,6 +9,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const mediaDelete = await deleteImportMediaFromGcs(id);
 
     // Find all influencers linked to this import
     const influencers = await prisma.influencer.findMany({
@@ -36,6 +38,8 @@ export async function DELETE(
       success: true,
       mode: "hard",
       deletedInfluencers: influencerIds.length,
+      deletedMediaFiles: mediaDelete.deletedCount,
+      failedMediaDeletes: mediaDelete.failedCount,
     });
   } catch (error) {
     console.error("Hard delete import error:", error);

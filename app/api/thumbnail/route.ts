@@ -1,5 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import convert from "heic-convert";
+import { isGcsUrl, readGcsImage } from "../../lib/gcs-media";
+
+const TIKTOK_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+  Referer: "https://www.tiktok.com/",
+  Origin: "https://www.tiktok.com",
+};
+
+function thumbnailError() {
+  return new NextResponse(null, {
+    status: 404,
+    headers: { "Cache-Control": "no-cache" },
+  });
+}
 
 // In-memory cache: same URL = serve converted result, no re-fetch or re-convert
 const MAX_CACHE_SIZE = 1000;
@@ -46,23 +62,33 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  if (isGcsUrl(url)) {
+    try {
+      const gcs = await readGcsImage(url);
+      if (!gcs) {
+        return NextResponse.json({ error: "GCS image not found" }, { status: 404 });
+      }
+      setCache(url, gcs.body, gcs.contentType);
+      return new NextResponse(gcs.body, {
+        status: 200,
+        headers: {
+          "Content-Type": gcs.contentType,
+          "Cache-Control": "public, max-age=86400, s-maxage=604800",
+        },
+      });
+    } catch (error) {
+      console.error("Thumbnail GCS read error:", error);
+      return thumbnailError();
+    }
+  }
+
   try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-    });
+    const response = await fetch(url, { headers: TIKTOK_HEADERS });
 
     if (!response.ok) {
       if (url.includes(".heic")) {
         const jpegUrl = url.replace(/\.heic(\?|$)/, ".jpeg$1");
-        const jpegRes = await fetch(jpegUrl, {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          },
-        });
+        const jpegRes = await fetch(jpegUrl, { headers: TIKTOK_HEADERS });
         if (jpegRes.ok) {
           const buf = await jpegRes.arrayBuffer();
           setCache(url, buf, "image/jpeg");
@@ -75,10 +101,7 @@ export async function GET(request: NextRequest) {
           });
         }
       }
-      return NextResponse.json(
-        { error: `Upstream returned ${response.status}` },
-        { status: 502 },
-      );
+      return thumbnailError();
     }
 
     const arrayBuffer = await response.arrayBuffer();
@@ -92,13 +115,11 @@ export async function GET(request: NextRequest) {
           quality: 0.8,
         });
 
-        const out =
+        const asBuffer =
           jpegBuffer instanceof ArrayBuffer
-            ? jpegBuffer
-            : (jpegBuffer as Buffer).buffer.slice(
-                (jpegBuffer as Buffer).byteOffset,
-                (jpegBuffer as Buffer).byteOffset + (jpegBuffer as Buffer).byteLength,
-              );
+            ? Buffer.from(jpegBuffer)
+            : Buffer.from(jpegBuffer as Buffer);
+        const out = Uint8Array.from(asBuffer).buffer;
 
         setCache(url, out, "image/jpeg");
 
@@ -112,12 +133,7 @@ export async function GET(request: NextRequest) {
       } catch (convertErr) {
         const jpegUrl = url.replace(/\.heic(\?|$)/, ".jpeg$1");
         if (jpegUrl !== url) {
-          const jpegRes = await fetch(jpegUrl, {
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            },
-          });
+          const jpegRes = await fetch(jpegUrl, { headers: TIKTOK_HEADERS });
           if (jpegRes.ok) {
             const buf = await jpegRes.arrayBuffer();
             setCache(url, buf, "image/jpeg");
@@ -131,10 +147,7 @@ export async function GET(request: NextRequest) {
           }
         }
         console.error("Thumbnail HEIC convert error:", convertErr);
-        return NextResponse.json(
-          { error: "Image conversion failed" },
-          { status: 502 },
-        );
+        return thumbnailError();
       }
     }
 
@@ -149,9 +162,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Thumbnail proxy error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch thumbnail" },
-      { status: 502 },
-    );
+    return thumbnailError();
   }
 }

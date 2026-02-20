@@ -1,17 +1,19 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   Database,
   FileSpreadsheet,
   LayoutDashboard,
+  Sparkles,
   Users,
 } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -19,7 +21,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarFooter,
 } from "@/components/ui/sidebar";
 
 const navItems = [
@@ -43,6 +44,11 @@ const navItems = [
     href: "/influencers",
     icon: Users,
   },
+  {
+    title: "Campaign Filters",
+    href: "/campaigns",
+    icon: Sparkles,
+  },
 ];
 
 export function AppSidebar() {
@@ -55,9 +61,7 @@ export function AppSidebar() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <span className="text-sm font-bold">M</span>
           </div>
-          <span className="text-lg font-semibold tracking-tight">
-            MIXSOON
-          </span>
+          <span className="text-lg font-semibold tracking-tight">MIXSOON</span>
         </Link>
       </SidebarHeader>
       <SidebarContent>
@@ -67,10 +71,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={pathname === item.href}
-                  >
+                  <SidebarMenuButton asChild isActive={pathname === item.href}>
                     <Link href={item.href}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
@@ -83,9 +84,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-4">
-        <p className="text-xs text-muted-foreground">
-          MIXSOON CRM v0.1.0
-        </p>
+        <p className="text-xs text-muted-foreground">MIXSOON CRM v0.1.0</p>
       </SidebarFooter>
     </Sidebar>
   );

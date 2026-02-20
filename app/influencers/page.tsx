@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "../lib/prisma";
 import { fixThumbnailUrl } from "../lib/thumbnail";
 import { Badge } from "@/components/ui/badge";
+import { ThumbnailImage } from "@/components/thumbnail-image";
 
 export const dynamic = "force-dynamic";
 
@@ -51,12 +52,10 @@ export default async function InfluencersPage() {
               <div className="flex items-center gap-3">
                 {/* Avatar */}
                 {inf.avatarUrl ? (
-                  <img
+                  <ThumbnailImage
                     src={fixThumbnailUrl(inf.avatarUrl)!}
                     alt={inf.username}
-                    referrerPolicy="no-referrer"
                     className="h-12 w-12 rounded-full object-cover border border-border"
-                    loading="lazy"
                   />
                 ) : (
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-sm font-bold">

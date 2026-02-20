@@ -4,6 +4,7 @@ import { prisma } from "../../lib/prisma";
 import { fixThumbnailUrl } from "../../lib/thumbnail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ThumbnailImage } from "@/components/thumbnail-image";
 import { InfluencerContactSection } from "@/components/influencer-contact-section";
 import { ArrowLeft, ExternalLink, Users, Eye, Bookmark, Calendar } from "lucide-react";
 
@@ -53,10 +54,9 @@ export default async function InfluencerDetailPage({
         <div className="flex items-start gap-5">
           {/* Avatar */}
           {influencer.avatarUrl ? (
-            <img
+            <ThumbnailImage
               src={fixThumbnailUrl(influencer.avatarUrl)!}
               alt={influencer.username}
-              referrerPolicy="no-referrer"
               className="h-20 w-20 rounded-full object-cover border-2 border-border"
             />
           ) : (
@@ -168,12 +168,10 @@ export default async function InfluencerDetailPage({
                 {/* Thumbnail */}
                 <div className="relative aspect-9/16 overflow-hidden bg-muted">
                   {video.thumbnailUrl ? (
-                    <img
+                    <ThumbnailImage
                       src={fixThumbnailUrl(video.thumbnailUrl)!}
                       alt={video.title ?? "Video thumbnail"}
-                      referrerPolicy="no-referrer"
                       className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                      loading="lazy"
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

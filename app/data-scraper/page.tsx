@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ThumbnailImage } from "@/components/thumbnail-image";
 
 function fixThumbnailUrl(url: string | null): string | null {
   if (!url) return null;
@@ -68,6 +69,12 @@ export default function DataScraperPage() {
   const [progressUsername, setProgressUsername] = useState("");
   const [error, setError] = useState("");
   const [refreshSkippedProfiles, setRefreshSkippedProfiles] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/imports/cleanup-drafts", { method: "POST" }).catch(() => {});
+  }, []);
 
   const handleUpload = useCallback(async () => {
     if (!file) return;
@@ -206,6 +213,43 @@ export default function DataScraperPage() {
       setStep("confirm");
     }
   }, [uploadResponse, refreshSkippedProfiles]);
+
+  const handleSave = useCallback(async () => {
+    if (!importData) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/imports/${importData.id}/save`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? "Failed to save");
+      }
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save import");
+    } finally {
+      setSaving(false);
+    }
+  }, [importData]);
+
+  const handleDiscard = useCallback(async () => {
+    if (!importData) return;
+    setError("");
+    try {
+      await fetch(`/api/imports/${importData.id}/delete-with-data`, {
+        method: "DELETE",
+      });
+      setStep("upload");
+      setFile(null);
+      setImportData(null);
+      setUploadResponse(null);
+      setSaved(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to discard import");
+    }
+  }, [importData]);
 
   const toScrapeCount = uploadResponse?.toScrape.length ?? 0;
   const toRescrapeCount = uploadResponse?.toRescrape.length ?? 0;
@@ -347,7 +391,7 @@ export default function DataScraperPage() {
               </div>
             </div>
 
-            {skippedCount > 0 && (
+            {(skippedCount > 0 || toRescrapeCount > 0) && (
               <label className="mt-4 flex cursor-pointer items-center gap-2">
                 <input
                   type="checkbox"
@@ -356,8 +400,8 @@ export default function DataScraperPage() {
                   className="h-4 w-4 rounded border-input"
                 />
                 <span className="text-sm">
-                  Also refresh contact data for skipped influencers ({skippedCount}
-                  ) — email, phone, bio link
+                  Delete all existing data and re-scrape everything fresh (
+                  {toScrapeCount + toRescrapeCount + skippedCount} total)
                 </span>
               </label>
             )}
@@ -451,27 +495,49 @@ export default function DataScraperPage() {
                 <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Status
                 </span>
-                <Badge>{importData.status}</Badge>
+                <Badge variant={saved ? "default" : "secondary"}>
+                  {saved ? "SAVED" : "DRAFT — review & save"}
+                </Badge>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => router.push(`/imports/${importData.id}`)}
-              >
-                View in Imports
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setStep("upload");
-                  setFile(null);
-                  setImportData(null);
-                  setUploadResponse(null);
-                }}
-              >
-                New Import
-              </Button>
+            <div className="flex items-center gap-2">
+              {error && (
+                <span className="text-sm text-destructive">{error}</span>
+              )}
+              {saved ? (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => router.push(`/imports/${importData.id}`)}
+                  >
+                    View in Imports
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setStep("upload");
+                      setFile(null);
+                      setImportData(null);
+                      setUploadResponse(null);
+                      setSaved(false);
+                    }}
+                  >
+                    New Import
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={handleDiscard}
+                  >
+                    Discard
+                  </Button>
+                  <Button onClick={handleSave} disabled={saving}>
+                    {saving ? "Saving..." : "Save Import"}
+                  </Button>
+                </>
+              )}
             </div>
           </div>
 
@@ -524,12 +590,10 @@ export default function DataScraperPage() {
                           className="group relative aspect-9/16 overflow-hidden rounded-lg bg-muted"
                         >
                           {video.thumbnailUrl ? (
-                            <img
+                            <ThumbnailImage
                               src={fixThumbnailUrl(video.thumbnailUrl)!}
                               alt={video.title ?? "Video thumbnail"}
-                              referrerPolicy="no-referrer"
                               className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                              loading="lazy"
                             />
                           ) : (
                             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">

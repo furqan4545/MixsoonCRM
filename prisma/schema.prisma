@@ -28,6 +28,7 @@ model Influencer {
   videos   Video[]
   import   Import? @relation(fields: [importId], references: [id], onDelete: SetNull)
   importId String?
+  aiEvaluations InfluencerAiEvaluation[]
 
   @@index([username])
   @@index([importId])
@@ -68,13 +69,108 @@ model Import {
   updatedAt      DateTime     @updatedAt
 
   influencers Influencer[]
+  aiFilterRuns AiFilterRun[]
 }
 
 enum ImportStatus {
   PENDING
   PROCESSING
+  DRAFT
   COMPLETED
   FAILED
+}
+
+// ─── AI FILTERING ───────────────────────────────────────────
+
+model Campaign {
+  id              String   @id @default(cuid())
+  name            String
+  targetKeywords  String[]
+  avoidKeywords   String[]
+  notes           String?
+  strictnessDefault Int    @default(50)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  aiFilterRuns AiFilterRun[]
+
+  @@index([name])
+}
+
+model AiFilterRun {
+  id            String   @id @default(cuid())
+  campaignId    String
+  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  importId      String?
+  import        Import?  @relation(fields: [importId], references: [id], onDelete: SetNull)
+  strictness    Int
+  status        AiFilterRunStatus @default(PENDING)
+  totalCount    Int @default(0)
+  aiProcessedCount Int @default(0)
+  reviewQueueCount Int @default(0)
+  approvedCount Int @default(0)
+  okishCount    Int @default(0)
+  rejectedCount Int @default(0)
+  failedCount   Int @default(0)
+  model         String   @default("gemini-2.0-flash")
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  evaluations InfluencerAiEvaluation[]
+
+  @@index([campaignId])
+  @@index([importId])
+  @@index([status])
+}
+
+model InfluencerAiEvaluation {
+  id            String   @id @default(cuid())
+  runId         String
+  run           AiFilterRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  influencerId  String
+  influencer    Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  prefilterLabel PreFilterLabel
+  score         Int?
+  bucket        AiBucket
+  reasons       String?
+  matchedSignals String?
+  riskSignals   String?
+  reviewStatus  ReviewStatus @default(NOT_REVIEWED)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([runId, influencerId])
+  @@index([runId])
+  @@index([influencerId])
+  @@index([bucket])
+  @@index([reviewStatus])
+}
+
+enum AiFilterRunStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum PreFilterLabel {
+  NONE
+  LIKELY_RELEVANT
+  REVIEW_QUEUE
+}
+
+enum AiBucket {
+  APPROVED
+  OKISH
+  REJECTED
+  REVIEW_QUEUE
+}
+
+enum ReviewStatus {
+  NOT_REVIEWED
+  APPROVED_FOR_AI
+  DISCARDED
 }
 
 // ─── RBAC ──────────────────────────────────────────────────
