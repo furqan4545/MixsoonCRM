@@ -196,16 +196,25 @@ model Notification {
 
 // ─── RBAC ──────────────────────────────────────────────────
 
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  roleId    String
-  role      Role     @relation(fields: [roleId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String     @id @default(cuid())
+  email        String     @unique
+  name         String?
+  passwordHash String
+  status       UserStatus @default(PENDING)
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   @@index([roleId])
+  @@index([status])
 }
 
 model Role {

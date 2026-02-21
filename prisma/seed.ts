@@ -1,10 +1,12 @@
 import "dotenv/config";
+import bcrypt from "bcryptjs";
 import { PrismaClient } from "../app/generated/prisma/client";
 
 const prisma = new PrismaClient();
 
+const DEFAULT_ADMIN_PASSWORD = "admin123";
+
 async function main() {
-  // Seed roles
   const admin = await prisma.role.upsert({
     where: { name: "Admin" },
     update: {},
@@ -23,30 +25,55 @@ async function main() {
     create: { name: "Viewer" },
   });
 
-  // Admin permissions — full access to everything
   const adminPermissions = [
     { feature: "data-scraper", action: "read" },
     { feature: "data-scraper", action: "write" },
     { feature: "data-scraper", action: "delete" },
     { feature: "csv-upload", action: "read" },
     { feature: "csv-upload", action: "write" },
+    { feature: "csv-upload", action: "delete" },
+    { feature: "imports", action: "read" },
+    { feature: "imports", action: "write" },
+    { feature: "imports", action: "delete" },
+    { feature: "ai-filter", action: "read" },
+    { feature: "ai-filter", action: "write" },
+    { feature: "ai-filter", action: "delete" },
+    { feature: "queues", action: "read" },
+    { feature: "queues", action: "write" },
+    { feature: "queues", action: "delete" },
+    { feature: "influencers", action: "read" },
+    { feature: "influencers", action: "write" },
+    { feature: "influencers", action: "delete" },
+    { feature: "notifications", action: "read" },
     { feature: "users", action: "read" },
     { feature: "users", action: "write" },
     { feature: "users", action: "delete" },
   ];
 
-  // PIC permissions — can scrape and upload, but not manage users
   const picPermissions = [
     { feature: "data-scraper", action: "read" },
     { feature: "data-scraper", action: "write" },
     { feature: "csv-upload", action: "read" },
     { feature: "csv-upload", action: "write" },
+    { feature: "imports", action: "read" },
+    { feature: "imports", action: "write" },
+    { feature: "ai-filter", action: "read" },
+    { feature: "ai-filter", action: "write" },
+    { feature: "queues", action: "read" },
+    { feature: "queues", action: "write" },
+    { feature: "influencers", action: "read" },
+    { feature: "influencers", action: "write" },
+    { feature: "notifications", action: "read" },
   ];
 
-  // Viewer permissions — read only
   const viewerPermissions = [
     { feature: "data-scraper", action: "read" },
     { feature: "csv-upload", action: "read" },
+    { feature: "imports", action: "read" },
+    { feature: "ai-filter", action: "read" },
+    { feature: "queues", action: "read" },
+    { feature: "influencers", action: "read" },
+    { feature: "notifications", action: "read" },
   ];
 
   for (const perm of adminPermissions) {
@@ -91,18 +118,32 @@ async function main() {
     });
   }
 
-  // Seed a default admin user
+  const passwordHash = await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, 12);
+  const adminEmail = "admin@mixsoon.com";
+
   await prisma.user.upsert({
-    where: { email: "admin@mixsoon.com" },
-    update: {},
+    where: { email: adminEmail },
+    update: { passwordHash, status: "ACTIVE" },
     create: {
-      email: "admin@mixsoon.com",
+      email: adminEmail,
       name: "Admin",
+      passwordHash,
+      status: "ACTIVE",
       roleId: admin.id,
     },
   });
 
-  console.log("Seed completed: 3 roles, permissions, and default admin user.");
+  // Force-update password so login always works (handles stale placeholder hash from migration)
+  await prisma.user.updateMany({
+    where: { email: adminEmail },
+    data: { passwordHash, status: "ACTIVE" },
+  });
+
+  console.log(
+    "Seed completed: 3 roles, permissions, and default admin user (admin@mixsoon.com / " +
+      DEFAULT_ADMIN_PASSWORD +
+      ")",
+  );
 }
 
 main()
