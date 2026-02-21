@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../../lib/prisma";
 
 // GET /api/imports/:id — Get single import with influencers and videos
@@ -6,6 +7,11 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  try {
+    await requirePermission("imports", "read");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const { id } = await params;
     const importRecord = await prisma.import.findUnique({
@@ -44,6 +50,11 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  try {
+    await requirePermission("imports", "delete");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const { id } = await params;
 

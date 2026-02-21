@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requirePermission } from "@/app/lib/rbac";
 import { deleteImportMediaFromGcs } from "../../../../lib/gcs-media";
 import { prisma } from "../../../../lib/prisma";
 
@@ -7,6 +8,11 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  try {
+    await requirePermission("imports", "delete");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const { id } = await params;
     const mediaDelete = await deleteImportMediaFromGcs(id);

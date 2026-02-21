@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
 
 const APIFY_API_KEY = process.env.APIFY_API_KEY!;
@@ -168,6 +169,11 @@ function normalizeSocialLinks(
 
 // POST /api/scrape — Run Apify scrape with SSE progress; incremental writes for existing influencers
 export async function POST(request: NextRequest) {
+  try {
+    await requirePermission("data-scraper", "write");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   let importId: string | null = null;
 
   try {

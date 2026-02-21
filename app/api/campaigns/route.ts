@@ -1,7 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
 
 export async function GET() {
+  try {
+    await requirePermission("ai-filter", "read");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const campaigns = await prisma.campaign.findMany({
       orderBy: { createdAt: "desc" },
@@ -17,6 +23,11 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    await requirePermission("ai-filter", "write");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const body = await request.json();
     const {

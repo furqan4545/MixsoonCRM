@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
 
 // POST /api/imports — Upload CSV, parse usernames, create import record
 export async function POST(request: NextRequest) {
+  try {
+    await requirePermission("imports", "write");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
@@ -120,6 +126,11 @@ export async function POST(request: NextRequest) {
 
 // GET /api/imports — List all imports
 export async function GET() {
+  try {
+    await requirePermission("imports", "read");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const imports = await prisma.import.findMany({
       orderBy: { createdAt: "desc" },

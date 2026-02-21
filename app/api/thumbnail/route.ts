@@ -44,6 +44,12 @@ function setCache(url: string, body: ArrayBuffer, contentType: string) {
 
 // GET /api/thumbnail?url=... — Fetch TikTok thumbnail, convert HEIC to JPEG if needed, serve it
 export async function GET(request: NextRequest) {
+  try {
+    const { requirePermission } = await import("@/app/lib/rbac");
+    await requirePermission("influencers", "read");
+  } catch {
+    return new NextResponse(null, { status: 403 });
+  }
   const url = request.nextUrl.searchParams.get("url");
 
   if (!url) {

@@ -221,6 +221,12 @@ async function runAiFilterBackground(params: {
 
 export async function POST(request: NextRequest) {
   try {
+    const { requirePermission } = await import("@/app/lib/rbac");
+    await requirePermission("ai-filter", "write");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  try {
     const body = await request.json();
     const { campaignId, importId, strictness, targetKeywords, avoidKeywords } =
       body as {

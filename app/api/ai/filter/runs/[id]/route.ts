@@ -1,10 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../../../../lib/prisma";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  try {
+    await requirePermission("ai-filter", "read");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const { id } = await params;
     const run = await prisma.aiFilterRun.findUnique({

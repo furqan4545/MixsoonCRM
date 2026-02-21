@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requirePermission } from "@/app/lib/rbac";
 import { cacheRemoteImageToGcs, isGcsUrl } from "../../../../lib/gcs-media";
 import { prisma } from "../../../../lib/prisma";
 
@@ -135,6 +136,11 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  try {
+    await requirePermission("imports", "write");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id } = await params;
 
   const importRecord = await prisma.import.findUnique({

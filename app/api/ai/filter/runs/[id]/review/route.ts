@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { requirePermission } from "@/app/lib/rbac";
 import {
   mapScoreToBucket,
   scoreWithGemini,
@@ -9,6 +10,11 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  try {
+    await requirePermission("ai-filter", "write");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const { id } = await params;
     const body = await request.json();

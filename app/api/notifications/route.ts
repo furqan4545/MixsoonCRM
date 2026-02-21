@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 500;
 
 export async function GET(request: NextRequest) {
+  try {
+    await requirePermission("notifications", "read");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const limit = Math.min(
@@ -34,6 +40,11 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH() {
   try {
+    await requirePermission("notifications", "write");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  try {
     await prisma.notification.updateMany({
       where: {},
       data: { read: true },
@@ -46,6 +57,11 @@ export async function PATCH() {
 }
 
 export async function DELETE() {
+  try {
+    await requirePermission("notifications", "write");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     await prisma.notification.deleteMany({});
     return NextResponse.json({ ok: true });

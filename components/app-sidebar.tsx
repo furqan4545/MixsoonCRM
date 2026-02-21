@@ -8,6 +8,7 @@ import {
   Layers,
   LayoutDashboard,
   LogOut,
+  ShieldCheck,
   Sparkles,
   Users,
   UserCog,
@@ -35,6 +36,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { NAV_FEATURE_MAP } from "@/app/lib/permissions-client";
 
 const navItems = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -54,6 +56,15 @@ function hasPermission(
   return (permissions ?? []).some(
     (p) => p.feature === feature && p.action === action,
   );
+}
+
+function canSeeNavItem(
+  href: string,
+  permissions: { feature: string; action: string }[] | undefined,
+) {
+  const req = NAV_FEATURE_MAP[href];
+  if (req == null) return true; // Dashboard etc.
+  return hasPermission(permissions, req.feature, req.action);
 }
 
 export function AppSidebar() {
@@ -78,35 +89,50 @@ export function AppSidebar() {
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={
-                      item.href === "/"
-                        ? pathname === "/"
-                        : pathname.startsWith(item.href)
-                    }
-                  >
-                    <Link href={item.href}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {navItems
+                .filter((item) => canSeeNavItem(item.href, permissions))
+                .map((item) => (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={
+                        item.href === "/"
+                          ? pathname === "/"
+                          : pathname.startsWith(item.href)
+                      }
+                    >
+                      <Link href={item.href}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
               {showUserManagement && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={pathname.startsWith("/admin/users")}
-                  >
-                    <Link href="/admin/users">
-                      <UserCog className="h-4 w-4" />
-                      <span>User management</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                <>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={pathname.startsWith("/admin/users")}
+                    >
+                      <Link href="/admin/users">
+                        <UserCog className="h-4 w-4" />
+                        <span>User management</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={pathname.startsWith("/admin/roles")}
+                    >
+                      <Link href="/admin/roles">
+                        <ShieldCheck className="h-4 w-4" />
+                        <span>Roles & permissions</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </>
               )}
             </SidebarMenu>
           </SidebarGroupContent>

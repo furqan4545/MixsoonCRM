@@ -15,9 +15,17 @@ export async function GET() {
   try {
     const roles = await prisma.role.findMany({
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      include: {
+        permissions: { select: { feature: true, action: true } },
+      },
     });
-    return NextResponse.json({ roles });
+    return NextResponse.json({
+      roles: roles.map((r) => ({
+        id: r.id,
+        name: r.name,
+        permissions: r.permissions,
+      })),
+    });
   } catch (error) {
     console.error("[GET /api/admin/roles]", error);
     return NextResponse.json(

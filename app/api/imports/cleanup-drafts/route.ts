@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../../lib/prisma";
 
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -6,6 +7,11 @@ const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // POST /api/imports/cleanup-drafts — Delete DRAFT imports older than 24 hours
 // Can be called via a cron job or on page load.
 export async function POST() {
+  try {
+    await requirePermission("imports", "write");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const cutoff = new Date(Date.now() - DRAFT_TTL_MS);
 
   const stale = await prisma.import.findMany({

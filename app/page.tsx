@@ -4,7 +4,10 @@ import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+type Props = { searchParams: Promise<{ forbidden?: string }> };
+
+export default async function DashboardPage({ searchParams }: Props) {
+  const { forbidden } = await searchParams;
   const [importCount, influencerCount, videoCount, recentImports] =
     await Promise.all([
       prisma.import.count(),
@@ -19,6 +22,11 @@ export default async function DashboardPage() {
 
   return (
     <div className="p-6">
+      {forbidden === "1" && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          You don&apos;t have permission to access that page.
+        </div>
+      )}
       <h1 className="mb-6 text-2xl font-bold tracking-tight">Dashboard</h1>
 
       {/* Stats */}

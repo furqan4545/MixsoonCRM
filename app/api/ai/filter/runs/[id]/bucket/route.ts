@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../../../../../lib/prisma";
 
 // POST /api/ai/filter/runs/:id/bucket — Save all evaluations in a bucket
@@ -6,6 +7,11 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  try {
+    await requirePermission("ai-filter", "write");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id: runId } = await params;
   const { bucket } = (await request.json()) as { bucket: string };
 
@@ -26,6 +32,11 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  try {
+    await requirePermission("ai-filter", "write");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id: runId } = await params;
   const { bucket } = (await request.json()) as { bucket: string };
 
