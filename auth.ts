@@ -1,4 +1,5 @@
 import NextAuth from "next-auth";
+import { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/app/lib/prisma";
@@ -42,6 +43,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!ok) {
           console.error("[auth] authorize: password mismatch for", email);
           return null;
+        }
+
+        if (user.status === "PENDING") {
+          const err = new CredentialsSignin("Account is pending approval.");
+          err.code = "AccountPendingApproval";
+          throw err;
+        }
+        if (user.status === "SUSPENDED") {
+          const err = new CredentialsSignin("Account has been suspended.");
+          err.code = "AccountSuspended";
+          throw err;
         }
 
         return {

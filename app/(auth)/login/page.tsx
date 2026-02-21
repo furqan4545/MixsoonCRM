@@ -27,7 +27,14 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        setError("Invalid email or password");
+        const code = (result as { code?: string }).code;
+        if (code === "AccountPendingApproval") {
+          setError("Your account is still pending approval. Please wait for an admin to activate it.");
+        } else if (code === "AccountSuspended") {
+          setError("Your account has been suspended. Contact an administrator.");
+        } else {
+          setError("Invalid email or password");
+        }
         setLoading(false);
         return;
       }
