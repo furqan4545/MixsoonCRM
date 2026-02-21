@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ThumbnailImage } from "@/components/thumbnail-image";
+import { startSaveImport } from "@/components/save-progress-bar";
 
 function fixThumbnailUrl(url: string | null): string | null {
   if (!url) return null;
@@ -75,6 +76,18 @@ export default function DataScraperPage() {
   useEffect(() => {
     fetch("/api/imports/cleanup-drafts", { method: "POST" }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const completedId = (e as CustomEvent<string>).detail;
+      if (importData && completedId === importData.id) {
+        setSaved(true);
+        setSaving(false);
+      }
+    };
+    window.addEventListener("save-import-complete", handler);
+    return () => window.removeEventListener("save-import-complete", handler);
+  }, [importData]);
 
   const handleUpload = useCallback(async () => {
     if (!file) return;
@@ -226,10 +239,9 @@ export default function DataScraperPage() {
         const err = await res.json();
         throw new Error(err.error ?? "Failed to save");
       }
-      setSaved(true);
+      startSaveImport(importData.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save import");
-    } finally {
       setSaving(false);
     }
   }, [importData]);
@@ -495,8 +507,16 @@ export default function DataScraperPage() {
                 <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Status
                 </span>
-                <Badge variant={saved ? "default" : "secondary"}>
-                  {saved ? "SAVED" : "DRAFT — review & save"}
+                <Badge
+                  variant={
+                    saved ? "default" : saving ? "outline" : "secondary"
+                  }
+                >
+                  {saved
+                    ? "SAVED"
+                    : saving
+                      ? "SAVING TO CLOUD…"
+                      : "Scraping done — review & save"}
                 </Badge>
               </div>
             </div>
@@ -525,6 +545,10 @@ export default function DataScraperPage() {
                     New Import
                   </Button>
                 </>
+              ) : saving ? (
+                <span className="text-sm text-muted-foreground">
+                  Saving in background — you can navigate away
+                </span>
               ) : (
                 <>
                   <Button
@@ -534,7 +558,7 @@ export default function DataScraperPage() {
                     Discard
                   </Button>
                   <Button onClick={handleSave} disabled={saving}>
-                    {saving ? "Saving..." : "Save Import"}
+                    Save Import
                   </Button>
                 </>
               )}

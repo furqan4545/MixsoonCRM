@@ -77,7 +77,11 @@ export default async function ImportsPage() {
                             : "secondary"
                       }
                     >
-                      {imp.status}
+                      {imp.status === "DRAFT"
+                        ? "Scraping done"
+                        : imp.status === "PROCESSING"
+                          ? "Saving to cloud…"
+                          : imp.status}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">{imp.rowCount}</TableCell>

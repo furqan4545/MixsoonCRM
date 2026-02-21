@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  Bell,
   Database,
   FileSpreadsheet,
+  Layers,
   LayoutDashboard,
   Sparkles,
   Users,
@@ -49,6 +51,16 @@ const navItems = [
     href: "/campaigns",
     icon: Sparkles,
   },
+  {
+    title: "Queues",
+    href: "/queues",
+    icon: Layers,
+  },
+  {
+    title: "Notifications",
+    href: "/notifications",
+    icon: Bell,
+  },
 ];
 
 export function AppSidebar() {
@@ -71,7 +83,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton asChild isActive={pathname === item.href}>
+                  <SidebarMenuButton asChild isActive={item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)}>
                     <Link href={item.href}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>

@@ -2,40 +2,41 @@ import { NextRequest, NextResponse } from "next/server";
 import { cacheRemoteImageToGcs, isGcsUrl } from "../../../../lib/gcs-media";
 import { prisma } from "../../../../lib/prisma";
 
-// POST /api/imports/:id/save — Persist a DRAFT import: cache images to GCS and mark COMPLETED
-export async function POST(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params;
-
-  const importRecord = await prisma.import.findUnique({
-    where: { id },
-    include: {
-      influencers: {
-        include: { videos: true },
-      },
-    },
+function notifyQuiet(data: Parameters<typeof prisma.notification.create>[0]["data"]) {
+  return prisma.notification.create({ data }).catch((e) => {
+    console.error("[save] notification error:", e);
   });
+}
 
-  if (!importRecord) {
-    return NextResponse.json({ error: "Import not found" }, { status: 404 });
-  }
-
-  if (importRecord.status !== "DRAFT") {
-    return NextResponse.json(
-      { error: `Import is already ${importRecord.status}` },
-      { status: 400 },
-    );
-  }
-
-  await prisma.import.update({
-    where: { id },
-    data: { status: "PROCESSING" },
-  });
-
+async function processGcsSave(id: string) {
   try {
+    const importRecord = await prisma.import.findUnique({
+      where: { id },
+      include: {
+        influencers: {
+          include: { videos: true },
+        },
+      },
+    });
+
+    if (!importRecord) return;
+
+    const total = importRecord.influencers.length;
+
+    await notifyQuiet({
+      type: "import_save",
+      status: "info",
+      title: `Saving to cloud — ${importRecord.sourceFilename}`,
+      message: `Caching images for ${total} influencer${total === 1 ? "" : "s"}…`,
+      importId: id,
+    });
+
+    let stepIndex = 0;
+
     for (const influencer of importRecord.influencers) {
+      stepIndex += 1;
+      const tag = `[${stepIndex}/${total}]`;
+
       if (influencer.avatarUrl && !isGcsUrl(influencer.avatarUrl)) {
         try {
           const gcsAvatar = await cacheRemoteImageToGcs({
@@ -51,7 +52,7 @@ export async function POST(
             });
           }
         } catch (err) {
-          console.error(`Avatar GCS cache error for ${influencer.username}:`, err);
+          console.error(`Avatar GCS error for ${influencer.username}:`, err);
         }
       }
 
@@ -71,10 +72,24 @@ export async function POST(
               });
             }
           } catch (err) {
-            console.error(`Thumbnail GCS cache error for ${video.id}:`, err);
+            console.error(`Thumbnail GCS error for ${video.id}:`, err);
           }
         }
       }
+
+      await prisma.import.update({
+        where: { id },
+        data: { saveProgress: { increment: 1 } },
+      });
+
+      const thumbCount = influencer.videos.filter((v) => v.thumbnailUrl && !isGcsUrl(v.thumbnailUrl)).length;
+      await notifyQuiet({
+        type: "import_save",
+        status: "success",
+        title: `${tag} @${influencer.username} cached`,
+        message: `Avatar + ${thumbCount} thumbnail${thumbCount === 1 ? "" : "s"} uploaded to cloud.`,
+        importId: id,
+      });
     }
 
     await prisma.import.update({
@@ -82,16 +97,72 @@ export async function POST(
       data: { status: "COMPLETED" },
     });
 
-    return NextResponse.json({ success: true, status: "COMPLETED" });
-  } catch (error) {
-    console.error("Save import error:", error);
-    await prisma.import.update({
-      where: { id },
-      data: { status: "DRAFT" },
+    await notifyQuiet({
+      type: "import_save",
+      status: "success",
+      title: `Save complete — ${importRecord.sourceFilename}`,
+      message: `All images for ${total} influencer${total === 1 ? "" : "s"} cached to cloud.`,
+      importId: id,
     });
+
+    console.log(`[save] Import ${id} completed`);
+  } catch (error) {
+    console.error(`[save] Import ${id} failed:`, error);
+    const errMsg = error instanceof Error ? error.message : "Save failed";
+    await prisma.import
+      .update({
+        where: { id },
+        data: {
+          status: "DRAFT",
+          saveProgress: 0,
+          saveTotal: 0,
+          errorMessage: errMsg,
+        },
+      })
+      .catch(() => {});
+
+    await notifyQuiet({
+      type: "import_save",
+      status: "error",
+      title: "Save to cloud failed",
+      message: errMsg,
+      importId: id,
+    });
+  }
+}
+
+export async function POST(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+
+  const importRecord = await prisma.import.findUnique({
+    where: { id },
+    include: { influencers: { select: { id: true } } },
+  });
+
+  if (!importRecord) {
+    return NextResponse.json({ error: "Import not found" }, { status: 404 });
+  }
+
+  if (importRecord.status !== "DRAFT") {
     return NextResponse.json(
-      { error: "Failed to save import" },
-      { status: 500 },
+      { error: `Import is already ${importRecord.status}` },
+      { status: 400 },
     );
   }
+
+  const total = importRecord.influencers.length;
+
+  await prisma.import.update({
+    where: { id },
+    data: { status: "PROCESSING", saveProgress: 0, saveTotal: total },
+  });
+
+  processGcsSave(id).catch((err) =>
+    console.error("[save] Unhandled:", err),
+  );
+
+  return NextResponse.json({ started: true, total }, { status: 202 });
 }

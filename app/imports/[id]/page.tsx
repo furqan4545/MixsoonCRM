@@ -59,7 +59,11 @@ export default async function ImportDetailPage({
                       : "secondary"
               }
             >
-              {importRecord.status}
+              {importRecord.status === "DRAFT"
+                ? "Scraping done"
+                : importRecord.status === "PROCESSING"
+                  ? "Saving to cloud…"
+                  : importRecord.status}
             </Badge>
             <span>{importRecord.rowCount} rows</span>
             <span>{importRecord.processedCount} processed</span>
@@ -74,6 +78,7 @@ export default async function ImportDetailPage({
         </div>
         <ImportActions
           importId={importRecord.id}
+          status={importRecord.status}
           influencerCount={importRecord.influencers.length}
         />
       </div>

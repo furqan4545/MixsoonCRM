@@ -12,18 +12,43 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Trash2 } from "lucide-react";
+import { startSaveImport } from "@/components/save-progress-bar";
+import { CloudUpload, Trash2 } from "lucide-react";
 
 export function ImportActions({
   importId,
+  status,
   influencerCount,
 }: {
   importId: string;
+  status: string;
   influencerCount: number;
 }) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  const isDraft = status === "DRAFT";
+  const isProcessing = status === "PROCESSING";
+
+  async function handleSaveToCloud() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/imports/${importId}/save`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Save failed");
+      }
+      startSaveImport(importId);
+      router.refresh();
+    } catch (e) {
+      console.error("Save error:", e);
+      alert(e instanceof Error ? e.message : "Failed to save to cloud.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleDelete(mode: "soft" | "hard") {
     setDeleting(true);
@@ -48,13 +73,29 @@ export function ImportActions({
   }
 
   return (
-    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-      <DialogTrigger asChild>
-        <Button variant="destructive" size="sm">
-          <Trash2 className="mr-2 h-4 w-4" />
-          Delete Import
+    <div className="flex items-center gap-2">
+      {isDraft && (
+        <Button
+          size="sm"
+          onClick={handleSaveToCloud}
+          disabled={saving || influencerCount === 0}
+        >
+          <CloudUpload className="mr-2 h-4 w-4" />
+          {saving ? "Saving…" : "Save to cloud"}
         </Button>
-      </DialogTrigger>
+      )}
+      {isProcessing && (
+        <span className="text-sm text-muted-foreground">
+          Saving to cloud…
+        </span>
+      )}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogTrigger asChild>
+          <Button variant="destructive" size="sm">
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete Import
+          </Button>
+        </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Delete Import</DialogTitle>
@@ -118,5 +159,6 @@ export function ImportActions({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </div>
   );
 }

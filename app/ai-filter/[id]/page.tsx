@@ -48,6 +48,7 @@ export default function AiFilterRunPage() {
   const [error, setError] = useState("");
   const [selectedReviewIds, setSelectedReviewIds] = useState<string[]>([]);
   const [actionLoading, setActionLoading] = useState(false);
+  const [bucketAction, setBucketAction] = useState<string | null>(null);
 
   const loadRun = useCallback(async () => {
     setLoading(true);
@@ -87,6 +88,29 @@ export default function AiFilterRunPage() {
     () => (run?.evaluations ?? []).filter((e) => e.bucket === "REJECTED"),
     [run],
   );
+
+  async function handleBucketAction(
+    bucket: "APPROVED" | "OKISH" | "REJECTED",
+    action: "save" | "delete",
+  ) {
+    setBucketAction(`${action}-${bucket}`);
+    try {
+      const res = await fetch(`/api/ai/filter/runs/${runId}/bucket`, {
+        method: action === "save" ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bucket }),
+      });
+      if (!res.ok) {
+        const payload = await res.json();
+        throw new Error(payload.error || `Failed to ${action} bucket`);
+      }
+      await loadRun();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : `Failed to ${action} bucket`);
+    } finally {
+      setBucketAction(null);
+    }
+  }
 
   async function applyReview(action: "approve" | "discard") {
     if (selectedReviewIds.length === 0) return;
@@ -210,9 +234,33 @@ export default function AiFilterRunPage() {
       </div>
 
       <section className="space-y-4">
-        <BucketList title="Approved" rows={approved} variant="default" />
-        <BucketList title="Okish" rows={okish} variant="secondary" />
-        <BucketList title="Rejected" rows={rejected} variant="destructive" />
+        <BucketList
+          title="Approved"
+          bucket="APPROVED"
+          rows={approved}
+          variant="default"
+          onSave={() => handleBucketAction("APPROVED", "save")}
+          onDelete={() => handleBucketAction("APPROVED", "delete")}
+          actionLoading={bucketAction}
+        />
+        <BucketList
+          title="Okish"
+          bucket="OKISH"
+          rows={okish}
+          variant="secondary"
+          onSave={() => handleBucketAction("OKISH", "save")}
+          onDelete={() => handleBucketAction("OKISH", "delete")}
+          actionLoading={bucketAction}
+        />
+        <BucketList
+          title="Rejected"
+          bucket="REJECTED"
+          rows={rejected}
+          variant="destructive"
+          onSave={() => handleBucketAction("REJECTED", "save")}
+          onDelete={() => handleBucketAction("REJECTED", "delete")}
+          actionLoading={bucketAction}
+        />
       </section>
     </div>
   );
@@ -220,18 +268,57 @@ export default function AiFilterRunPage() {
 
 function BucketList({
   title,
+  bucket,
   rows,
   variant,
+  onSave,
+  onDelete,
+  actionLoading,
 }: {
   title: string;
+  bucket: string;
   rows: Evaluation[];
   variant: "default" | "secondary" | "destructive";
+  onSave: () => void;
+  onDelete: () => void;
+  actionLoading: string | null;
 }) {
+  const allSaved = rows.length > 0 && rows.every((r) => r.reviewStatus === "SAVED");
+  const hasSavable = rows.some((r) => r.reviewStatus !== "SAVED");
+
   return (
     <div className="rounded-xl border bg-card">
       <div className="flex items-center justify-between border-b px-4 py-3">
-        <p className="font-semibold">{title}</p>
-        <Badge variant={variant}>{rows.length}</Badge>
+        <div className="flex items-center gap-2">
+          <p className="font-semibold">{title}</p>
+          <Badge variant={variant}>{rows.length}</Badge>
+          {allSaved && (
+            <Badge variant="outline" className="text-green-600 border-green-300">
+              Saved
+            </Badge>
+          )}
+        </div>
+        {rows.length > 0 && (
+          <div className="flex gap-2">
+            {hasSavable && (
+              <Button
+                size="sm"
+                onClick={onSave}
+                disabled={actionLoading !== null}
+              >
+                {actionLoading === `save-${bucket}` ? "Saving..." : "Save"}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onDelete}
+              disabled={actionLoading !== null}
+            >
+              {actionLoading === `delete-${bucket}` ? "Deleting..." : "Delete"}
+            </Button>
+          </div>
+        )}
       </div>
       {rows.length === 0 ? (
         <p className="px-4 py-5 text-sm text-muted-foreground">

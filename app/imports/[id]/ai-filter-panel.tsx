@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 type Campaign = {
@@ -134,7 +135,17 @@ export function AiFilterPanel({
       if (!res.ok) {
         throw new Error(payload.error || payload.details || "AI filter failed");
       }
-      router.push(`/ai-filter/${payload.runId}`);
+      const runId = payload.runId as string;
+      if (runId) {
+        localStorage.setItem("mixsoon_active_ai_run", runId);
+        toast.info("AI filter started", {
+          description: "Running in background. You can navigate away.",
+        });
+        window.dispatchEvent(
+          new CustomEvent("ai-filter-started", { detail: runId }),
+        );
+      }
+      router.push(`/ai-filter/${runId}`);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "AI filter failed");

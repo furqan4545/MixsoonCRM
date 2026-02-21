@@ -64,6 +64,8 @@ model Import {
   status         ImportStatus @default(PENDING)
   usernameLimit  Int          @default(-1)
   videoCount     Int          @default(20)
+  saveProgress   Int          @default(0)
+  saveTotal      Int          @default(0)
   errorMessage   String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -171,6 +173,25 @@ enum ReviewStatus {
   NOT_REVIEWED
   APPROVED_FOR_AI
   DISCARDED
+  SAVED
+}
+
+// ─── NOTIFICATIONS ─────────────────────────────────────────
+
+model Notification {
+  id         String   @id @default(cuid())
+  type       String   // e.g. "import_save", "ai_filter"
+  status     String   @default("info") // "success" | "error" | "info"
+  title      String
+  message    String?
+  read       Boolean  @default(false)
+  importId   String?
+  runId      String?  // AiFilterRun id when type is ai_filter
+  createdAt  DateTime @default(now())
+
+  @@index([read])
+  @@index([createdAt])
+  @@index([status])
 }
 
 // ─── RBAC ──────────────────────────────────────────────────

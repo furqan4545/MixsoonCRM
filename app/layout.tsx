@@ -4,6 +4,11 @@ import "./globals.css";
 
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { SaveProgressBar } from "@/components/save-progress-bar";
+import { AiFilterProgress } from "@/components/ai-filter-progress";
+import { BackgroundJobsButton } from "@/components/background-jobs-button";
+import { NotificationBell } from "@/components/notification-bell";
+import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,12 +38,19 @@ export default function RootLayout({
         <SidebarProvider>
           <AppSidebar />
           <main className="flex-1 overflow-auto">
-            <div className="flex items-center gap-2 border-b px-4 py-2">
+            <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
               <SidebarTrigger />
+              <div className="flex items-center gap-1">
+                <BackgroundJobsButton />
+                <NotificationBell />
+              </div>
             </div>
             {children}
           </main>
+          <SaveProgressBar />
+          <AiFilterProgress />
         </SidebarProvider>
+        <Toaster position="bottom-right" richColors closeButton />
       </body>
     </html>
   );
