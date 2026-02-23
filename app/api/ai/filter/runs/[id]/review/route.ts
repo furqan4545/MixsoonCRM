@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
 import {
   mapScoreToBucket,
+  runPreFilter,
   scoreWithGemini,
 } from "../../../../../../lib/ai-filter";
 import { prisma } from "../../../../../../lib/prisma";
@@ -61,24 +62,24 @@ export async function POST(
 
       for (const evalRow of evaluations) {
         try {
-          const ai = await scoreWithGemini(
-            {
-              username: evalRow.influencer.username,
-              bio: evalRow.influencer.biolink,
-              followers: evalRow.influencer.followers,
-              email: evalRow.influencer.email,
-              phone: evalRow.influencer.phone,
-              socialLinks: evalRow.influencer.socialLinks,
-              videos: evalRow.influencer.videos,
-            },
-            {
-              campaignName: run.campaign.name,
-              notes: run.campaign.notes,
-              targetKeywords: run.campaign.targetKeywords,
-              avoidKeywords: run.campaign.avoidKeywords,
-              strictness: run.strictness,
-            },
-          );
+          const influencerCtx = {
+            username: evalRow.influencer.username,
+            bio: evalRow.influencer.biolink,
+            followers: evalRow.influencer.followers,
+            email: evalRow.influencer.email,
+            phone: evalRow.influencer.phone,
+            socialLinks: evalRow.influencer.socialLinks,
+            videos: evalRow.influencer.videos,
+          };
+          const campaignCtx = {
+            campaignName: run.campaign.name,
+            notes: run.campaign.notes,
+            targetKeywords: run.campaign.targetKeywords,
+            avoidKeywords: run.campaign.avoidKeywords,
+            strictness: run.strictness,
+          };
+          const pre = runPreFilter(influencerCtx, campaignCtx);
+          const ai = await scoreWithGemini(influencerCtx, campaignCtx, pre);
 
           await prisma.influencerAiEvaluation.update({
             where: { id: evalRow.id },

@@ -114,6 +114,7 @@ async function runAiFilterBackground(params: {
               videos: influencer.videos,
             },
             campaignContext,
+            pre,
           );
           const bucket = mapScoreToBucket(ai.score);
           aiProcessedCount += 1;
