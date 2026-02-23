@@ -44,3 +44,7 @@ next-env.d.ts
 
 # GCP credentials
 GCP_CREDS/
+
+# Python scripts (standalone, not part of Next.js app)
+python_files/
+/Users/topg/Desktop/typescript/mixsoon/python_files
