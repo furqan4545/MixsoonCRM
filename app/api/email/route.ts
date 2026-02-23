@@ -1,0 +1,72 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { getCurrentUser } from "@/app/lib/rbac";
+import { prisma } from "@/app/lib/prisma";
+
+export async function GET(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const account = await prisma.emailAccount.findUnique({
+    where: { userId: user.id },
+  });
+  if (!account) {
+    return NextResponse.json({ error: "No email account connected" }, { status: 404 });
+  }
+
+  const url = new URL(req.url);
+  const folder = (url.searchParams.get("folder") ?? "INBOX").toUpperCase();
+  const page = Math.max(1, Number(url.searchParams.get("page") ?? "1"));
+  const pageSize = Math.min(50, Math.max(1, Number(url.searchParams.get("pageSize") ?? "30")));
+  const search = url.searchParams.get("q") ?? "";
+
+  const where: Record<string, unknown> = {
+    accountId: account.id,
+    folder,
+  };
+
+  if (search) {
+    where.OR = [
+      { subject: { contains: search, mode: "insensitive" } },
+      { from: { contains: search, mode: "insensitive" } },
+      { bodyText: { contains: search, mode: "insensitive" } },
+    ];
+  }
+
+  const [emails, total] = await Promise.all([
+    prisma.emailMessage.findMany({
+      where,
+      orderBy: { receivedAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        from: true,
+        to: true,
+        subject: true,
+        bodyText: true,
+        folder: true,
+        isRead: true,
+        isStarred: true,
+        sentAt: true,
+        receivedAt: true,
+        createdAt: true,
+        influencerId: true,
+      },
+    }),
+    prisma.emailMessage.count({ where }),
+  ]);
+
+  const items = emails.map((e) => ({
+    ...e,
+    preview: e.bodyText?.slice(0, 120) ?? "",
+    bodyText: undefined,
+  }));
+
+  return NextResponse.json({
+    items,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  });
+}

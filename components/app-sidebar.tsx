@@ -8,6 +8,7 @@ import {
   Layers,
   LayoutDashboard,
   LogOut,
+  Mail,
   ShieldCheck,
   Sparkles,
   Users,
@@ -46,6 +47,7 @@ const navItems = [
   { title: "Campaign Filters", href: "/campaigns", icon: Sparkles },
   { title: "Queues", href: "/queues", icon: Layers },
   { title: "Notifications", href: "/notifications", icon: Bell },
+  { title: "Email", href: "/email", icon: Mail },
 ];
 
 function hasPermission(

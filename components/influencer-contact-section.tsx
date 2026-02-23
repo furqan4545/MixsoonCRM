@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Mail, Phone, Link2, ExternalLink, Copy, Check } from "lucide-react";
+import Link from "next/link";
+import { Mail, Phone, Link2, ExternalLink, Copy, Check, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -101,6 +102,7 @@ function ContactRow({
 }
 
 interface InfluencerContactSectionProps {
+  influencerId?: string;
   email: string | null;
   phone: string | null;
   bioLinkUrl: string | null;
@@ -108,6 +110,7 @@ interface InfluencerContactSectionProps {
 }
 
 export function InfluencerContactSection({
+  influencerId,
   email,
   phone,
   bioLinkUrl,
@@ -138,13 +141,32 @@ export function InfluencerContactSection({
       </h3>
       <div className="space-y-2">
         {email && (
-          <ContactRow
-            icon={<Mail className="h-4 w-4" />}
-            label="email"
-            href={`mailto:${email}`}
-            copyValue={email}
-            displayText={email}
-          />
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <ContactRow
+                icon={<Mail className="h-4 w-4" />}
+                label="email"
+                href={`mailto:${email}`}
+                copyValue={email}
+                displayText={email}
+              />
+            </div>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button asChild variant="outline" size="sm" className="shrink-0 gap-1.5">
+                    <Link
+                      href={`/email/compose?to=${encodeURIComponent(email)}${influencerId ? `&influencerId=${influencerId}` : ""}`}
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      Send
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Compose email in MIXSOON</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         )}
         {phone && (
           <ContactRow

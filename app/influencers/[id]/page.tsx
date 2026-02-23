@@ -118,6 +118,7 @@ export default async function InfluencerDetailPage({
             {/* Contact & socials — tap to open, copy button for all */}
             <div className="mt-4">
               <InfluencerContactSection
+                influencerId={influencer.id}
                 email={influencer.email}
                 phone={influencer.phone}
                 bioLinkUrl={influencer.bioLinkUrl}

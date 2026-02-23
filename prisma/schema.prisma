@@ -28,6 +28,7 @@ model Influencer {
   import   Import? @relation(fields: [importId], references: [id], onDelete: SetNull)
   importId String?
   aiEvaluations InfluencerAiEvaluation[]
+  emailMessages EmailMessage[]
 
   @@index([username])
   @@index([importId])
@@ -213,6 +214,8 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  emailAccount EmailAccount?
+
   @@index([roleId])
   @@index([status])
 }
@@ -234,4 +237,73 @@ model Permission {
 
   @@unique([roleId, feature, action])
   @@index([roleId])
+}
+
+// ─── EMAIL ──────────────────────────────────────────────
+
+model EmailAccount {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailAddress String
+  displayName  String?
+
+  smtpHost      String
+  smtpPort      Int
+  imapHost      String
+  imapPort      Int
+  username      String
+  encryptedPass String
+
+  lastSyncAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  messages EmailMessage[]
+}
+
+model EmailMessage {
+  id        String  @id @default(cuid())
+  accountId String
+  account   EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  messageId String? // RFC 2822 Message-ID header for threading
+  inReplyTo String? // Message-ID this is a reply to
+
+  from    String
+  to      String[]
+  cc      String[]   @default([])
+  subject String
+  bodyHtml String?
+  bodyText String?
+
+  folder    EmailFolder @default(INBOX)
+  isRead    Boolean     @default(false)
+  isStarred Boolean     @default(false)
+
+  sentAt     DateTime?
+  receivedAt DateTime?
+
+  influencerId String?
+  influencer   Influencer? @relation(fields: [influencerId], references: [id], onDelete: SetNull)
+
+  threadId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId])
+  @@index([folder])
+  @@index([influencerId])
+  @@index([threadId])
+  @@index([isRead])
+  @@index([messageId])
+}
+
+enum EmailFolder {
+  INBOX
+  SENT
+  DRAFTS
+  SPAM
+  TRASH
 }

@@ -12,6 +12,7 @@ export const FEATURES = {
   INFLUENCERS: "influencers",
   NOTIFICATIONS: "notifications",
   USERS: "users",
+  EMAIL: "email",
 } as const;
 
 /** Sidebar nav: path → required permission (read). null = no requirement (e.g. Dashboard). */
@@ -26,4 +27,5 @@ export const NAV_FEATURE_MAP: Record<
   "/campaigns": { feature: FEATURES.AI_FILTER, action: "read" },
   "/queues": { feature: FEATURES.QUEUES, action: "read" },
   "/notifications": { feature: FEATURES.NOTIFICATIONS, action: "read" },
+  "/email": { feature: FEATURES.EMAIL, action: "read" },
 };
