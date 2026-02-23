@@ -15,7 +15,7 @@ function hasSessionCookie(cookieHeader: string | null): boolean {
 export function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
-  if (pathname.startsWith("/api/auth") || pathname.startsWith("/api/dev")) {
+  if (pathname.startsWith("/api/auth") || pathname.startsWith("/api/dev") || pathname.startsWith("/api/debug")) {
     return NextResponse.next();
   }
 
