@@ -1,10 +1,12 @@
-import { type NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse, after } from "next/server";
 import {
   mapScoreToBucket,
   runPreFilter,
   scoreWithGemini,
 } from "../../../lib/ai-filter";
 import { prisma } from "../../../lib/prisma";
+
+export const maxDuration = 300;
 
 function parseCsvKeywords(value: string | undefined | null): string[] {
   if (!value) return [];
@@ -311,12 +313,15 @@ export async function POST(request: NextRequest) {
       strictness: resolvedStrictness,
     };
 
-    runAiFilterBackground({
-      runId: run.id,
-      campaignName: campaign.name,
-      influencers,
-      campaignContext,
-    }).catch((err) => console.error("[AI filter] unhandled:", err));
+    after(
+      () =>
+        runAiFilterBackground({
+          runId: run.id,
+          campaignName: campaign.name,
+          influencers,
+          campaignContext,
+        }).catch((err) => console.error("[AI filter] unhandled:", err)),
+    );
 
     return NextResponse.json(
       { runId: run.id, totalCount: influencers.length },
