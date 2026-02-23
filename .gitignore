@@ -40,7 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-/app/generated/prisma
+# Prisma generated client (in node_modules by default)
 
 # GCP credentials
 GCP_CREDS/
