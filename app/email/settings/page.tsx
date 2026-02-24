@@ -11,12 +11,10 @@ export default async function EmailSettingsPage() {
     where: { userId: user.id },
     select: {
       emailAddress: true,
-      displayName: true,
       smtpHost: true,
       smtpPort: true,
       imapHost: true,
       imapPort: true,
-      username: true,
     },
   });
 

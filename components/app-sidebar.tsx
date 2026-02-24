@@ -35,6 +35,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { NAV_FEATURE_MAP } from "@/app/lib/permissions-client";
@@ -65,7 +66,7 @@ function canSeeNavItem(
   permissions: { feature: string; action: string }[] | undefined,
 ) {
   const req = NAV_FEATURE_MAP[href];
-  if (req == null) return true; // Dashboard etc.
+  if (req == null) return true;
   return hasPermission(permissions, req.feature, req.action);
 }
 
@@ -77,13 +78,15 @@ export function AppSidebar() {
   const showUserManagement = hasPermission(permissions, "users", "write");
 
   return (
-    <Sidebar>
+    <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
         <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <span className="text-sm font-bold">M</span>
           </div>
-          <span className="text-lg font-semibold tracking-tight">MIXSOON</span>
+          <span className="text-lg font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+            MIXSOON
+          </span>
         </Link>
       </SidebarHeader>
       <SidebarContent>
@@ -97,6 +100,7 @@ export function AppSidebar() {
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
                       asChild
+                      tooltip={item.title}
                       isActive={
                         item.href === "/"
                           ? pathname === "/"
@@ -115,6 +119,7 @@ export function AppSidebar() {
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       asChild
+                      tooltip="User management"
                       isActive={pathname.startsWith("/admin/users")}
                     >
                       <Link href="/admin/users">
@@ -126,6 +131,7 @@ export function AppSidebar() {
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       asChild
+                      tooltip="Roles & permissions"
                       isActive={pathname.startsWith("/admin/roles")}
                     >
                       <Link href="/admin/roles">
@@ -181,10 +187,11 @@ export function AppSidebar() {
             </SidebarMenuItem>
           </SidebarMenu>
         )}
-        <p className="px-2 pb-2 pt-1 text-xs text-muted-foreground">
+        <p className="px-2 pb-2 pt-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
           MIXSOON CRM v0.1.0
         </p>
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   );
 }

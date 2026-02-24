@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Lock } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,54 +11,78 @@ import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
-const PROVIDER_PRESETS: Record<
-  string,
-  { smtpHost: string; smtpPort: number; imapHost: string; imapPort: number }
+type Provider = "google" | "hiworks";
+
+const PROVIDERS: Record<
+  Provider,
+  {
+    label: string;
+    smtpHost: string;
+    smtpPort: number;
+    imapHost: string;
+    imapPort: number;
+    placeholder: string;
+    note: string;
+  }
 > = {
   google: {
+    label: "Gmail",
     smtpHost: "smtp.gmail.com",
     smtpPort: 587,
     imapHost: "imap.gmail.com",
     imapPort: 993,
+    placeholder: "you@gmail.com",
+    note: "Requires an App Password if 2FA is enabled. Go to Google Account → Security → App Passwords.",
   },
   hiworks: {
-    smtpHost: "smtp.hiworks.com",
-    smtpPort: 587,
-    imapHost: "imap.hiworks.com",
-    imapPort: 993,
+    label: "Hiworks",
+    smtpHost: "smtps.hiworks.com",
+    smtpPort: 465,
+    imapHost: "pop3s.hiworks.com",
+    imapPort: 995,
+    placeholder: "you@company.hiworks.com",
+    note: "Enable POP3/SMTP in Hiworks settings first, and set a dedicated POP3/SMTP password.",
   },
 };
 
+function detectProvider(smtpHost: string): Provider | null {
+  if (smtpHost.includes("gmail")) return "google";
+  if (smtpHost.includes("hiworks")) return "hiworks";
+  return null;
+}
+
 export type EmailAccountData = {
   emailAddress: string;
-  displayName: string;
   smtpHost: string;
   smtpPort: number;
   imapHost: string;
   imapPort: number;
-  username: string;
   password: string;
 };
 
 interface Props {
   existing?: {
     emailAddress: string;
-    displayName: string | null;
     smtpHost: string;
     smtpPort: number;
     imapHost: string;
     imapPort: number;
-    username: string;
   } | null;
 }
 
 export function EmailAccountForm({ existing }: Props) {
   const router = useRouter();
+  const isConnected = !!existing;
+  const lockedProvider = existing ? detectProvider(existing.smtpHost) : null;
+
+  const [provider, setProvider] = useState<Provider>(
+    lockedProvider ?? "google",
+  );
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -65,41 +90,45 @@ export function EmailAccountForm({ existing }: Props) {
     imap: { ok: boolean; error?: string } | null;
   }>({ smtp: null, imap: null });
 
-  const [form, setForm] = useState<EmailAccountData>({
-    emailAddress: existing?.emailAddress ?? "",
-    displayName: existing?.displayName ?? "",
-    smtpHost: existing?.smtpHost ?? "",
-    smtpPort: existing?.smtpPort ?? 587,
-    imapHost: existing?.imapHost ?? "",
-    imapPort: existing?.imapPort ?? 993,
-    username: existing?.username ?? "",
-    password: "",
+  const [email, setEmail] = useState(existing?.emailAddress ?? "");
+  const [password, setPassword] = useState("");
+
+  const preset = PROVIDERS[provider];
+
+  const buildPayload = () => ({
+    emailAddress: email,
+    smtpHost: preset.smtpHost,
+    smtpPort: preset.smtpPort,
+    imapHost: preset.imapHost,
+    imapPort: preset.imapPort,
+    username: email,
+    password,
   });
 
-  const update = (field: keyof EmailAccountData, value: string | number) =>
-    setForm((prev) => ({ ...prev, [field]: value }));
-
-  const applyPreset = (provider: string) => {
-    const p = PROVIDER_PRESETS[provider];
-    if (!p) return;
-    setForm((prev) => ({ ...prev, ...p }));
-  };
-
   const handleTest = async () => {
+    if (!email) {
+      toast.error("Enter your email address");
+      return;
+    }
+    if (!password && !isConnected) {
+      toast.error("Enter your password");
+      return;
+    }
     setTesting(true);
     setTestResult({ smtp: null, imap: null });
     try {
       const res = await fetch("/api/email/account/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(buildPayload()),
       });
+      if (!res.ok) throw new Error("Server error");
       const data = await res.json();
       setTestResult(data);
       if (data.smtp?.ok && data.imap?.ok) {
         toast.success("Connection test passed");
       } else {
-        toast.error("Connection test failed — check settings");
+        toast.error("Connection test failed — check credentials");
       }
     } catch {
       toast.error("Test request failed");
@@ -109,12 +138,12 @@ export function EmailAccountForm({ existing }: Props) {
   };
 
   const handleSave = async () => {
-    if (!form.emailAddress || !form.username || !form.smtpHost || !form.imapHost) {
-      toast.error("Please fill in all required fields");
+    if (!email) {
+      toast.error("Enter your email address");
       return;
     }
-    if (!existing && !form.password) {
-      toast.error("Password is required");
+    if (!isConnected && !password) {
+      toast.error("Enter your password");
       return;
     }
     setSaving(true);
@@ -122,13 +151,17 @@ export function EmailAccountForm({ existing }: Props) {
       const res = await fetch("/api/email/account", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(buildPayload()),
       });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error ?? "Failed to save");
+        let message = "Failed to save";
+        try {
+          const err = await res.json();
+          message = err.error ?? message;
+        } catch {}
+        throw new Error(message);
       }
-      toast.success("Email account saved");
+      toast.success("Email account connected");
       router.push("/email/inbox");
       router.refresh();
     } catch (err: unknown) {
@@ -139,7 +172,8 @@ export function EmailAccountForm({ existing }: Props) {
   };
 
   const handleDisconnect = async () => {
-    if (!confirm("Disconnect your email account? All synced emails will be removed.")) return;
+    if (!confirm("Disconnect your email account? All synced emails will be removed."))
+      return;
     try {
       const res = await fetch("/api/email/account", { method: "DELETE" });
       if (res.ok) {
@@ -160,123 +194,74 @@ export function EmailAccountForm({ existing }: Props) {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Provider Quick Setup</CardTitle>
-          <CardDescription>
-            Select your provider to auto-fill server settings, or configure
-            manually.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => applyPreset("google")}>
-            Google / Gmail
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => applyPreset("hiworks")}>
-            Hiworks
-          </Button>
-        </CardContent>
-      </Card>
+      <Tabs
+        value={provider}
+        onValueChange={(v) => {
+          if (!isConnected) setProvider(v as Provider);
+        }}
+      >
+        <div className="relative">
+          <TabsList className="w-full">
+            {(Object.keys(PROVIDERS) as Provider[]).map((key) => (
+              <TabsTrigger
+                key={key}
+                value={key}
+                disabled={isConnected && key !== provider}
+                className="flex-1"
+              >
+                {PROVIDERS[key].label}
+                {isConnected && key === provider && (
+                  <Lock className="ml-1.5 h-3 w-3" />
+                )}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Account Details</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="emailAddress">Email Address *</Label>
-              <Input
-                id="emailAddress"
-                placeholder="you@company.com"
-                value={form.emailAddress}
-                onChange={(e) => update("emailAddress", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="displayName">Display Name</Label>
-              <Input
-                id="displayName"
-                placeholder="Your Name"
-                value={form.displayName}
-                onChange={(e) => update("displayName", e.target.value)}
-              />
-            </div>
-          </div>
+        {(Object.keys(PROVIDERS) as Provider[]).map((key) => (
+          <TabsContent key={key} value={key} className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  {isConnected
+                    ? `Connected — ${PROVIDERS[key].label}`
+                    : `Connect with ${PROVIDERS[key].label}`}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor={`email-${key}`}>Email Address *</Label>
+                  <Input
+                    id={`email-${key}`}
+                    type="email"
+                    placeholder={PROVIDERS[key].placeholder}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="username">Username *</Label>
-              <Input
-                id="username"
-                placeholder="you@company.com"
-                value={form.username}
-                onChange={(e) => update("username", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">
-                Password {existing ? "(leave blank to keep current)" : "*"}
-              </Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={form.password}
-                onChange={(e) => update("password", e.target.value)}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+                <div className="space-y-2">
+                  <Label htmlFor={`password-${key}`}>
+                    Password{" "}
+                    {isConnected ? "(leave blank to keep current)" : "*"}
+                  </Label>
+                  <Input
+                    id={`password-${key}`}
+                    type="password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Server Settings</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="smtpHost">SMTP Host *</Label>
-              <Input
-                id="smtpHost"
-                placeholder="smtp.gmail.com"
-                value={form.smtpHost}
-                onChange={(e) => update("smtpHost", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtpPort">SMTP Port</Label>
-              <Input
-                id="smtpPort"
-                type="number"
-                value={form.smtpPort}
-                onChange={(e) => update("smtpPort", Number(e.target.value))}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="imapHost">IMAP Host *</Label>
-              <Input
-                id="imapHost"
-                placeholder="imap.gmail.com"
-                value={form.imapHost}
-                onChange={(e) => update("imapHost", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="imapPort">IMAP Port</Label>
-              <Input
-                id="imapPort"
-                type="number"
-                value={form.imapPort}
-                onChange={(e) => update("imapPort", Number(e.target.value))}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+                <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                  {PROVIDERS[key].note}
+                </p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        ))}
+      </Tabs>
 
       {(testResult.smtp || testResult.imap) && (
         <Card>
@@ -286,21 +271,31 @@ export function EmailAccountForm({ existing }: Props) {
           <CardContent className="space-y-2 text-sm">
             {testResult.smtp && (
               <div className="flex items-center gap-2">
-                <span className={testResult.smtp.ok ? "text-green-600" : "text-red-600"}>
+                <span
+                  className={
+                    testResult.smtp.ok ? "text-green-600" : "text-red-600"
+                  }
+                >
                   {testResult.smtp.ok ? "✓" : "✗"}
                 </span>
                 <span>
-                  SMTP: {testResult.smtp.ok ? "Connected" : testResult.smtp.error}
+                  SMTP:{" "}
+                  {testResult.smtp.ok ? "Connected" : testResult.smtp.error}
                 </span>
               </div>
             )}
             {testResult.imap && (
               <div className="flex items-center gap-2">
-                <span className={testResult.imap.ok ? "text-green-600" : "text-red-600"}>
+                <span
+                  className={
+                    testResult.imap.ok ? "text-green-600" : "text-red-600"
+                  }
+                >
                   {testResult.imap.ok ? "✓" : "✗"}
                 </span>
                 <span>
-                  IMAP: {testResult.imap.ok ? "Connected" : testResult.imap.error}
+                  IMAP:{" "}
+                  {testResult.imap.ok ? "Connected" : testResult.imap.error}
                 </span>
               </div>
             )}
@@ -310,13 +305,21 @@ export function EmailAccountForm({ existing }: Props) {
 
       <div className="flex items-center gap-3">
         <Button onClick={handleSave} disabled={saving}>
-          {saving ? "Saving..." : existing ? "Update Account" : "Connect Account"}
+          {saving
+            ? "Saving..."
+            : isConnected
+              ? "Update Account"
+              : "Connect Account"}
         </Button>
         <Button variant="outline" onClick={handleTest} disabled={testing}>
           {testing ? "Testing..." : "Test Connection"}
         </Button>
-        {existing && (
-          <Button variant="destructive" onClick={handleDisconnect} className="ml-auto">
+        {isConnected && (
+          <Button
+            variant="destructive"
+            onClick={handleDisconnect}
+            className="ml-auto"
+          >
             Disconnect
           </Button>
         )}

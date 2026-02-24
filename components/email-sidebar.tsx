@@ -16,7 +16,6 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 const folders = [
@@ -55,8 +54,8 @@ export function EmailSidebar() {
   };
 
   return (
-    <div className="flex h-full w-[220px] shrink-0 flex-col border-r bg-muted/30">
-      <div className="flex flex-col gap-2 p-3">
+    <div className="bg-sidebar text-sidebar-foreground flex h-svh w-[220px] shrink-0 flex-col border-r border-sidebar-border">
+      <div className="flex flex-col gap-2 border-b border-sidebar-border p-3">
         <Button asChild size="sm" className="w-full justify-start gap-2">
           <Link href="/email/compose">
             <PenSquare className="h-4 w-4" />
@@ -74,9 +73,12 @@ export function EmailSidebar() {
           {syncing ? "Syncing..." : "Sync Mail"}
         </Button>
       </div>
-      <Separator />
+
       <ScrollArea className="flex-1">
-        <nav className="flex flex-col gap-0.5 p-2">
+        <div className="flex flex-col gap-1 p-2">
+          <p className="px-2 py-1 text-xs font-medium text-sidebar-foreground/50">
+            Folders
+          </p>
           {folders.map((folder) => {
             const isActive =
               pathname === folder.href ||
@@ -87,29 +89,35 @@ export function EmailSidebar() {
                 key={folder.href}
                 href={folder.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
-                  isActive && "bg-accent text-accent-foreground",
+                  "flex items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors",
+                  "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  isActive
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    : "text-sidebar-foreground",
                 )}
               >
                 <folder.icon className="h-4 w-4 shrink-0" />
                 <span className="flex-1 truncate">{folder.title}</span>
                 {count > 0 && (
-                  <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                  <span className="ml-auto rounded-full bg-sidebar-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-sidebar-primary-foreground">
                     {count}
                   </span>
                 )}
               </Link>
             );
           })}
-        </nav>
+        </div>
       </ScrollArea>
-      <Separator />
-      <div className="p-2">
+
+      <div className="border-t border-sidebar-border p-2">
         <Link
           href="/email/settings"
           className={cn(
-            "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
-            pathname === "/email/settings" && "bg-accent text-accent-foreground",
+            "flex items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors",
+            "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            pathname === "/email/settings"
+              ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+              : "text-sidebar-foreground",
           )}
         >
           <Settings className="h-4 w-4 shrink-0" />
