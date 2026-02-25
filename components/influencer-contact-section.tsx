@@ -79,11 +79,19 @@ function ContactRow({
   displayText,
 }: ContactRowProps) {
   const text = displayText ?? copyValue;
+  const isInternalHref = Boolean(href?.startsWith("/"));
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="shrink-0 text-muted-foreground">{icon}</span>
-        {href ? (
+        {href && isInternalHref ? (
+          <Link
+            href={href}
+            className="min-w-0 truncate text-sm text-blue-600 hover:underline dark:text-blue-400"
+          >
+            {text}
+          </Link>
+        ) : href ? (
           <a
             href={href}
             target="_blank"
@@ -133,6 +141,9 @@ export function InfluencerContactSection({
   const hasAny =
     email || phone || bioLinkUrl || socialUrls.length > 0;
   if (!hasAny) return null;
+  const composeHref = email
+    ? `/email/compose?to=${encodeURIComponent(email)}${influencerId ? `&influencerId=${influencerId}` : ""}`
+    : "";
 
   return (
     <div className="space-y-3">
@@ -146,7 +157,7 @@ export function InfluencerContactSection({
               <ContactRow
                 icon={<Mail className="h-4 w-4" />}
                 label="email"
-                href={`mailto:${email}`}
+                href={composeHref}
                 copyValue={email}
                 displayText={email}
               />
@@ -156,7 +167,7 @@ export function InfluencerContactSection({
                 <TooltipTrigger asChild>
                   <Button asChild variant="outline" size="sm" className="shrink-0 gap-1.5">
                     <Link
-                      href={`/email/compose?to=${encodeURIComponent(email)}${influencerId ? `&influencerId=${influencerId}` : ""}`}
+                      href={composeHref}
                     >
                       <Send className="h-3.5 w-3.5" />
                       Send
