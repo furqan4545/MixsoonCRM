@@ -138,7 +138,7 @@ export function EmailDetail({ emailId }: Props) {
         </Button>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="*:data-[slot=scroll-area-viewport]:overscroll-contain min-h-0 flex-1">
         <div className="space-y-4 p-6">
           <div>
             <h1 className="text-xl font-semibold">

@@ -15,8 +15,8 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { emitEmailRefresh, useEmailRefresh } from "@/app/lib/email-events";
 
 const folders = [
   { title: "Inbox", href: "/email/inbox", icon: Inbox, countKey: "INBOX" },
@@ -44,17 +44,22 @@ export function EmailSidebar() {
     fetchCounts();
   }, [fetchCounts]);
 
+  useEmailRefresh(fetchCounts);
+
   const handleSync = () => {
     startSync(async () => {
       try {
         const res = await fetch("/api/email/sync", { method: "POST" });
-        if (res.ok) fetchCounts();
+        if (res.ok) {
+          fetchCounts();
+          emitEmailRefresh();
+        }
       } catch {}
     });
   };
 
   return (
-    <div className="bg-sidebar text-sidebar-foreground flex h-svh w-[220px] shrink-0 flex-col border-r border-sidebar-border">
+    <div className="bg-sidebar text-sidebar-foreground flex h-full w-[220px] shrink-0 flex-col overflow-hidden border-r border-sidebar-border">
       <div className="flex flex-col gap-2 border-b border-sidebar-border p-3">
         <Button asChild size="sm" className="w-full justify-start gap-2">
           <Link href="/email/compose">
@@ -74,8 +79,8 @@ export function EmailSidebar() {
         </Button>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-1 p-2">
+      <div className="flex-1 p-2">
+        <div className="flex flex-col gap-1">
           <p className="px-2 py-1 text-xs font-medium text-sidebar-foreground/50">
             Folders
           </p>
@@ -107,9 +112,9 @@ export function EmailSidebar() {
             );
           })}
         </div>
-      </ScrollArea>
+      </div>
 
-      <div className="border-t border-sidebar-border p-2">
+      <div className="mt-auto border-t border-sidebar-border p-2">
         <Link
           href="/email/settings"
           className={cn(

@@ -186,7 +186,7 @@ export function EmailAccountForm({ existing }: Props) {
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-6">
+    <div className="mx-auto h-full max-w-2xl space-y-6 overflow-auto p-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Email Account</h1>
         <p className="text-muted-foreground">

@@ -23,7 +23,10 @@ export async function POST() {
     return NextResponse.json({ error: "No email account connected" }, { status: 404 });
   }
 
-  const since = account.lastSyncAt ?? undefined;
+  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  const since = account.lastSyncAt && account.lastSyncAt > threeDaysAgo
+    ? account.lastSyncAt
+    : threeDaysAgo;
   let totalSynced = 0;
 
   for (const { remote, local } of SYNC_FOLDERS) {

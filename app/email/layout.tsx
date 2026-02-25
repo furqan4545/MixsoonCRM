@@ -4,5 +4,5 @@ export default async function EmailLayout({
   children,
 }: { children: React.ReactNode }) {
   await requirePermissionOrRedirect("email", "read");
-  return <>{children}</>;
+  return <div className="h-full min-h-0 overflow-hidden">{children}</div>;
 }

@@ -2,17 +2,14 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
-import {
-  SidebarProvider,
-  SidebarTrigger,
-  useSidebar,
-} from "@/components/ui/sidebar";
+import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { EmailSidebar } from "@/components/email-sidebar";
 import { SaveProgressBar } from "@/components/save-progress-bar";
 import { AiFilterProgress } from "@/components/ai-filter-progress";
 import { BackgroundJobsButton } from "@/components/background-jobs-button";
 import { NotificationBell } from "@/components/notification-bell";
+import { cn } from "@/lib/utils";
 
 const authPaths = ["/login", "/register", "/pending-approval"];
 
@@ -42,17 +39,25 @@ function ShellContent({ children }: { children: React.ReactNode }) {
   return (
     <>
       <AppSidebar />
-      {showEmailSidebar && <EmailSidebar />}
-      <main className="flex-1 overflow-auto">
-        <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
-          <SidebarTrigger />
-          <div className="flex items-center gap-1">
-            <BackgroundJobsButton />
-            <NotificationBell />
-          </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex h-14 items-center justify-end gap-1 border-b px-4">
+          <BackgroundJobsButton />
+          <NotificationBell />
         </div>
-        {children}
-      </main>
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {showEmailSidebar && <EmailSidebar />}
+          <main
+            className={cn(
+              "min-h-0 min-w-0 flex-1",
+              showEmailSidebar
+                ? "overflow-hidden"
+                : "overflow-auto overscroll-contain",
+            )}
+          >
+            {children}
+          </main>
+        </div>
+      </div>
       <SidebarAutoCollapse />
       <SaveProgressBar />
       <AiFilterProgress />
@@ -68,7 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <SidebarProvider>
+    <SidebarProvider className="h-svh overflow-hidden">
       <ShellContent>{children}</ShellContent>
     </SidebarProvider>
   );

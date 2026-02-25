@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { emitEmailRefresh } from "@/app/lib/email-events";
 
 interface Props {
   defaultTo?: string;
@@ -82,8 +83,8 @@ export function EmailCompose({
       }
 
       toast.success("Email sent");
+      emitEmailRefresh();
       router.push("/email/sent");
-      router.refresh();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Send failed");
     } finally {
@@ -125,6 +126,7 @@ export function EmailCompose({
         });
       }
       toast.success("Draft saved");
+      emitEmailRefresh();
     } catch {
       toast.error("Failed to save draft");
     } finally {

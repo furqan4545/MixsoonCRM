@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useEmailRefresh } from "@/app/lib/email-events";
 
 interface EmailItem {
   id: string;
@@ -64,6 +65,8 @@ export function EmailList({ folder, title }: Props) {
     fetchEmails();
   }, [fetchEmails]);
 
+  useEmailRefresh(fetchEmails);
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
@@ -99,7 +102,7 @@ export function EmailList({ folder, title }: Props) {
         </form>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="*:data-[slot=scroll-area-viewport]:overscroll-contain min-h-0 flex-1">
         {loading && emails.length === 0 ? (
           <div className="flex items-center justify-center py-20 text-muted-foreground">
             Loading...
