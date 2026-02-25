@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/app/lib/rbac";
 import { prisma } from "@/app/lib/prisma";
 import { encrypt } from "@/app/lib/crypto";
+import {
+  deleteAllAccountEmailAttachments,
+} from "@/app/lib/email-attachments";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -94,6 +97,13 @@ export async function DELETE() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const accountIds = (
+    await prisma.emailAccount.findMany({
+      where: { userId: user.id },
+      select: { id: true },
+    })
+  ).map((a) => a.id);
+
   await prisma.emailMessage.deleteMany({
     where: { account: { userId: user.id } },
   });
@@ -101,6 +111,10 @@ export async function DELETE() {
   await prisma.emailAccount.deleteMany({
     where: { userId: user.id },
   });
+
+  await Promise.all(
+    accountIds.map((accountId) => deleteAllAccountEmailAttachments(accountId)),
+  );
 
   return NextResponse.json({ ok: true });
 }

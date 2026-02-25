@@ -24,6 +24,13 @@ export async function GET(req: NextRequest) {
     folder,
   };
 
+  const orderBy =
+    folder === "SENT"
+      ? [{ sentAt: "desc" as const }, { createdAt: "desc" as const }]
+      : folder === "DRAFTS"
+        ? [{ updatedAt: "desc" as const }, { createdAt: "desc" as const }]
+        : [{ receivedAt: "desc" as const }, { createdAt: "desc" as const }];
+
   if (search) {
     where.OR = [
       { subject: { contains: search, mode: "insensitive" } },
@@ -35,7 +42,7 @@ export async function GET(req: NextRequest) {
   const [emails, total] = await Promise.all([
     prisma.emailMessage.findMany({
       where,
-      orderBy: { receivedAt: "desc" },
+      orderBy,
       skip: (page - 1) * pageSize,
       take: pageSize,
       select: {

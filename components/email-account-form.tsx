@@ -46,7 +46,7 @@ const PROVIDERS: Record<
     imapHost: "pop3s.hiworks.com",
     imapPort: 995,
     placeholder: "you@company.hiworks.com",
-    note: "Enable POP3/SMTP in Hiworks settings first, and set a dedicated POP3/SMTP password.",
+    note: "Enable POP3/SMTP in Hiworks settings first and use a dedicated mail-client password. Receive sync uses POP3 inbox only.",
   },
 };
 
@@ -125,7 +125,8 @@ export function EmailAccountForm({ existing }: Props) {
       if (!res.ok) throw new Error("Server error");
       const data = await res.json();
       setTestResult(data);
-      if (data.smtp?.ok && data.imap?.ok) {
+      const passed = data.smtp?.ok && data.imap?.ok;
+      if (passed) {
         toast.success("Connection test passed");
       } else {
         toast.error("Connection test failed — check credentials");
@@ -294,7 +295,7 @@ export function EmailAccountForm({ existing }: Props) {
                   {testResult.imap.ok ? "✓" : "✗"}
                 </span>
                 <span>
-                  IMAP:{" "}
+                  {provider === "hiworks" ? "POP3" : "IMAP"}:{" "}
                   {testResult.imap.ok ? "Connected" : testResult.imap.error}
                 </span>
               </div>

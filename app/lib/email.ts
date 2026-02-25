@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import tls from "node:tls";
 import { ImapFlow } from "imapflow";
 import { simpleParser, type ParsedMail } from "mailparser";
 import type { EmailAccount } from "@prisma/client";
@@ -68,6 +69,190 @@ export async function testImapConnection(
   }
 }
 
+export async function testPop3Connection(
+  host: string,
+  port: number,
+  user: string,
+  pass: string,
+): Promise<{ ok: boolean; error?: string }> {
+  let client: Pop3Client | null = null;
+  try {
+    client = await Pop3Client.connect(host, port);
+    await client.login(user, pass);
+    return { ok: true };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    if (client) {
+      await client.quit();
+    }
+  }
+}
+
+class Pop3Client {
+  private socket: tls.TLSSocket;
+  private buffer = Buffer.alloc(0);
+  private failure: Error | null = null;
+  private waiters: Array<{ resolve: () => void; reject: (err: Error) => void }> =
+    [];
+
+  private constructor(socket: tls.TLSSocket) {
+    this.socket = socket;
+    this.socket.setTimeout(15000);
+    this.socket.on("data", (chunk: Buffer) => {
+      this.buffer = Buffer.concat([this.buffer, chunk]);
+      this.flushWaiters();
+    });
+    this.socket.on("timeout", () => {
+      this.fail(new Error("POP3 socket timeout"));
+    });
+    this.socket.on("error", (err) => {
+      this.fail(err instanceof Error ? err : new Error(String(err)));
+    });
+    this.socket.on("close", () => {
+      this.fail(new Error("POP3 socket closed"));
+    });
+  }
+
+  static async connect(host: string, port: number): Promise<Pop3Client> {
+    const socket = await new Promise<tls.TLSSocket>((resolve, reject) => {
+      const sock = tls.connect({
+        host,
+        port,
+        servername: host,
+      });
+      const onError = (err: unknown) => {
+        reject(err instanceof Error ? err : new Error(String(err)));
+      };
+      sock.once("secureConnect", () => {
+        sock.off("error", onError);
+        resolve(sock);
+      });
+      sock.once("error", onError);
+    });
+
+    const client = new Pop3Client(socket);
+    const greeting = await client.readLine();
+    if (!greeting.startsWith("+OK")) {
+      throw new Error(`POP3 greeting failed: ${greeting}`);
+    }
+    return client;
+  }
+
+  private flushWaiters() {
+    if (this.waiters.length === 0) return;
+    const pending = [...this.waiters];
+    this.waiters = [];
+    for (const waiter of pending) waiter.resolve();
+  }
+
+  private fail(err: Error) {
+    if (this.failure) return;
+    this.failure = err;
+    const pending = [...this.waiters];
+    this.waiters = [];
+    for (const waiter of pending) waiter.reject(err);
+  }
+
+  private async waitForData() {
+    if (this.failure) throw this.failure;
+    if (this.buffer.length > 0) return;
+    await new Promise<void>((resolve, reject) => {
+      this.waiters.push({ resolve, reject });
+    });
+    if (this.failure) throw this.failure;
+  }
+
+  private async readLine(): Promise<string> {
+    while (true) {
+      const idx = this.buffer.indexOf("\r\n");
+      if (idx !== -1) {
+        const line = this.buffer.subarray(0, idx).toString("utf8");
+        this.buffer = this.buffer.subarray(idx + 2);
+        return line;
+      }
+      await this.waitForData();
+    }
+  }
+
+  private async readMultiline(): Promise<string> {
+    const terminators = [
+      Buffer.from("\r\n.\r\n"),
+      Buffer.from("\n.\r\n"),
+      Buffer.from("\r\n.\n"),
+      Buffer.from("\n.\n"),
+      Buffer.from(".\r\n"),
+    ];
+    while (true) {
+      let matchIndex = -1;
+      let matchLength = 0;
+      for (const term of terminators) {
+        const idx = this.buffer.indexOf(term);
+        if (idx !== -1 && (matchIndex === -1 || idx < matchIndex)) {
+          matchIndex = idx;
+          matchLength = term.length;
+        }
+      }
+
+      if (matchIndex !== -1) {
+        const block = this.buffer.subarray(0, matchIndex).toString("utf8");
+        this.buffer = this.buffer.subarray(matchIndex + matchLength);
+        return block
+          .split(/\r?\n/)
+          .map((line) => (line.startsWith("..") ? line.slice(1) : line))
+          .join("\r\n");
+      }
+
+      await this.waitForData();
+    }
+  }
+
+  private async sendCommand(command: string): Promise<string> {
+    this.socket.write(`${command}\r\n`);
+    const line = await this.readLine();
+    if (!line.startsWith("+OK")) {
+      throw new Error(`POP3 ${command} failed: ${line}`);
+    }
+    return line;
+  }
+
+  async login(username: string, password: string): Promise<void> {
+    await this.sendCommand(`USER ${username}`);
+    await this.sendCommand(`PASS ${password}`);
+  }
+
+  async listMessageNumbers(): Promise<number[]> {
+    await this.sendCommand("UIDL");
+    const block = await this.readMultiline();
+    return block
+      .split("\r\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => Number.parseInt(line.split(/\s+/)[0] ?? "", 10))
+      .filter((num) => Number.isFinite(num));
+  }
+
+  async retrieveMessage(messageNumber: number): Promise<string> {
+    await this.sendCommand(`RETR ${messageNumber}`);
+    return this.readMultiline();
+  }
+
+  async topMessage(messageNumber: number, lines = 50): Promise<string> {
+    await this.sendCommand(`TOP ${messageNumber} ${lines}`);
+    return this.readMultiline();
+  }
+
+  async quit(): Promise<void> {
+    try {
+      await this.sendCommand("QUIT");
+    } catch {
+      // ignore QUIT failures during cleanup
+    } finally {
+      this.socket.destroy();
+    }
+  }
+}
+
 export interface FetchedEmail {
   messageId: string | undefined;
   inReplyTo: string | undefined;
@@ -79,6 +264,58 @@ export interface FetchedEmail {
   bodyText: string | undefined;
   date: Date | undefined;
   uid: number;
+}
+
+export async function fetchEmailsFromPop3(
+  account: EmailAccount,
+  since?: Date,
+): Promise<FetchedEmail[]> {
+  const password = decrypt(account.encryptedPass);
+  const results: FetchedEmail[] = [];
+  let client: Pop3Client | null = null;
+
+  try {
+    client = await Pop3Client.connect(account.imapHost, account.imapPort);
+    await client.login(account.username, password);
+
+    const allMessageNumbers = await client.listMessageNumbers();
+    const latestNumbers = allMessageNumbers.slice(-20).reverse();
+
+    for (const messageNumber of latestNumbers) {
+      try {
+        let source = "";
+        try {
+          source = await client.topMessage(messageNumber, 80);
+        } catch {
+          source = await client.retrieveMessage(messageNumber);
+        }
+        const parsed = await simpleParser(Buffer.from(source, "utf8"));
+        if (since && parsed.date && parsed.date < since) continue;
+        results.push({
+          messageId: parsed.messageId ?? undefined,
+          inReplyTo: typeof parsed.inReplyTo === "string" ? parsed.inReplyTo : undefined,
+          from: addressToStrings(parsed.from)[0] ?? "",
+          to: addressToStrings(parsed.to as ParsedMail["from"]),
+          cc: addressToStrings(parsed.cc as ParsedMail["from"]),
+          subject: parsed.subject ?? "(no subject)",
+          bodyHtml: parsed.html || undefined,
+          bodyText: parsed.text ?? undefined,
+          date: parsed.date ?? undefined,
+          uid: messageNumber,
+        });
+      } catch {
+        // skip messages that fail to download/parse
+      }
+    }
+  } catch (err) {
+    console.error("[email] POP3 fetch error:", err);
+  } finally {
+    if (client) {
+      await client.quit();
+    }
+  }
+
+  return results;
 }
 
 const IMAP_FOLDER_MAP: Record<string, string> = {

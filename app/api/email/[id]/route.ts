@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getCurrentUser } from "@/app/lib/rbac";
 import { prisma } from "@/app/lib/prisma";
+import {
+  buildAttachmentUrl,
+  deleteEmailAttachments,
+  listEmailAttachments,
+} from "@/app/lib/email-attachments";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -21,6 +26,16 @@ export async function GET(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const attachments = (await listEmailAttachments(email.accountId, email.id)).map((attachment) => ({
+    id: attachment.id,
+    filename: attachment.filename,
+    mimeType: attachment.mimeType,
+    size: attachment.size,
+    url: buildAttachmentUrl(email.id, attachment.id),
+    isImage: attachment.mimeType.startsWith("image/"),
+    isVideo: attachment.mimeType.startsWith("video/"),
+  }));
+
   if (!email.isRead) {
     await prisma.emailMessage.update({
       where: { id },
@@ -28,7 +43,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     });
   }
 
-  return NextResponse.json({ ...email, isRead: true });
+  return NextResponse.json({ ...email, isRead: true, attachments });
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
@@ -73,6 +88,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
   if (existing.folder === "TRASH") {
     await prisma.emailMessage.delete({ where: { id } });
+    await deleteEmailAttachments(existing.accountId, existing.id);
   } else {
     await prisma.emailMessage.update({
       where: { id },

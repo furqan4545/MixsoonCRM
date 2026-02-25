@@ -276,6 +276,7 @@ model EmailMessage {
   subject String
   bodyHtml String?
   bodyText String?
+  attachmentsJson String? // JSON array for persisted attachment metadata
 
   folder    EmailFolder @default(INBOX)
   isRead    Boolean     @default(false)

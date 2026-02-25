@@ -16,6 +16,7 @@ import { formatDistanceToNow } from "@/app/lib/date-utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { plainTextToLinkedHtml } from "@/app/lib/email-rich-text";
 
 interface EmailData {
   id: string;
@@ -33,6 +34,15 @@ interface EmailData {
   createdAt: string;
   messageId: string | null;
   influencer: { id: string; username: string; avatarUrl: string | null } | null;
+  attachments?: Array<{
+    id: string;
+    filename: string;
+    mimeType: string;
+    size: number;
+    url: string;
+    isImage: boolean;
+    isVideo: boolean;
+  }>;
 }
 
 interface Props {
@@ -179,14 +189,55 @@ export function EmailDetail({ emailId }: Props) {
           </div>
 
           <div className="prose prose-sm max-w-none dark:prose-invert">
+            {(email.attachments?.length ?? 0) > 0 && (
+              <div className="mb-4 rounded-md border p-3">
+                <p className="mb-2 text-sm font-medium">Attachments</p>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                  {email.attachments?.map((attachment) => (
+                    <a
+                      key={attachment.id}
+                      href={attachment.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="overflow-hidden rounded-md border bg-muted/30 hover:bg-muted/50"
+                    >
+                      {attachment.isImage ? (
+                        <img
+                          src={attachment.url}
+                          alt={attachment.filename}
+                          className="h-28 w-full object-cover"
+                        />
+                      ) : attachment.isVideo ? (
+                        <video
+                          src={attachment.url}
+                          className="h-28 w-full object-cover"
+                          controls
+                        />
+                      ) : (
+                        <div className="flex h-28 items-center justify-center text-xs text-muted-foreground">
+                          Open file
+                        </div>
+                      )}
+                      <div className="truncate border-t px-2 py-1 text-xs">
+                        {attachment.filename}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {email.bodyHtml ? (
               <div
                 dangerouslySetInnerHTML={{ __html: email.bodyHtml }}
               />
             ) : (
-              <pre className="whitespace-pre-wrap font-sans text-sm">
-                {email.bodyText ?? ""}
-              </pre>
+              <div
+                className="whitespace-pre-wrap font-sans text-sm"
+                dangerouslySetInnerHTML={{
+                  __html: plainTextToLinkedHtml(email.bodyText ?? ""),
+                }}
+              />
             )}
           </div>
         </div>

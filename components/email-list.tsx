@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "@/app/lib/date-utils";
-import { Star, MailOpen, Mail } from "lucide-react";
+import { Star, MailOpen, Mail, Trash2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useEmailRefresh } from "@/app/lib/email-events";
+import { emitEmailRefresh, useEmailRefresh } from "@/app/lib/email-events";
 
 interface EmailItem {
   id: string;
@@ -85,6 +85,27 @@ export function EmailList({ folder, title }: Props) {
     return item.from;
   };
 
+  const handleDelete = async (emailId: string) => {
+    try {
+      const res = await fetch(`/api/email/${emailId}`, { method: "DELETE" });
+      if (!res.ok) return;
+      emitEmailRefresh();
+      fetchEmails();
+    } catch {}
+  };
+
+  const handleDeleteAllTrash = async () => {
+    if (folder !== "TRASH") return;
+    if (!confirm("Delete all emails in Trash permanently?")) return;
+    try {
+      const res = await fetch("/api/email/trash", { method: "DELETE" });
+      if (!res.ok) return;
+      emitEmailRefresh();
+      setPage(1);
+      fetchEmails();
+    } catch {}
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-4 py-3">
@@ -92,14 +113,26 @@ export function EmailList({ folder, title }: Props) {
           <h2 className="text-lg font-semibold">{title}</h2>
           <p className="text-xs text-muted-foreground">{total} messages</p>
         </div>
-        <form onSubmit={handleSearch} className="flex gap-2">
+        <div className="flex gap-2">
+          {folder === "TRASH" && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteAllTrash}
+              disabled={loading || total === 0}
+            >
+              Delete All
+            </Button>
+          )}
+          <form onSubmit={handleSearch} className="flex gap-2">
           <Input
             placeholder="Search emails..."
             className="h-8 w-56"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-        </form>
+          </form>
+        </div>
       </div>
 
       <ScrollArea className="*:data-[slot=scroll-area-viewport]:overscroll-contain min-h-0 flex-1">
@@ -115,52 +148,71 @@ export function EmailList({ folder, title }: Props) {
         ) : (
           <div className="divide-y">
             {emails.map((email) => (
-              <button
+              <div
                 key={email.id}
-                type="button"
-                onClick={() => router.push(`/email/${email.id}`)}
                 className={cn(
-                  "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50",
+                  "group relative transition-colors hover:bg-muted/50",
                   !email.isRead && "bg-accent/30",
                 )}
               >
-                <div className="mt-0.5 shrink-0">
-                  {email.isRead ? (
-                    <MailOpen className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <Mail className="h-4 w-4 text-primary" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span
+                <button
+                  type="button"
+                  onClick={() => router.push(`/email/${email.id}`)}
+                  className="flex w-full items-start gap-3 px-4 py-3 pr-20 text-left"
+                >
+                  <div className="mt-0.5 shrink-0">
+                    {email.isRead ? (
+                      <MailOpen className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Mail className="h-4 w-4 text-primary" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "truncate text-sm",
+                          !email.isRead && "font-semibold",
+                        )}
+                      >
+                        {displayAddress(email)}
+                      </span>
+                    </div>
+                    <p
                       className={cn(
                         "truncate text-sm",
-                        !email.isRead && "font-semibold",
+                        !email.isRead ? "font-medium" : "text-muted-foreground",
                       )}
                     >
-                      {displayAddress(email)}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {getDate(email)}
-                    </span>
+                      {email.subject || "(no subject)"}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {email.preview}
+                    </p>
                   </div>
-                  <p
-                    className={cn(
-                      "truncate text-sm",
-                      !email.isRead ? "font-medium" : "text-muted-foreground",
-                    )}
+                  {email.isStarred && (
+                    <Star className="mt-0.5 h-4 w-4 shrink-0 fill-yellow-400 text-yellow-400" />
+                  )}
+                </button>
+
+                <div className="absolute right-4 top-3 flex flex-col items-end gap-1">
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {getDate(email)}
+                  </span>
+                  <button
+                    type="button"
+                    className="opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleDelete(email.id);
+                    }}
+                    aria-label="Delete email"
+                    title="Delete"
                   >
-                    {email.subject || "(no subject)"}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {email.preview}
-                  </p>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
-                {email.isStarred && (
-                  <Star className="mt-0.5 h-4 w-4 shrink-0 fill-yellow-400 text-yellow-400" />
-                )}
-              </button>
+              </div>
             ))}
           </div>
         )}

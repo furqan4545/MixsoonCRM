@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -32,6 +32,7 @@ export function EmailSidebar() {
   const pathname = usePathname();
   const [counts, setCounts] = useState<FolderCounts>({});
   const [syncing, startSync] = useTransition();
+  const syncInFlightRef = useRef(false);
 
   const fetchCounts = useCallback(async () => {
     try {
@@ -46,15 +47,44 @@ export function EmailSidebar() {
 
   useEmailRefresh(fetchCounts);
 
+  const runSync = useCallback(async () => {
+    if (syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch("/api/email/sync", {
+        method: "POST",
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        fetchCounts();
+        emitEmailRefresh();
+      }
+    } catch {
+    } finally {
+      syncInFlightRef.current = false;
+    }
+  }, [fetchCounts]);
+
+  useEffect(() => {
+    void runSync();
+
+    // Keep inbox fresh without manual sync clicks.
+    const interval = window.setInterval(() => {
+      if (!document.hidden) {
+        void runSync();
+      }
+    }, 30000);
+
+    return () => window.clearInterval(interval);
+  }, [runSync]);
+
   const handleSync = () => {
-    startSync(async () => {
-      try {
-        const res = await fetch("/api/email/sync", { method: "POST" });
-        if (res.ok) {
-          fetchCounts();
-          emitEmailRefresh();
-        }
-      } catch {}
+    startSync(() => {
+      void runSync();
     });
   };
 

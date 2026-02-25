@@ -1,15 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Send, Save } from "lucide-react";
+import { Film, Paperclip, Save, Send, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { emitEmailRefresh } from "@/app/lib/email-events";
+import { plainTextToLinkedHtml } from "@/app/lib/email-rich-text";
 
 interface Props {
   defaultTo?: string;
@@ -19,6 +18,16 @@ interface Props {
   inReplyTo?: string;
   draftId?: string;
 }
+
+const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const URL_REGEX = /((https?:\/\/|www\.)[^\s<]+)/gi;
+
+type ComposeAttachment = {
+  id: string;
+  file: File;
+  previewUrl: string | null;
+  isImage: boolean;
+};
 
 export function EmailCompose({
   defaultTo,
@@ -31,15 +40,183 @@ export function EmailCompose({
   const router = useRouter();
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const toInputRef = useRef<HTMLInputElement>(null);
+  const ccInputRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const editorInitializedRef = useRef(false);
+  const attachmentsRef = useRef<ComposeAttachment[]>([]);
 
-  const [to, setTo] = useState(defaultTo ?? "");
-  const [cc, setCc] = useState("");
+  const [to, setTo] = useState<string[]>(() => parseRecipients(defaultTo));
+  const [cc, setCc] = useState<string[]>([]);
+  const [toInput, setToInput] = useState("");
+  const [ccInput, setCcInput] = useState("");
   const [subject, setSubject] = useState(defaultSubject ?? "");
-  const [body, setBody] = useState(defaultBody ?? "");
   const [showCc, setShowCc] = useState(false);
+  const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  const initialEditorHtml = useMemo(
+    () => (defaultBody ? plainTextToLinkedHtml(defaultBody) : ""),
+    [defaultBody],
+  );
+
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
+  useEffect(() => {
+    if (!previewImageUrl) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPreviewImageUrl(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [previewImageUrl]);
+
+  useEffect(() => {
+    if (!editorRef.current || editorInitializedRef.current) return;
+    editorRef.current.innerHTML = initialEditorHtml || "";
+    editorInitializedRef.current = true;
+  }, [initialEditorHtml]);
+
+  useEffect(() => {
+    return () => {
+      for (const item of attachmentsRef.current) {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      }
+    };
+  }, []);
+
+  const totalAttachmentBytes = useMemo(
+    () => attachments.reduce((sum, item) => sum + item.file.size, 0),
+    [attachments],
+  );
+
+  const addRecipients = (
+    values: string[],
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+  ) => {
+    setter((prev) => {
+      const existing = new Set(prev.map((email) => email.toLowerCase()));
+      const next = [...prev];
+      for (const value of values) {
+        const normalized = normalizeRecipient(value);
+        if (!normalized) continue;
+        const key = normalized.toLowerCase();
+        if (existing.has(key)) continue;
+        existing.add(key);
+        next.push(normalized);
+      }
+      return next;
+    });
+  };
+
+  const handleRecipientCommit = (
+    value: string,
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    inputSetter: React.Dispatch<React.SetStateAction<string>>,
+  ) => {
+    addRecipients(splitRecipientInput(value), setter);
+    inputSetter("");
+  };
+
+  const handleAddAttachments = (files: File[]) => {
+    if (files.length === 0) return;
+
+    const mediaFiles = files.filter(
+      (file) => file.type.startsWith("image/") || file.type.startsWith("video/"),
+    );
+    const skippedCount = files.length - mediaFiles.length;
+    if (skippedCount > 0) {
+      toast.error("Only image and video attachments are supported");
+    }
+    if (mediaFiles.length === 0) return;
+
+    const nextTotal =
+      totalAttachmentBytes + mediaFiles.reduce((sum, file) => sum + file.size, 0);
+    if (nextTotal > MAX_TOTAL_ATTACHMENT_BYTES) {
+      toast.error("Attachments exceed 20 MB total limit");
+      return;
+    }
+
+    const nextItems = mediaFiles.map((file) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file,
+      previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+      isImage: file.type.startsWith("image/"),
+    }));
+
+    setAttachments((prev) => [...prev, ...nextItems]);
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((item) => item.id !== id);
+    });
+  };
+
+  const getEditorPayload = () => {
+    const editor = editorRef.current;
+    if (!editor) return { bodyHtml: "", bodyText: "" };
+
+    const bodyText = (editor.innerText ?? "").replace(/\u00a0/g, " ").trim();
+    const bodyHtml = buildLinkedHtmlFromEditor(editor);
+    return { bodyHtml, bodyText };
+  };
+
+  const handleEditorPaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const imageItems = Array.from(e.clipboardData.items).filter((item) =>
+      item.type.startsWith("image/"),
+    );
+
+    if (imageItems.length > 0) {
+      e.preventDefault();
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (!file) continue;
+        try {
+          const dataUrl = await fileToDataUrl(file);
+          insertImageAtCursor(dataUrl, editorRef.current);
+        } catch {
+          toast.error("Failed to paste image");
+        }
+      }
+      return;
+    }
+
+    const plain = e.clipboardData.getData("text/plain");
+    if (plain) {
+      e.preventDefault();
+      insertTextAtCursor(plain, editorRef.current);
+    }
+  };
 
   const handleSend = async () => {
-    if (!to.trim()) {
+    const toList = [...to];
+    if (toInput.trim()) {
+      toList.push(...splitRecipientInput(toInput));
+      setTo(uniqueRecipients(toList));
+      setToInput("");
+    }
+
+    const ccList = [...cc];
+    if (ccInput.trim()) {
+      ccList.push(...splitRecipientInput(ccInput));
+      setCc(uniqueRecipients(ccList));
+      setCcInput("");
+    }
+
+    const finalTo = uniqueRecipients(toList);
+    const finalCc = uniqueRecipients(ccList);
+
+    if (finalTo.length === 0) {
       toast.error("Recipient is required");
       return;
     }
@@ -48,33 +225,28 @@ export function EmailCompose({
       return;
     }
 
+    const { bodyHtml, bodyText } = getEditorPayload();
+
     setSending(true);
     try {
-      const recipients = to
-        .split(",")
-        .map((e) => e.trim())
-        .filter(Boolean);
-      const ccList = cc
-        .split(",")
-        .map((e) => e.trim())
-        .filter(Boolean);
+      const formData = new FormData();
+      finalTo.forEach((email) => formData.append("to", email));
+      finalCc.forEach((email) => formData.append("cc", email));
+      formData.append("subject", subject);
+      formData.append("bodyHtml", bodyHtml);
+      formData.append("bodyText", bodyText);
+      if (influencerId) formData.append("influencerId", influencerId);
+      if (inReplyTo) formData.append("inReplyTo", inReplyTo);
+      attachments.forEach((item) =>
+        formData.append("attachments", item.file, item.file.name));
 
       const res = await fetch("/api/email/send", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: recipients,
-          cc: ccList.length > 0 ? ccList : undefined,
-          subject,
-          bodyHtml: `<div style="white-space:pre-wrap">${escapeHtml(body)}</div>`,
-          bodyText: body,
-          influencerId: influencerId || undefined,
-          inReplyTo: inReplyTo || undefined,
-        }),
+        body: formData,
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = await safeJson(res);
         throw new Error(err.error ?? "Failed to send");
       }
 
@@ -95,10 +267,9 @@ export function EmailCompose({
   const handleSaveDraft = async () => {
     setSavingDraft(true);
     try {
-      const recipients = to
-        .split(",")
-        .map((e) => e.trim())
-        .filter(Boolean);
+      const recipients = uniqueRecipients([...to, ...splitRecipientInput(toInput)]);
+      const ccList = uniqueRecipients([...cc, ...splitRecipientInput(ccInput)]);
+      const { bodyHtml, bodyText } = getEditorPayload();
 
       if (draftId) {
         await fetch("/api/email/drafts", {
@@ -107,9 +278,10 @@ export function EmailCompose({
           body: JSON.stringify({
             id: draftId,
             to: recipients,
+            cc: ccList,
             subject,
-            bodyText: body,
-            bodyHtml: `<div style="white-space:pre-wrap">${escapeHtml(body)}</div>`,
+            bodyText,
+            bodyHtml,
           }),
         });
       } else {
@@ -118,9 +290,10 @@ export function EmailCompose({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             to: recipients,
+            cc: ccList,
             subject,
-            bodyText: body,
-            bodyHtml: `<div style="white-space:pre-wrap">${escapeHtml(body)}</div>`,
+            bodyText,
+            bodyHtml,
             influencerId: influencerId || undefined,
           }),
         });
@@ -160,12 +333,42 @@ export function EmailCompose({
           <Label className="w-12 shrink-0 text-right text-sm text-muted-foreground">
             To
           </Label>
-          <Input
-            placeholder="recipient@example.com (comma-separated)"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="h-8"
-          />
+          <div className="flex min-h-8 flex-1 flex-wrap items-center gap-1 rounded-md border px-2 py-1">
+            {to.map((email) => (
+              <RecipientChip
+                key={email}
+                value={email}
+                onRemove={() => setTo((prev) => prev.filter((x) => x !== email))}
+                onEdit={() => {
+                  setTo((prev) => prev.filter((x) => x !== email));
+                  setToInput(email);
+                  requestAnimationFrame(() => toInputRef.current?.focus());
+                }}
+              />
+            ))}
+            <input
+              ref={toInputRef}
+              placeholder={to.length > 0 ? "" : "recipient@example.com"}
+              value={toInput}
+              onChange={(e) => setToInput(e.target.value)}
+              onBlur={() => handleRecipientCommit(toInput, setTo, setToInput)}
+              onKeyDown={(e) => {
+                if (
+                  e.key === "Enter" ||
+                  e.key === "Tab" ||
+                  e.key === "," ||
+                  e.key === " "
+                ) {
+                  e.preventDefault();
+                  handleRecipientCommit(toInput, setTo, setToInput);
+                } else if (e.key === "Backspace" && !toInput && to.length > 0) {
+                  e.preventDefault();
+                  setTo((prev) => prev.slice(0, -1));
+                }
+              }}
+              className="h-6 min-w-[180px] flex-1 border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+          </div>
           {!showCc && (
             <Button
               variant="ghost"
@@ -182,43 +385,394 @@ export function EmailCompose({
             <Label className="w-12 shrink-0 text-right text-sm text-muted-foreground">
               CC
             </Label>
-            <Input
-              placeholder="cc@example.com"
-              value={cc}
-              onChange={(e) => setCc(e.target.value)}
-              className="h-8"
-            />
+            <div className="flex min-h-8 flex-1 flex-wrap items-center gap-1 rounded-md border px-2 py-1">
+              {cc.map((email) => (
+                <RecipientChip
+                  key={email}
+                  value={email}
+                  onRemove={() => setCc((prev) => prev.filter((x) => x !== email))}
+                  onEdit={() => {
+                    setCc((prev) => prev.filter((x) => x !== email));
+                    setCcInput(email);
+                    requestAnimationFrame(() => ccInputRef.current?.focus());
+                  }}
+                />
+              ))}
+              <input
+                ref={ccInputRef}
+                placeholder={cc.length > 0 ? "" : "cc@example.com"}
+                value={ccInput}
+                onChange={(e) => setCcInput(e.target.value)}
+                onBlur={() => handleRecipientCommit(ccInput, setCc, setCcInput)}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === "Enter" ||
+                    e.key === "Tab" ||
+                    e.key === "," ||
+                    e.key === " "
+                  ) {
+                    e.preventDefault();
+                    handleRecipientCommit(ccInput, setCc, setCcInput);
+                  } else if (e.key === "Backspace" && !ccInput && cc.length > 0) {
+                    e.preventDefault();
+                    setCc((prev) => prev.slice(0, -1));
+                  }
+                }}
+                className="h-6 min-w-[180px] flex-1 border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              />
+            </div>
           </div>
         )}
         <div className="flex items-center gap-3">
           <Label className="w-12 shrink-0 text-right text-sm text-muted-foreground">
             Subject
           </Label>
-          <Input
+          <input
             placeholder="Email subject"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
-            className="h-8"
+            className="h-8 w-full rounded-md border px-3 text-sm"
           />
+        </div>
+        <div className="flex items-start gap-3">
+          <Label className="mt-1 w-12 shrink-0 text-right text-sm text-muted-foreground">
+            Files
+          </Label>
+          <div className="flex-1 space-y-2">
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => attachmentInputRef.current?.click()}
+              >
+                <Paperclip className="mr-1 h-4 w-4" />
+                Attach Media
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                {formatBytes(totalAttachmentBytes)} / {formatBytes(MAX_TOTAL_ATTACHMENT_BYTES)}
+              </span>
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                multiple
+                accept="image/*,video/*"
+                className="hidden"
+                onChange={(e) => {
+                  handleAddAttachments(Array.from(e.target.files ?? []));
+                  e.currentTarget.value = "";
+                }}
+              />
+            </div>
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {attachments.map((item) => (
+                  <div
+                    key={item.id}
+                    className="relative h-24 w-24 overflow-hidden rounded-md border bg-muted text-left"
+                  >
+                    {item.isImage && item.previewUrl ? (
+                      <button
+                        type="button"
+                        className="h-full w-full"
+                        onClick={() => setPreviewImageUrl(item.previewUrl)}
+                        aria-label={`Preview ${item.file.name}`}
+                      >
+                        <img
+                          src={item.previewUrl}
+                          alt={item.file.name}
+                          className="h-full w-full object-cover"
+                        />
+                      </button>
+                    ) : (
+                      <div className="flex h-full w-full flex-col items-center justify-center gap-1 p-2 text-muted-foreground">
+                        <Film className="h-4 w-4" />
+                        <span className="line-clamp-2 text-center text-[10px]">
+                          {item.file.name}
+                        </span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="absolute right-1 top-1 rounded bg-black/60 p-0.5 text-white hover:bg-black/75"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeAttachment(item.id);
+                      }}
+                      aria-label={`Remove ${item.file.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="flex-1 p-4">
-        <Textarea
-          placeholder="Write your message..."
-          className="h-full min-h-[300px] resize-none border-0 p-0 shadow-none focus-visible:ring-0"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          onPaste={(e) => {
+            void handleEditorPaste(e);
+          }}
+          className="h-full min-h-[300px] overflow-auto whitespace-pre-wrap rounded-md border border-transparent p-2 text-sm outline-none focus:border-border"
         />
       </div>
+
+      {previewImageUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6"
+          onClick={() => setPreviewImageUrl(null)}
+        >
+          <div
+            className="relative w-full max-w-[900px] rounded-lg bg-background p-3 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="absolute right-2 top-2 rounded bg-black/70 p-1 text-white hover:bg-black/85"
+              onClick={() => setPreviewImageUrl(null)}
+              aria-label="Close preview"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <img
+              src={previewImageUrl}
+              alt="Attachment preview"
+              className="mx-auto max-h-[70vh] w-auto max-w-full rounded-md object-contain"
+            />
+          </div>
+        </div>
+      )}
+
+      <style jsx>{`
+        [contenteditable='true'] :global(img[data-inline-image='true']) {
+          width: 100%;
+          height: auto;
+          display: block;
+          border-radius: 8px;
+        }
+
+        [contenteditable='true'] :global(span[data-inline-image-wrapper='true']) {
+          display: inline-block;
+          width: 320px;
+          max-width: 100%;
+          min-width: 120px;
+          resize: horizontal;
+          overflow: auto;
+          border: 1px solid hsl(var(--border));
+          border-radius: 8px;
+          margin: 6px 0;
+          background: hsl(var(--card));
+          vertical-align: top;
+        }
+      `}</style>
     </div>
   );
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+function buildLinkedHtmlFromEditor(editor: HTMLElement): string {
+  const clone = editor.cloneNode(true) as HTMLElement;
+  linkifyTextNodes(clone);
+  const html = clone.innerHTML.trim();
+  return html;
+}
+
+function linkifyTextNodes(root: HTMLElement) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const targets: Text[] = [];
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    if (!node.nodeValue || !node.nodeValue.trim()) continue;
+    const parent = node.parentElement;
+    if (!parent) continue;
+    const tag = parent.tagName.toLowerCase();
+    if (tag === "a" || tag === "script" || tag === "style") continue;
+    URL_REGEX.lastIndex = 0;
+    if (!URL_REGEX.test(node.nodeValue)) continue;
+    URL_REGEX.lastIndex = 0;
+    targets.push(node);
+  }
+
+  for (const textNode of targets) {
+    const text = textNode.nodeValue ?? "";
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+
+    for (const match of text.matchAll(URL_REGEX)) {
+      const full = match[0];
+      const index = match.index ?? 0;
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex, index)));
+
+      const anchor = document.createElement("a");
+      anchor.textContent = full;
+      anchor.href = full.startsWith("http://") || full.startsWith("https://")
+        ? full
+        : `https://${full}`;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      fragment.appendChild(anchor);
+      lastIndex = index + full.length;
+    }
+
+    fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+    textNode.parentNode?.replaceChild(fragment, textNode);
+  }
+}
+
+function insertTextAtCursor(text: string, editor: HTMLDivElement | null) {
+  if (!editor) return;
+  editor.focus();
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    editor.appendChild(document.createTextNode(text));
+    return;
+  }
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const textNode = document.createTextNode(text);
+  range.insertNode(textNode);
+  range.setStartAfter(textNode);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function insertImageAtCursor(dataUrl: string, editor: HTMLDivElement | null) {
+  if (!editor) return;
+  editor.focus();
+
+  const wrapper = document.createElement("span");
+  wrapper.setAttribute("contenteditable", "false");
+  wrapper.setAttribute("data-inline-image-wrapper", "true");
+  wrapper.style.display = "inline-block";
+  wrapper.style.width = "320px";
+  wrapper.style.maxWidth = "100%";
+  wrapper.style.minWidth = "120px";
+  wrapper.style.resize = "horizontal";
+  wrapper.style.overflow = "auto";
+  wrapper.style.border = "1px solid rgba(0,0,0,0.15)";
+  wrapper.style.borderRadius = "8px";
+  wrapper.style.margin = "6px 0";
+  wrapper.style.verticalAlign = "top";
+  wrapper.style.background = "transparent";
+
+  const img = document.createElement("img");
+  img.setAttribute("src", dataUrl);
+  img.setAttribute("alt", "Pasted image");
+  img.setAttribute("data-inline-image", "true");
+  img.style.width = "100%";
+  img.style.height = "auto";
+  img.style.display = "block";
+  img.style.borderRadius = "8px";
+  wrapper.appendChild(img);
+
+  const breakLine = document.createElement("br");
+  const fragment = document.createDocumentFragment();
+  fragment.appendChild(wrapper);
+  fragment.appendChild(breakLine);
+
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    editor.appendChild(fragment);
+    return;
+  }
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  range.insertNode(fragment);
+
+  const newRange = document.createRange();
+  newRange.setStartAfter(breakLine);
+  newRange.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(newRange);
+}
+
+async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function RecipientChip({
+  value,
+  onRemove,
+  onEdit,
+}: {
+  value: string;
+  onRemove: () => void;
+  onEdit: () => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
+      <button
+        type="button"
+        onClick={onEdit}
+        className="max-w-[240px] truncate text-left hover:text-foreground"
+        title="Click to edit recipient"
+      >
+        {value}
+      </button>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="text-muted-foreground hover:text-foreground"
+        aria-label={`Remove ${value}`}
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
+  );
+}
+
+function normalizeRecipient(value: string): string {
+  return value.trim().replace(/[;,]+$/g, "");
+}
+
+function splitRecipientInput(value: string): string[] {
+  return value
+    .split(/[,\n;\s]+/)
+    .map(normalizeRecipient)
+    .filter(Boolean);
+}
+
+function parseRecipients(value?: string): string[] {
+  if (!value) return [];
+  return uniqueRecipients(splitRecipientInput(value));
+}
+
+function uniqueRecipients(values: string[]): string[] {
+  const existing = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const key = value.toLowerCase();
+    if (existing.has(key)) continue;
+    existing.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function safeJson(res: Response): Promise<{ error?: string }> {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
 }
