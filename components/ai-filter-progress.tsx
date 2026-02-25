@@ -5,6 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 
 const STORAGE_KEY = "mixsoon_active_ai_run";
+const DISMISSED_KEY = "mixsoon_dismissed_ai_run";
 
 interface AiFilterStatus {
   status: string;
@@ -22,19 +23,23 @@ export function AiFilterProgress() {
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
+    const dismissedRunId = localStorage.getItem(DISMISSED_KEY);
     if (stored) {
       setRunId(stored);
-      setDismissed(false);
+      setDismissed(dismissedRunId === stored);
     }
 
     const handler = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
       setRunId(id);
-      setDismissed(false);
+      const dismissedId = localStorage.getItem(DISMISSED_KEY);
+      setDismissed(dismissedId === id);
     };
     const showHandler = (e: Event) => {
       const { type, id } = (e as CustomEvent<{ type: string; id: string }>).detail;
       if (type === "ai_filter" && id) {
+        const dismissedId = localStorage.getItem(DISMISSED_KEY);
+        if (dismissedId === id) return;
         setRunId(id);
         setDismissed(false);
       }
@@ -57,6 +62,9 @@ export function AiFilterProgress() {
         const res = await fetch(`/api/ai/filter/runs/${runId}/status`);
         if (!res.ok) {
           localStorage.removeItem(STORAGE_KEY);
+          if (localStorage.getItem(DISMISSED_KEY) === runId) {
+            localStorage.removeItem(DISMISSED_KEY);
+          }
           setRunId(null);
           return;
         }
@@ -67,6 +75,9 @@ export function AiFilterProgress() {
 
         if (data.status === "COMPLETED") {
           localStorage.removeItem(STORAGE_KEY);
+          if (localStorage.getItem(DISMISSED_KEY) === runId) {
+            localStorage.removeItem(DISMISSED_KEY);
+          }
           toast.success("AI filter complete", {
             description: `${data.campaignName} — ${data.processedCount} influencers scored.`,
           });
@@ -84,6 +95,9 @@ export function AiFilterProgress() {
 
         if (data.status === "FAILED") {
           localStorage.removeItem(STORAGE_KEY);
+          if (localStorage.getItem(DISMISSED_KEY) === runId) {
+            localStorage.removeItem(DISMISSED_KEY);
+          }
           toast.error("AI filter failed", {
             description: data.errorMessage || "An error occurred.",
           });
@@ -139,7 +153,10 @@ export function AiFilterProgress() {
               </Link>
             )}
             <button
-              onClick={() => setDismissed(true)}
+              onClick={() => {
+                if (runId) localStorage.setItem(DISMISSED_KEY, runId);
+                setDismissed(true);
+              }}
               className="text-muted-foreground hover:text-foreground"
               aria-label="Dismiss"
             >

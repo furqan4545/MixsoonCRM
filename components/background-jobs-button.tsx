@@ -106,17 +106,6 @@ export function BackgroundJobsButton() {
     }
   };
 
-  const showAiFilter = () => {
-    if (aiRunId) {
-      window.dispatchEvent(
-        new CustomEvent("show-background-progress", {
-          detail: { type: "ai_filter", id: aiRunId },
-        }),
-      );
-      setOpen(false);
-    }
-  };
-
   const hasActive = saveId || aiRunId;
   if (!hasActive) return null;
 
@@ -155,8 +144,8 @@ export function BackgroundJobsButton() {
           </div>
         )}
         {aiRunId && (
-          <div className="flex items-center justify-between gap-2 px-2 py-2">
-            <div className="min-w-0 flex-1">
+          <div className="px-2 py-2">
+            <div className="min-w-0">
               <p className="truncate text-sm font-medium">AI filter</p>
               <p className="text-xs text-muted-foreground">
                 {aiStatus
@@ -164,13 +153,6 @@ export function BackgroundJobsButton() {
                   : "…"}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={showAiFilter}
-              className="shrink-0 text-xs text-primary hover:underline"
-            >
-              Show
-            </button>
           </div>
         )}
       </DropdownMenuContent>
