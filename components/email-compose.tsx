@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Film, Paperclip, Save, Send, X } from "lucide-react";
+import { Film, Paperclip, Save, Send, Sparkles, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { emitEmailRefresh } from "@/app/lib/email-events";
 import { plainTextToLinkedHtml } from "@/app/lib/email-rich-text";
 
@@ -40,6 +41,7 @@ export function EmailCompose({
   const router = useRouter();
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [generatingAi, setGeneratingAi] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const toInputRef = useRef<HTMLInputElement>(null);
   const ccInputRef = useRef<HTMLInputElement>(null);
@@ -307,11 +309,71 @@ export function EmailCompose({
     }
   };
 
+  const handleGenerateAiDraft = async () => {
+    const recipients = uniqueRecipients([...to, ...splitRecipientInput(toInput)]);
+    if (!influencerId && recipients.length === 0) {
+      toast.error("Open compose from an influencer or add a recipient first");
+      return;
+    }
+
+    setGeneratingAi(true);
+    try {
+      const res = await fetch("/api/email/ai-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          influencerId: influencerId || undefined,
+          to: recipients,
+        }),
+      });
+
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        subject?: string;
+        bodyText?: string;
+      };
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to generate AI draft");
+      }
+
+      const nextSubject = (data.subject ?? "").trim();
+      const nextBody = (data.bodyText ?? "").trim();
+      if (!nextBody) {
+        throw new Error("AI draft body is empty");
+      }
+
+      if (nextSubject) {
+        setSubject(nextSubject);
+      }
+      if (editorRef.current) {
+        editorRef.current.innerHTML = plainTextToLinkedHtml(nextBody);
+        editorRef.current.focus();
+      }
+      toast.success("AI outreach draft inserted");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "AI draft failed");
+    } finally {
+      setGeneratingAi(false);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <h2 className="text-lg font-semibold">New Email</h2>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="px-2.5"
+            onClick={handleGenerateAiDraft}
+            disabled={generatingAi}
+            aria-label="Generate AI outreach draft"
+            title="Generate AI outreach draft"
+          >
+            <Sparkles className="h-4 w-4" />
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -512,15 +574,34 @@ export function EmailCompose({
       </div>
 
       <div className="flex-1 p-4">
-        <div
-          ref={editorRef}
-          contentEditable
-          suppressContentEditableWarning
-          onPaste={(e) => {
-            void handleEditorPaste(e);
-          }}
-          className="h-full min-h-[300px] overflow-auto whitespace-pre-wrap rounded-md border border-transparent p-2 text-sm outline-none focus:border-border"
-        />
+        <div className="relative h-full min-h-[300px]">
+          <div
+            ref={editorRef}
+            contentEditable={!generatingAi}
+            suppressContentEditableWarning
+            onPaste={(e) => {
+              void handleEditorPaste(e);
+            }}
+            aria-busy={generatingAi}
+            className="h-full min-h-[300px] overflow-auto whitespace-pre-wrap rounded-md border border-transparent p-2 text-sm outline-none focus:border-border"
+          />
+          {generatingAi && (
+            <div className="pointer-events-none absolute inset-0 z-10 rounded-md border bg-background/95 p-3">
+              <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+                <Sparkles className="h-3.5 w-3.5 animate-pulse" />
+                AI is drafting outreach...
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-3.5 w-full" />
+                <Skeleton className="h-3.5 w-11/12" />
+                <Skeleton className="h-3.5 w-10/12" />
+                <Skeleton className="h-3.5 w-full" />
+                <Skeleton className="h-3.5 w-8/12" />
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {previewImageUrl && (
