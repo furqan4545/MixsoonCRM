@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { isSaveStoppedMessage } from "@/app/lib/import-save";
 import { toast } from "sonner";
@@ -16,6 +17,7 @@ interface SaveStatus {
 }
 
 export function SaveProgressBar() {
+  const router = useRouter();
   const [importId, setImportId] = useState<string | null>(null);
   const [status, setStatus] = useState<SaveStatus | null>(null);
   const [dismissed, setDismissed] = useState(false);
@@ -69,6 +71,7 @@ export function SaveProgressBar() {
 
         if (data.status === "COMPLETED") {
           localStorage.removeItem(STORAGE_KEY);
+          router.refresh();
           toast.success("Save to cloud complete", {
             description: "All images cached to cloud storage.",
           });
@@ -86,6 +89,7 @@ export function SaveProgressBar() {
 
         if (data.status === "DRAFT" || data.status === "FAILED") {
           localStorage.removeItem(STORAGE_KEY);
+          router.refresh();
           if (isSaveStoppedMessage(data.errorMessage) || data.stopped) {
             toast.info("Save to cloud stopped", {
               description: data.errorMessage || "Stopped by user.",
@@ -119,7 +123,7 @@ export function SaveProgressBar() {
       cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [importId]);
+  }, [importId, router]);
 
   useEffect(() => {
     if (!importId || !status || status.status !== "PROCESSING") return;
