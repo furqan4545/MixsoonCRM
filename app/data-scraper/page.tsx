@@ -184,18 +184,16 @@ export default function DataScraperPage() {
                 setProgress(
                   `Scraping @${payload.username ?? "..."} (${payload.processed} / ${payload.total})`,
                 );
+              } else if (payload.type === "stage") {
+                setProgress(payload.message ?? "Scraping...");
               } else if (payload.type === "debug") {
-                console.log(
-                  "[Apify channel sample]",
-                  payload.username,
-                  {
-                    channelKeys: payload.channelKeys,
-                    bio: payload.bio,
-                    rawBioLink: payload.rawBioLink,
-                    fromBio: payload.fromBio,
-                    bioLinkUrl: payload.bioLinkUrl,
-                  },
-                );
+                console.log("[Apify channel sample]", payload.username, {
+                  channelKeys: payload.channelKeys,
+                  bio: payload.bio,
+                  rawBioLink: payload.rawBioLink,
+                  fromBio: payload.fromBio,
+                  bioLinkUrl: payload.bioLinkUrl,
+                });
               } else if (payload.type === "complete") {
                 setProgress("Scraping complete! Loading results...");
                 const resultRes = await fetch(
@@ -380,9 +378,7 @@ export default function DataScraperPage() {
       {step === "confirm" && uploadResponse && (
         <div className="mx-auto max-w-xl">
           <div className="rounded-xl border bg-card p-8">
-            <h2 className="mb-4 text-lg font-semibold">
-              Ready to scrape
-            </h2>
+            <h2 className="mb-4 text-lg font-semibold">Ready to scrape</h2>
             <p className="mb-4 text-sm text-muted-foreground">
               {uploadResponse.sourceFilename} — {uploadResponse.finalCount}{" "}
               usernames, up to {uploadResponse.videoCount} videos each.
@@ -508,9 +504,7 @@ export default function DataScraperPage() {
                   Status
                 </span>
                 <Badge
-                  variant={
-                    saved ? "default" : saving ? "outline" : "secondary"
-                  }
+                  variant={saved ? "default" : saving ? "outline" : "secondary"}
                 >
                   {saved
                     ? "SAVED"
@@ -551,10 +545,7 @@ export default function DataScraperPage() {
                 </span>
               ) : (
                 <>
-                  <Button
-                    variant="outline"
-                    onClick={handleDiscard}
-                  >
+                  <Button variant="outline" onClick={handleDiscard}>
                     Discard
                   </Button>
                   <Button onClick={handleSave} disabled={saving}>
@@ -577,9 +568,7 @@ export default function DataScraperPage() {
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-semibold">
-                        @{influencer.username}
-                      </h3>
+                      <h3 className="font-semibold">@{influencer.username}</h3>
                       {influencer.profileUrl && (
                         <a
                           href={influencer.profileUrl}

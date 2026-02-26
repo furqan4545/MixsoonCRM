@@ -1,12 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  SAVE_STOPPED_BY_USER_PREFIX,
+  SAVE_STOP_REQUESTED,
+} from "@/app/lib/import-save";
 import { requirePermission } from "@/app/lib/rbac";
-import { cacheRemoteImageToGcs, isGcsUrl } from "../../../../lib/gcs-media";
+import {
+  cacheRemoteImageToGcs,
+  deleteImportMediaExceptRunFromGcs,
+  isGcsUrl,
+} from "../../../../lib/gcs-media";
 import { prisma } from "../../../../lib/prisma";
+
+const SAVE_INFLUENCER_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.SAVE_INFLUENCER_CONCURRENCY ?? 4) || 4,
+);
+const SAVE_MEDIA_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.SAVE_MEDIA_CONCURRENCY ?? 8) || 8,
+);
+const SAVE_STALE_AFTER_MS = Math.max(
+  60_000,
+  Number(process.env.SAVE_STALE_AFTER_MS ?? 30 * 60 * 1000) ||
+    30 * 60 * 1000,
+);
+const SAVE_STOP_CHECK_INTERVAL_MS = Math.max(
+  500,
+  Number(process.env.SAVE_STOP_CHECK_INTERVAL_MS ?? 1_500) || 1_500,
+);
 
 function notifyQuiet(data: Parameters<typeof prisma.notification.create>[0]["data"]) {
   return prisma.notification.create({ data }).catch((e) => {
     console.error("[save] notification error:", e);
   });
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<void>,
+) {
+  let cursor = 0;
+  const workerCount = Math.min(limit, items.length);
+  const runners = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) break;
+      await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+}
+
+function isStale(updatedAt: Date): boolean {
+  return Date.now() - updatedAt.getTime() > SAVE_STALE_AFTER_MS;
 }
 
 async function processGcsSave(id: string) {
@@ -23,6 +70,32 @@ async function processGcsSave(id: string) {
     if (!importRecord) return;
 
     const total = importRecord.influencers.length;
+    const runKey = `run-${Date.now().toString(36)}`;
+    let stopRequested = false;
+    let lastStopCheckAt = 0;
+    let failedGcsSourceCopies = 0;
+
+    const refreshStopRequested = async (force = false) => {
+      if (stopRequested) return true;
+      const now = Date.now();
+      if (!force && now - lastStopCheckAt < SAVE_STOP_CHECK_INTERVAL_MS) {
+        return false;
+      }
+      lastStopCheckAt = now;
+      const state = await prisma.import.findUnique({
+        where: { id },
+        select: { status: true, errorMessage: true },
+      });
+      if (!state || state.status !== "PROCESSING") {
+        stopRequested = true;
+        return true;
+      }
+      if (state.errorMessage === SAVE_STOP_REQUESTED) {
+        stopRequested = true;
+        return true;
+      }
+      return false;
+    };
 
     await notifyQuiet({
       type: "import_save",
@@ -32,70 +105,144 @@ async function processGcsSave(id: string) {
       importId: id,
     });
 
-    let stepIndex = 0;
+    await runWithConcurrency(
+      importRecord.influencers,
+      SAVE_INFLUENCER_CONCURRENCY,
+      async (influencer) => {
+        if (await refreshStopRequested()) return;
+        let avatarCached = false;
+        let thumbnailsCached = 0;
+        let influencerError: string | null = null;
 
-    for (const influencer of importRecord.influencers) {
-      stepIndex += 1;
-      const tag = `[${stepIndex}/${total}]`;
+        const videosToCache = influencer.videos.filter((v) => Boolean(v.thumbnailUrl));
+        const targetAssets =
+          (influencer.avatarUrl ? 1 : 0) +
+          videosToCache.length;
 
-      if (influencer.avatarUrl && !isGcsUrl(influencer.avatarUrl)) {
         try {
-          const gcsAvatar = await cacheRemoteImageToGcs({
-            sourceUrl: influencer.avatarUrl,
-            importId: id,
-            kind: "avatars",
-            username: influencer.username,
-          });
-          if (gcsAvatar) {
-            await prisma.influencer.update({
-              where: { id: influencer.id },
-              data: { avatarUrl: gcsAvatar },
-            });
-          }
-        } catch (err) {
-          console.error(`Avatar GCS error for ${influencer.username}:`, err);
-        }
-      }
-
-      for (const video of influencer.videos) {
-        if (video.thumbnailUrl && !isGcsUrl(video.thumbnailUrl)) {
-          try {
-            const gcsThumb = await cacheRemoteImageToGcs({
-              sourceUrl: video.thumbnailUrl,
-              importId: id,
-              kind: "thumbnails",
-              username: influencer.username,
-            });
-            if (gcsThumb) {
-              await prisma.video.update({
-                where: { id: video.id },
-                data: { thumbnailUrl: gcsThumb },
+          if (influencer.avatarUrl) {
+            try {
+              const gcsAvatar = await cacheRemoteImageToGcs({
+                sourceUrl: influencer.avatarUrl,
+                importId: id,
+                kind: "avatars",
+                username: influencer.username,
+                runKey,
               });
+              if (gcsAvatar) {
+                await prisma.influencer.update({
+                  where: { id: influencer.id },
+                  data: { avatarUrl: gcsAvatar },
+                });
+                avatarCached = true;
+              } else if (isGcsUrl(influencer.avatarUrl)) {
+                failedGcsSourceCopies += 1;
+              }
+            } catch (err) {
+              console.error(`Avatar GCS error for ${influencer.username}:`, err);
+              if (isGcsUrl(influencer.avatarUrl)) {
+                failedGcsSourceCopies += 1;
+              }
             }
-          } catch (err) {
-            console.error(`Thumbnail GCS error for ${video.id}:`, err);
           }
-        }
-      }
 
+          await runWithConcurrency(videosToCache, SAVE_MEDIA_CONCURRENCY, async (video) => {
+            if (await refreshStopRequested()) return;
+            const sourceUrl = video.thumbnailUrl;
+            if (!sourceUrl) return;
+            try {
+              const gcsThumb = await cacheRemoteImageToGcs({
+                sourceUrl,
+                importId: id,
+                kind: "thumbnails",
+                username: influencer.username,
+                runKey,
+              });
+              if (gcsThumb) {
+                await prisma.video.update({
+                  where: { id: video.id },
+                  data: { thumbnailUrl: gcsThumb },
+                });
+                thumbnailsCached += 1;
+              } else if (isGcsUrl(sourceUrl)) {
+                failedGcsSourceCopies += 1;
+              }
+            } catch (err) {
+              console.error(`Thumbnail GCS error for ${video.id}:`, err);
+              if (isGcsUrl(sourceUrl)) {
+                failedGcsSourceCopies += 1;
+              }
+            }
+          });
+        } catch (err) {
+          influencerError = err instanceof Error ? err.message : "Unknown save error";
+        }
+
+        const progressRow = await prisma.import.update({
+          where: { id },
+          data: { saveProgress: { increment: 1 } },
+          select: { saveProgress: true },
+        });
+        const tag = `[${progressRow.saveProgress}/${total}]`;
+        const cachedAssets = (avatarCached ? 1 : 0) + thumbnailsCached;
+
+        await notifyQuiet({
+          type: "import_save",
+          status: influencerError ? "error" : "success",
+          title: `${tag} @${influencer.username} cached`,
+          message: influencerError
+            ? `Failed to fully cache media for @${influencer.username}: ${influencerError}`
+            : `${cachedAssets}/${targetAssets} media asset${targetAssets === 1 ? "" : "s"} uploaded to cloud.`,
+          importId: id,
+        });
+      },
+    );
+
+    if (await refreshStopRequested(true)) {
+      const stopped = await prisma.import.update({
+        where: { id },
+        data: {
+          status: "DRAFT",
+          errorMessage: `${SAVE_STOPPED_BY_USER_PREFIX} at current progress.`,
+        },
+        select: { saveProgress: true, saveTotal: true },
+      });
       await prisma.import.update({
         where: { id },
-        data: { saveProgress: { increment: 1 } },
+        data: {
+          errorMessage: `${SAVE_STOPPED_BY_USER_PREFIX} at ${stopped.saveProgress}/${stopped.saveTotal}.`,
+        },
       });
-
-      const thumbCount = influencer.videos.filter((v) => v.thumbnailUrl && !isGcsUrl(v.thumbnailUrl)).length;
       await notifyQuiet({
         type: "import_save",
-        status: "success",
-        title: `${tag} @${influencer.username} cached`,
-        message: `Avatar + ${thumbCount} thumbnail${thumbCount === 1 ? "" : "s"} uploaded to cloud.`,
+        status: "info",
+        title: "Save to cloud stopped",
+        message: `Stopped at ${stopped.saveProgress}/${stopped.saveTotal}. You can restart save anytime.`,
+        importId: id,
+      });
+      return;
+    }
+
+    if (failedGcsSourceCopies === 0) {
+      try {
+        await deleteImportMediaExceptRunFromGcs(id, runKey);
+      } catch (cleanupErr) {
+        console.error(`[save] cleanup for ${id} failed:`, cleanupErr);
+      }
+    } else {
+      await notifyQuiet({
+        type: "import_save",
+        status: "info",
+        title: "Save cleanup skipped",
+        message:
+          "Some existing cloud files could not be copied, so old files were kept to avoid broken images.",
         importId: id,
       });
     }
 
     await prisma.import.update({
       where: { id },
-      data: { status: "COMPLETED" },
+      data: { status: "COMPLETED", errorMessage: null },
     });
 
     await notifyQuiet({
@@ -145,16 +292,36 @@ export async function POST(
 
   const importRecord = await prisma.import.findUnique({
     where: { id },
-    include: { influencers: { select: { id: true } } },
+    select: {
+      status: true,
+      updatedAt: true,
+      influencers: { select: { id: true } },
+    },
   });
 
   if (!importRecord) {
     return NextResponse.json({ error: "Import not found" }, { status: 404 });
   }
 
-  if (importRecord.status !== "DRAFT") {
+  let effectiveStatus = importRecord.status;
+  if (effectiveStatus === "PROCESSING" && isStale(importRecord.updatedAt)) {
+    await prisma.import.update({
+      where: { id },
+      data: {
+        status: "DRAFT",
+        errorMessage: "Previous save job became stale. Please retry.",
+      },
+    });
+    effectiveStatus = "DRAFT";
+  }
+
+  if (
+    effectiveStatus !== "DRAFT" &&
+    effectiveStatus !== "COMPLETED" &&
+    effectiveStatus !== "FAILED"
+  ) {
     return NextResponse.json(
-      { error: `Import is already ${importRecord.status}` },
+      { error: `Import is already ${effectiveStatus}` },
       { status: 400 },
     );
   }
@@ -163,7 +330,12 @@ export async function POST(
 
   await prisma.import.update({
     where: { id },
-    data: { status: "PROCESSING", saveProgress: 0, saveTotal: total },
+    data: {
+      status: "PROCESSING",
+      saveProgress: 0,
+      saveTotal: total,
+      errorMessage: null,
+    },
   });
 
   processGcsSave(id).catch((err) =>

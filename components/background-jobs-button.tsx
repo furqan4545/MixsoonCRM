@@ -1,5 +1,6 @@
 "use client";
 
+import { isSaveStoppedMessage } from "@/app/lib/import-save";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +17,7 @@ type SaveStatus = {
   saveProgress: number;
   saveTotal: number;
   errorMessage: string | null;
+  stopRequested?: boolean;
 };
 
 type AiStatus = {
@@ -32,6 +34,7 @@ export function BackgroundJobsButton() {
   const [aiRunId, setAiRunId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  const [stoppingSave, setStoppingSave] = useState(false);
 
   const refresh = useCallback(() => {
     setSaveId(localStorage.getItem(SAVE_KEY));
@@ -106,6 +109,20 @@ export function BackgroundJobsButton() {
     }
   };
 
+  const stopSave = async () => {
+    if (!saveId || stoppingSave) return;
+    setStoppingSave(true);
+    try {
+      const res = await fetch(`/api/imports/${saveId}/save/stop`, {
+        method: "POST",
+      });
+      if (!res.ok) return;
+      setSaveStatus((prev) => (prev ? { ...prev, stopRequested: true } : prev));
+    } finally {
+      setStoppingSave(false);
+    }
+  };
+
   const hasActive = saveId || aiRunId;
   if (!hasActive) return null;
 
@@ -130,17 +147,34 @@ export function BackgroundJobsButton() {
               <p className="truncate text-sm font-medium">Save to cloud</p>
               <p className="text-xs text-muted-foreground">
                 {saveStatus
-                  ? `${saveStatus.saveProgress} / ${saveStatus.saveTotal}`
+                  ? saveStatus.status === "PROCESSING" && saveStatus.stopRequested
+                    ? `Stopping… ${saveStatus.saveProgress} / ${saveStatus.saveTotal}`
+                    : saveStatus.status === "DRAFT" &&
+                        isSaveStoppedMessage(saveStatus.errorMessage)
+                      ? "Stopped"
+                      : `${saveStatus.saveProgress} / ${saveStatus.saveTotal}`
                   : "…"}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={showSave}
-              className="shrink-0 text-xs text-primary hover:underline"
-            >
-              Show
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              {saveStatus?.status === "PROCESSING" && (
+                <button
+                  type="button"
+                  onClick={stopSave}
+                  disabled={stoppingSave || saveStatus.stopRequested}
+                  className="text-xs text-destructive hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saveStatus.stopRequested ? "Stopping" : "Stop"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={showSave}
+                className="text-xs text-primary hover:underline"
+              >
+                Show
+              </button>
+            </div>
           </div>
         )}
         {aiRunId && (

@@ -10,6 +10,10 @@ const REQUEST_HEADERS = {
   Referer: "https://www.tiktok.com/",
   Origin: "https://www.tiktok.com",
 };
+const REMOTE_FETCH_TIMEOUT_MS = Math.max(
+  1_000,
+  Number(process.env.GCS_REMOTE_FETCH_TIMEOUT_MS ?? 15_000) || 15_000,
+);
 
 type RemoteImage = { buffer: Buffer; contentType: string };
 
@@ -72,10 +76,16 @@ function buildCandidateUrls(url: string): string[] {
 
 async function fetchRemoteImage(url: string): Promise<RemoteImage | null> {
   for (const candidate of buildCandidateUrls(url)) {
-    const response = await fetch(candidate, {
-      headers: REQUEST_HEADERS,
-      redirect: "follow",
-    });
+    let response: Response;
+    try {
+      response = await fetch(candidate, {
+        headers: REQUEST_HEADERS,
+        redirect: "follow",
+        signal: AbortSignal.timeout(REMOTE_FETCH_TIMEOUT_MS),
+      });
+    } catch {
+      continue;
+    }
     if (!response.ok) continue;
 
     const contentType = response.headers.get("content-type") ?? "";
@@ -129,20 +139,30 @@ export async function cacheRemoteImageToGcs(params: {
   importId: string;
   kind: "avatars" | "thumbnails";
   username: string;
+  runKey?: string;
 }): Promise<string | null> {
   const sourceUrl = params.sourceUrl?.trim();
   if (!sourceUrl) return null;
-  if (isGcsUrl(sourceUrl)) return sourceUrl;
 
   const bucketName = getBucketName();
   if (!bucketName) return null;
 
-  const remote = await fetchRemoteImage(sourceUrl);
+  const remote = isGcsUrl(sourceUrl)
+    ? await readGcsImage(sourceUrl).then((img) =>
+        img
+          ? {
+              buffer: Buffer.from(img.body),
+              contentType: img.contentType,
+            }
+          : null,
+      )
+    : await fetchRemoteImage(sourceUrl);
   if (!remote) return null;
 
   const ext = extensionFor(remote.contentType);
+  const runKey = params.runKey?.trim() || "legacy";
   const objectPath =
-    `imports/${params.importId}/${params.kind}/${sanitizeSegment(params.username)}/` +
+    `imports/${params.importId}/${runKey}/${params.kind}/${sanitizeSegment(params.username)}/` +
     `${hashUrl(sourceUrl)}.${ext}`;
 
   const storage = getStorage();
@@ -197,4 +217,29 @@ export async function deleteImportMediaFromGcs(importId: string): Promise<{
   );
   const failedCount = results.filter((r) => r.status === "rejected").length;
   return { deletedCount: files.length - failedCount, failedCount };
+}
+
+export async function deleteImportMediaExceptRunFromGcs(
+  importId: string,
+  runKey: string,
+): Promise<{
+  deletedCount: number;
+  failedCount: number;
+}> {
+  const bucketName = getBucketName();
+  if (!bucketName) return { deletedCount: 0, failedCount: 0 };
+
+  const storage = getStorage();
+  const bucket = storage.bucket(bucketName);
+  const prefix = `imports/${importId}/`;
+  const keepPrefix = `imports/${importId}/${runKey}/`;
+  const [files] = await bucket.getFiles({ prefix });
+  const filesToDelete = files.filter((file) => !file.name.startsWith(keepPrefix));
+  if (filesToDelete.length === 0) return { deletedCount: 0, failedCount: 0 };
+
+  const results = await Promise.allSettled(
+    filesToDelete.map((file) => file.delete({ ignoreNotFound: true })),
+  );
+  const failedCount = results.filter((r) => r.status === "rejected").length;
+  return { deletedCount: filesToDelete.length - failedCount, failedCount };
 }

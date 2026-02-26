@@ -31,6 +31,8 @@ export function ImportActions({
 
   const isDraft = status === "DRAFT";
   const isProcessing = status === "PROCESSING";
+  const isCompleted = status === "COMPLETED";
+  const isFailed = status === "FAILED";
 
   async function handleSaveToCloud() {
     setSaving(true);
@@ -74,14 +76,18 @@ export function ImportActions({
 
   return (
     <div className="flex items-center gap-2">
-      {isDraft && (
+      {(isDraft || isCompleted || isFailed) && (
         <Button
           size="sm"
           onClick={handleSaveToCloud}
           disabled={saving || influencerCount === 0}
         >
           <CloudUpload className="mr-2 h-4 w-4" />
-          {saving ? "Saving…" : "Save to cloud"}
+          {saving
+            ? "Saving…"
+            : isDraft
+              ? "Save to cloud"
+              : "Save to cloud again"}
         </Button>
       )}
       {isProcessing && (
