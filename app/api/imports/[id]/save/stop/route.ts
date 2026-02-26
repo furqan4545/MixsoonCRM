@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SAVE_STOP_REQUESTED } from "@/app/lib/import-save";
 import { requirePermission } from "@/app/lib/rbac";
-import { prisma } from "../../../../../../lib/prisma";
+import { prisma } from "../../../../../lib/prisma";
 
 export async function POST(
   _request: NextRequest,
