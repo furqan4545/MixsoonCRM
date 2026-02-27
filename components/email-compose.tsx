@@ -678,12 +678,14 @@ function buildInitialComposeHtml(
   const bodyHtml = normalizedBody ? plainTextToLinkedHtml(normalizedBody) : "";
   const signatureHtml = signatureToHtml(signatureText);
 
+  const spacer = "<div><br></div><div><br></div><div><br></div><div><br></div>";
+
   if (bodyHtml && signatureHtml) {
-    return `${bodyHtml}<div><br></div>${signatureHtml}`;
+    return `${bodyHtml}${spacer}${signatureHtml}`;
   }
   if (bodyHtml) return bodyHtml;
-  if (signatureHtml) return signatureHtml;
-  return "";
+  if (signatureHtml) return `${spacer}${signatureHtml}`;
+  return "<div><br></div>";
 }
 
 function linkifyTextNodes(root: HTMLElement) {

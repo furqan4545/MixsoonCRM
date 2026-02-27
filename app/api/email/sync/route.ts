@@ -10,9 +10,15 @@ import { getCurrentUser } from "@/app/lib/rbac";
 
 const SYNC_FOLDERS: { remote: string; local: EmailFolder }[] = [
   { remote: "INBOX", local: "INBOX" },
+  { remote: "SENT", local: "SENT" },
+  { remote: "DRAFTS", local: "DRAFTS" },
+  { remote: "SPAM", local: "SPAM" },
+  { remote: "TRASH", local: "TRASH" },
 ];
 
 const DEDUPE_WINDOW_MS = 2 * 60 * 1000;
+const POP3_FETCH_TIMEOUT_MS = 12000;
+const IMAP_FETCH_TIMEOUT_MS = 8000;
 
 async function emailExists(
   accountId: string,
@@ -74,6 +80,28 @@ function toCreateData(
   };
 }
 
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+  label: string,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timeout = setTimeout(() => {
+          console.warn(`[email-sync] ${label} timed out after ${timeoutMs}ms`);
+          resolve(fallback);
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 export async function POST() {
   const user = await getCurrentUser();
   if (!user)
@@ -103,7 +131,12 @@ export async function POST() {
     account.imapHost.includes("pop3s.hiworks.com");
   if (isHiworksPop3) {
     try {
-      const emails = await fetchEmailsFromPop3(account);
+      const emails = await withTimeout(
+        fetchEmailsFromPop3(account),
+        POP3_FETCH_TIMEOUT_MS,
+        [],
+        "POP3 fetch",
+      );
       const messageIds = emails
         .map((email) => email.messageId)
         .filter((id): id is string => !!id);
@@ -152,45 +185,65 @@ export async function POST() {
     return NextResponse.json({ synced: totalSynced, protocol: "POP3" });
   }
 
-  for (const { remote, local } of SYNC_FOLDERS) {
-    try {
-      const emails = await fetchEmailsFromImap(account, remote, since);
-      const messageIds = emails
-        .map((email) => email.messageId)
-        .filter((id): id is string => !!id);
-      const existingIdSet = new Set<string>();
-
-      if (messageIds.length > 0) {
-        const existingByMessageId = await prisma.emailMessage.findMany({
-          where: {
-            accountId: account.id,
-            messageId: { in: [...new Set(messageIds)] },
-          },
-          select: { messageId: true },
-        });
-        for (const row of existingByMessageId) {
-          if (row.messageId) existingIdSet.add(row.messageId);
-        }
+  const folderResults = await Promise.all(
+    SYNC_FOLDERS.map(async ({ remote, local }) => {
+      try {
+        const emails = await withTimeout(
+          fetchEmailsFromImap(account, remote, since),
+          IMAP_FETCH_TIMEOUT_MS,
+          [],
+          `IMAP ${remote}`,
+        );
+        return { local, emails };
+      } catch (err) {
+        console.error(`[email-sync] Error syncing ${remote}:`, err);
+        return { local, emails: [] as FetchedEmail[] };
       }
+    }),
+  );
 
-      const toInsert: ReturnType<typeof toCreateData>[] = [];
-      for (const email of emails) {
-        if (email.messageId && existingIdSet.has(email.messageId)) continue;
-        if (!email.messageId && (await emailExists(account.id, local, email))) {
-          continue;
-        }
-
-        toInsert.push(toCreateData(account.id, local, email));
-        if (email.messageId) existingIdSet.add(email.messageId);
-      }
-
-      if (toInsert.length > 0) {
-        await prisma.emailMessage.createMany({ data: toInsert });
-        totalSynced += toInsert.length;
-      }
-    } catch (err) {
-      console.error(`[email-sync] Error syncing ${remote}:`, err);
+  const candidates: Array<{ folder: EmailFolder; email: FetchedEmail }> = [];
+  for (const result of folderResults) {
+    for (const email of result.emails) {
+      candidates.push({ folder: result.local, email });
     }
+  }
+
+  const messageIds = candidates
+    .map((item) => item.email.messageId)
+    .filter((id): id is string => !!id);
+  const existingIdSet = new Set<string>();
+  if (messageIds.length > 0) {
+    const existingByMessageId = await prisma.emailMessage.findMany({
+      where: {
+        accountId: account.id,
+        messageId: { in: [...new Set(messageIds)] },
+      },
+      select: { messageId: true },
+    });
+    for (const row of existingByMessageId) {
+      if (row.messageId) existingIdSet.add(row.messageId);
+    }
+  }
+
+  const seenInBatch = new Set<string>();
+  const toInsert: ReturnType<typeof toCreateData>[] = [];
+  for (const item of candidates) {
+    const messageId = item.email.messageId;
+    if (messageId) {
+      if (existingIdSet.has(messageId) || seenInBatch.has(messageId)) continue;
+      seenInBatch.add(messageId);
+      toInsert.push(toCreateData(account.id, item.folder, item.email));
+      continue;
+    }
+
+    if (await emailExists(account.id, item.folder, item.email)) continue;
+    toInsert.push(toCreateData(account.id, item.folder, item.email));
+  }
+
+  if (toInsert.length > 0) {
+    await prisma.emailMessage.createMany({ data: toInsert });
+    totalSynced += toInsert.length;
   }
 
   await prisma.emailAccount.update({

@@ -1,14 +1,9 @@
 import { NextResponse } from "next/server";
-import {
-  parseStoredSignature,
-  serializeStoredSignature,
-} from "@/app/lib/email-signature";
+import { signatureToHtml } from "@/app/lib/email-signature";
 import { prisma } from "@/app/lib/prisma";
 import { getCurrentUser } from "@/app/lib/rbac";
 
-const MAX_IMAGE_DATA_URL_LENGTH = 3_000_000;
-const DATA_IMAGE_REGEX =
-  /^data:image\/[a-zA-Z0-9.+-]+;base64,[a-zA-Z0-9+/=\n\r]+$/;
+const MAX_SIGNATURE_HTML_LENGTH = 3_000_000;
 
 async function getAccountIdForUser(userId: string): Promise<string | null> {
   const account = await prisma.emailAccount.findUnique({
@@ -37,10 +32,9 @@ export async function GET() {
     WHERE "id" = ${accountId}
     LIMIT 1
   `;
-  const parsed = parseStoredSignature(rows[0]?.signature ?? null);
+  const html = signatureToHtml(rows[0]?.signature ?? null);
   return NextResponse.json({
-    text: parsed.text,
-    imageDataUrl: parsed.imageDataUrl,
+    html,
   });
 }
 
@@ -58,24 +52,20 @@ export async function PUT(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const text = typeof body.text === "string" ? body.text : "";
-  const imageDataUrl =
-    typeof body.imageDataUrl === "string" ? body.imageDataUrl : null;
+  const html = typeof body.html === "string" ? body.html : "";
+  const sanitizedHtml = sanitizeSignatureHtml(html);
 
-  if (imageDataUrl && !DATA_IMAGE_REGEX.test(imageDataUrl)) {
+  if (sanitizedHtml.length > MAX_SIGNATURE_HTML_LENGTH) {
     return NextResponse.json(
-      { error: "Invalid signature image" },
-      { status: 400 },
-    );
-  }
-  if (imageDataUrl && imageDataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
-    return NextResponse.json(
-      { error: "Signature image is too large" },
+      { error: "Signature is too large" },
       { status: 400 },
     );
   }
 
-  const stored = serializeStoredSignature({ text, imageDataUrl });
+  const hasContent =
+    sanitizedHtml.replace(/<[^>]+>/g, "").trim().length > 0 ||
+    /<img\b/i.test(sanitizedHtml);
+  const stored = hasContent ? sanitizedHtml : null;
   await prisma.$executeRaw`
     UPDATE "EmailAccount"
     SET "signature" = ${stored}
@@ -104,4 +94,16 @@ export async function DELETE() {
     WHERE "id" = ${accountId}
   `;
   return NextResponse.json({ ok: true });
+}
+
+function sanitizeSignatureHtml(rawHtml: string): string {
+  const trimmed = rawHtml.trim();
+  if (!trimmed) return "";
+
+  return trimmed
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
+    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, "")
+    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, "")
+    .replace(/\s(href|src)\s*=\s*(['"])\s*javascript:[^'"]*\2/gi, "");
 }
