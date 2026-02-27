@@ -1,27 +1,32 @@
 "use client";
 
 import {
-  Inbox,
-  Send,
-  FileEdit,
-  Trash2,
   AlertTriangle,
+  FileEdit,
+  Inbox,
   PenSquare,
-  Settings,
   RefreshCw,
+  Send,
+  Settings,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { emitEmailRefresh, useEmailRefresh } from "@/app/lib/email-events";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { emitEmailRefresh, useEmailRefresh } from "@/app/lib/email-events";
 
 const folders = [
   { title: "Inbox", href: "/email/inbox", icon: Inbox, countKey: "INBOX" },
   { title: "Sent", href: "/email/sent", icon: Send, countKey: "SENT" },
-  { title: "Drafts", href: "/email/drafts", icon: FileEdit, countKey: "DRAFTS" },
+  {
+    title: "Drafts",
+    href: "/email/drafts",
+    icon: FileEdit,
+    countKey: "DRAFTS",
+  },
+  { title: "Signature", href: "/email/signature", icon: PenSquare },
   { title: "Spam", href: "/email/spam", icon: AlertTriangle, countKey: "SPAM" },
   { title: "Trash", href: "/email/trash", icon: Trash2, countKey: "TRASH" },
 ] as const;
@@ -30,13 +35,14 @@ type FolderCounts = Record<string, number>;
 
 export function EmailSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [counts, setCounts] = useState<FolderCounts>({});
-  const [syncing, startSync] = useTransition();
+  const [syncing, setSyncing] = useState(false);
   const syncInFlightRef = useRef(false);
 
   const fetchCounts = useCallback(async () => {
     try {
-      const res = await fetch("/api/email/counts");
+      const res = await fetch("/api/email/counts", { cache: "no-store" });
       if (res.ok) setCounts(await res.json());
     } catch {}
   }, []);
@@ -50,42 +56,39 @@ export function EmailSidebar() {
   const runSync = useCallback(async () => {
     if (syncInFlightRef.current) return;
     syncInFlightRef.current = true;
+    setSyncing(true);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 120000);
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
       const res = await fetch("/api/email/sync", {
         method: "POST",
+        cache: "no-store",
         signal: controller.signal,
       });
-      clearTimeout(timeout);
+      const data = (await res.json().catch(() => ({}))) as {
+        skipped?: boolean;
+        reason?: string;
+      };
 
       if (res.ok) {
-        fetchCounts();
+        if (data.skipped && data.reason === "NO_ACCOUNT") {
+          router.push("/email/inbox");
+          return;
+        }
+        await fetchCounts();
         emitEmailRefresh();
+        router.refresh();
       }
     } catch {
     } finally {
+      window.clearTimeout(timeout);
       syncInFlightRef.current = false;
+      setSyncing(false);
     }
-  }, [fetchCounts]);
-
-  useEffect(() => {
-    void runSync();
-
-    // Keep inbox fresh without manual sync clicks.
-    const interval = window.setInterval(() => {
-      if (!document.hidden) {
-        void runSync();
-      }
-    }, 30000);
-
-    return () => window.clearInterval(interval);
-  }, [runSync]);
+  }, [fetchCounts, router]);
 
   const handleSync = () => {
-    startSync(() => {
-      void runSync();
-    });
+    void runSync();
   };
 
   return (
@@ -107,6 +110,11 @@ export function EmailSidebar() {
           <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
           {syncing ? "Syncing..." : "Sync Mail"}
         </Button>
+        {syncing && (
+          <div className="h-1 w-full overflow-hidden rounded bg-sidebar-accent/70">
+            <div className="email-sync-bar h-full w-1/3 bg-sidebar-primary" />
+          </div>
+        )}
       </div>
 
       <div className="flex-1 p-2">
@@ -118,7 +126,8 @@ export function EmailSidebar() {
             const isActive =
               pathname === folder.href ||
               pathname.startsWith(`${folder.href}/`);
-            const count = counts[folder.countKey] ?? 0;
+            const count =
+              "countKey" in folder ? (counts[folder.countKey] ?? 0) : 0;
             return (
               <Link
                 key={folder.href}
@@ -133,7 +142,7 @@ export function EmailSidebar() {
               >
                 <folder.icon className="h-4 w-4 shrink-0" />
                 <span className="flex-1 truncate">{folder.title}</span>
-                {count > 0 && (
+                {"countKey" in folder && count > 0 && (
                   <span className="ml-auto rounded-full bg-sidebar-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-sidebar-primary-foreground">
                     {count}
                   </span>
@@ -159,6 +168,20 @@ export function EmailSidebar() {
           <span>Settings</span>
         </Link>
       </div>
+      <style jsx>{`
+        .email-sync-bar {
+          animation: email-sync-slide 1.1s ease-in-out infinite;
+        }
+
+        @keyframes email-sync-slide {
+          0% {
+            transform: translateX(-120%);
+          }
+          100% {
+            transform: translateX(360%);
+          }
+        }
+      `}</style>
     </div>
   );
 }

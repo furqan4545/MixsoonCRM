@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Film, Paperclip, Save, Send, Sparkles, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { signatureToHtml } from "@/app/lib/email-signature";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { emitEmailRefresh } from "@/app/lib/email-events";
@@ -18,6 +19,7 @@ interface Props {
   influencerId?: string;
   inReplyTo?: string;
   draftId?: string;
+  accountSignature?: string;
 }
 
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -37,6 +39,7 @@ export function EmailCompose({
   influencerId,
   inReplyTo,
   draftId,
+  accountSignature,
 }: Props) {
   const router = useRouter();
   const [sending, setSending] = useState(false);
@@ -59,8 +62,8 @@ export function EmailCompose({
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   const initialEditorHtml = useMemo(
-    () => (defaultBody ? plainTextToLinkedHtml(defaultBody) : ""),
-    [defaultBody],
+    () => buildInitialComposeHtml(defaultBody, accountSignature),
+    [defaultBody, accountSignature],
   );
 
   useEffect(() => {
@@ -347,7 +350,10 @@ export function EmailCompose({
         setSubject(nextSubject);
       }
       if (editorRef.current) {
-        editorRef.current.innerHTML = plainTextToLinkedHtml(nextBody);
+        editorRef.current.innerHTML = buildInitialComposeHtml(
+          nextBody,
+          accountSignature,
+        );
         editorRef.current.focus();
       }
       toast.success("AI outreach draft inserted");
@@ -661,6 +667,23 @@ function buildLinkedHtmlFromEditor(editor: HTMLElement): string {
   linkifyTextNodes(clone);
   const html = clone.innerHTML.trim();
   return html;
+}
+
+function buildInitialComposeHtml(
+  bodyText?: string,
+  signatureText?: string,
+): string {
+  const normalizedBody = (bodyText ?? "").trim();
+
+  const bodyHtml = normalizedBody ? plainTextToLinkedHtml(normalizedBody) : "";
+  const signatureHtml = signatureToHtml(signatureText);
+
+  if (bodyHtml && signatureHtml) {
+    return `${bodyHtml}<div><br></div>${signatureHtml}`;
+  }
+  if (bodyHtml) return bodyHtml;
+  if (signatureHtml) return signatureHtml;
+  return "";
 }
 
 function linkifyTextNodes(root: HTMLElement) {

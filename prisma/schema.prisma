@@ -247,6 +247,7 @@ model EmailAccount {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   emailAddress String
   displayName  String?
+  signature    String?
 
   smtpHost      String
   smtpPort      Int

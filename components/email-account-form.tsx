@@ -1,20 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Lock } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type Provider = "google" | "hiworks";
 
@@ -173,7 +168,11 @@ export function EmailAccountForm({ existing }: Props) {
   };
 
   const handleDisconnect = async () => {
-    if (!confirm("Disconnect your email account? All synced emails will be removed."))
+    if (
+      !confirm(
+        "Disconnect your email account? All synced emails will be removed.",
+      )
+    )
       return;
     try {
       const res = await fetch("/api/email/account", { method: "DELETE" });

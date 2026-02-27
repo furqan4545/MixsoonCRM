@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Mail, MailOpen, Star, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { formatDistanceToNow } from "@/app/lib/date-utils";
-import { Star, MailOpen, Mail, Trash2 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { emitEmailRefresh, useEmailRefresh } from "@/app/lib/email-events";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 interface EmailItem {
   id: string;
@@ -48,7 +48,7 @@ export function EmailList({ folder, title }: Props) {
       });
       if (search) params.set("q", search);
 
-      const res = await fetch(`/api/email?${params}`);
+      const res = await fetch(`/api/email?${params}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setEmails(data.items);
@@ -125,12 +125,12 @@ export function EmailList({ folder, title }: Props) {
             </Button>
           )}
           <form onSubmit={handleSearch} className="flex gap-2">
-          <Input
-            placeholder="Search emails..."
-            className="h-8 w-56"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+            <Input
+              placeholder="Search emails..."
+              className="h-8 w-56"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </form>
         </div>
       </div>

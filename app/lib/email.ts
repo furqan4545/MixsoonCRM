@@ -1,8 +1,8 @@
-import nodemailer from "nodemailer";
 import tls from "node:tls";
-import { ImapFlow } from "imapflow";
-import { simpleParser, type ParsedMail } from "mailparser";
 import type { EmailAccount } from "@prisma/client";
+import { ImapFlow } from "imapflow";
+import { type ParsedMail, simpleParser } from "mailparser";
+import nodemailer from "nodemailer";
 import { decrypt } from "./crypto";
 
 export function getSmtpTransport(account: EmailAccount) {
@@ -43,7 +43,10 @@ export async function testSmtpConnection(
     transport.close();
     return { ok: true };
   } catch (err: unknown) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -65,7 +68,10 @@ export async function testImapConnection(
     await client.logout();
     return { ok: true };
   } catch (err: unknown) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -81,7 +87,10 @@ export async function testPop3Connection(
     await client.login(user, pass);
     return { ok: true };
   } catch (err: unknown) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   } finally {
     if (client) {
       await client.quit();
@@ -93,8 +102,10 @@ class Pop3Client {
   private socket: tls.TLSSocket;
   private buffer = Buffer.alloc(0);
   private failure: Error | null = null;
-  private waiters: Array<{ resolve: () => void; reject: (err: Error) => void }> =
-    [];
+  private waiters: Array<{
+    resolve: () => void;
+    reject: (err: Error) => void;
+  }> = [];
 
   private constructor(socket: tls.TLSSocket) {
     this.socket = socket;
@@ -266,6 +277,15 @@ export interface FetchedEmail {
   uid: number;
 }
 
+type EnvelopeAddress =
+  | {
+      address?: string | null;
+      mailbox?: string | null;
+      host?: string | null;
+    }
+  | null
+  | undefined;
+
 export async function fetchEmailsFromPop3(
   account: EmailAccount,
   since?: Date,
@@ -293,7 +313,8 @@ export async function fetchEmailsFromPop3(
         if (since && parsed.date && parsed.date < since) continue;
         results.push({
           messageId: parsed.messageId ?? undefined,
-          inReplyTo: typeof parsed.inReplyTo === "string" ? parsed.inReplyTo : undefined,
+          inReplyTo:
+            typeof parsed.inReplyTo === "string" ? parsed.inReplyTo : undefined,
           from: addressToStrings(parsed.from)[0] ?? "",
           to: addressToStrings(parsed.to as ParsedMail["from"]),
           cc: addressToStrings(parsed.cc as ParsedMail["from"]),
@@ -327,10 +348,22 @@ const IMAP_FOLDER_MAP: Record<string, string> = {
 };
 
 const IMAP_FOLDER_ALIASES: Record<string, string[]> = {
-  SENT: ["Sent", "Sent Messages", "Sent Items", "[Gmail]/Sent Mail", "INBOX.Sent"],
+  SENT: [
+    "Sent",
+    "Sent Messages",
+    "Sent Items",
+    "[Gmail]/Sent Mail",
+    "INBOX.Sent",
+  ],
   DRAFTS: ["Drafts", "[Gmail]/Drafts", "INBOX.Drafts"],
   SPAM: ["Spam", "Junk", "Junk E-mail", "[Gmail]/Spam", "INBOX.Spam"],
-  TRASH: ["Trash", "Deleted", "Deleted Messages", "[Gmail]/Trash", "INBOX.Trash"],
+  TRASH: [
+    "Trash",
+    "Deleted",
+    "Deleted Messages",
+    "[Gmail]/Trash",
+    "INBOX.Trash",
+  ],
 };
 
 /**
@@ -343,8 +376,12 @@ async function resolveMailbox(
 ): Promise<string | null> {
   if (folder === "INBOX") return "INBOX";
 
-  const aliases = IMAP_FOLDER_ALIASES[folder] ?? [IMAP_FOLDER_MAP[folder] ?? folder];
-  const allNames = [IMAP_FOLDER_MAP[folder], ...aliases].filter(Boolean) as string[];
+  const aliases = IMAP_FOLDER_ALIASES[folder] ?? [
+    IMAP_FOLDER_MAP[folder] ?? folder,
+  ];
+  const allNames = [IMAP_FOLDER_MAP[folder], ...aliases].filter(
+    Boolean,
+  ) as string[];
   const unique = [...new Set(allNames)];
 
   const list = await client.list();
@@ -356,14 +393,32 @@ async function resolveMailbox(
   return null;
 }
 
-function addressToStrings(
-  addr: ParsedMail["from"],
-): string[] {
+function addressToStrings(addr: ParsedMail["from"]): string[] {
   if (!addr) return [];
   if ("value" in addr) {
     return addr.value.map((a) => a.address ?? "").filter(Boolean);
   }
   return [];
+}
+
+function envelopeAddressesToStrings(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+
+  const out: string[] = [];
+  for (const raw of input) {
+    const item = raw as EnvelopeAddress;
+    if (!item) continue;
+    if (typeof item.address === "string" && item.address) {
+      out.push(item.address);
+      continue;
+    }
+
+    const mailbox = typeof item.mailbox === "string" ? item.mailbox : "";
+    const host = typeof item.host === "string" ? item.host : "";
+    const combined = mailbox && host ? `${mailbox}@${host}` : "";
+    if (combined) out.push(combined);
+  }
+  return out;
 }
 
 export async function fetchEmailsFromImap(
@@ -382,27 +437,40 @@ export async function fetchEmailsFromImap(
 
     const lock = await client.getMailboxLock(mailbox);
     try {
-      const searchCriteria: Record<string, unknown> = {};
-      if (since) searchCriteria.since = since;
+      // Keep sync responsive: fetch latest headers only.
+      const allUids = await client.search(since ? { since } : { all: true });
+      const targetUids = allUids.slice(-40);
+      if (targetUids.length === 0) return results;
 
-      const messages = client.fetch(
-        since ? { since } : "1:*",
-        { envelope: true, source: true, uid: true },
-      );
+      const messages = client.fetch(targetUids, {
+        envelope: true,
+        uid: true,
+      });
 
       for await (const msg of messages) {
         try {
-          const parsed = await simpleParser(msg.source);
+          const envelope = msg.envelope as {
+            messageId?: string | null;
+            inReplyTo?: string | null;
+            from?: unknown;
+            to?: unknown;
+            cc?: unknown;
+            subject?: string | null;
+            date?: Date | null;
+          } | null;
+          const fromList = envelopeAddressesToStrings(envelope?.from);
+          const inReplyToValue = envelope?.inReplyTo;
           results.push({
-            messageId: parsed.messageId ?? undefined,
-            inReplyTo: typeof parsed.inReplyTo === "string" ? parsed.inReplyTo : undefined,
-            from: addressToStrings(parsed.from)[0] ?? "",
-            to: addressToStrings(parsed.to as ParsedMail["from"]),
-            cc: addressToStrings(parsed.cc as ParsedMail["from"]),
-            subject: parsed.subject ?? "(no subject)",
-            bodyHtml: parsed.html || undefined,
-            bodyText: parsed.text ?? undefined,
-            date: parsed.date ?? undefined,
+            messageId: envelope?.messageId ?? undefined,
+            inReplyTo:
+              typeof inReplyToValue === "string" ? inReplyToValue : undefined,
+            from: fromList[0] ?? "",
+            to: envelopeAddressesToStrings(envelope?.to),
+            cc: envelopeAddressesToStrings(envelope?.cc),
+            subject: envelope?.subject ?? "(no subject)",
+            bodyHtml: undefined,
+            bodyText: undefined,
+            date: envelope?.date ?? undefined,
             uid: msg.uid,
           });
         } catch {
@@ -416,7 +484,9 @@ export async function fetchEmailsFromImap(
     await client.logout();
   } catch (err) {
     console.error(`[email] IMAP fetch error for ${folder}:`, err);
-    try { await client.logout(); } catch {}
+    try {
+      await client.logout();
+    } catch {}
   }
 
   return results;

@@ -1,5 +1,22 @@
+import { redirect } from "next/navigation";
+import { prisma } from "@/app/lib/prisma";
+import { getCurrentUser } from "@/app/lib/rbac";
+import { EmailAccountRequired } from "@/components/email-account-required";
 import { EmailList } from "@/components/email-list";
 
-export default function SentPage() {
+export default async function SentPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const account = await prisma.emailAccount.findUnique({
+    where: { userId: user.id },
+    select: { id: true },
+  });
+  if (!account) {
+    return (
+      <EmailAccountRequired message="Connect an email account first to view sent emails." />
+    );
+  }
+
   return <EmailList folder="SENT" title="Sent" />;
 }
