@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Film, Paperclip, Save, Send, Sparkles, X } from "lucide-react";
+import { Bold, Film, Italic, Paperclip, Save, Send, Sparkles, Underline, X } from "lucide-react";
+import Link from "@tiptap/extension-link";
+import UnderlineExtension from "@tiptap/extension-underline";
+import { TextSelection } from "@tiptap/pm/state";
+import { EditorContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import ImageResize from "tiptap-extension-resize-image";
 
 import { Button } from "@/components/ui/button";
 import { signatureToHtml } from "@/app/lib/email-signature";
@@ -48,8 +54,6 @@ export function EmailCompose({
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const toInputRef = useRef<HTMLInputElement>(null);
   const ccInputRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<HTMLDivElement>(null);
-  const editorInitializedRef = useRef(false);
   const attachmentsRef = useRef<ComposeAttachment[]>([]);
 
   const [to, setTo] = useState<string[]>(() => parseRecipients(defaultTo));
@@ -65,6 +69,56 @@ export function EmailCompose({
     () => buildInitialComposeHtml(defaultBody, accountSignature),
     [defaultBody, accountSignature],
   );
+
+  const editor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit,
+      UnderlineExtension,
+      Link.configure({
+        autolink: true,
+        openOnClick: false,
+      }),
+      ImageResize.configure({
+        minWidth: 80,
+        maxWidth: 800,
+      }),
+    ],
+    content: initialEditorHtml || "<p></p>",
+    editorProps: {
+      attributes: {
+        class: "min-h-[300px] w-full rounded-md border border-input bg-transparent px-4 py-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring prose prose-sm max-w-none dark:prose-invert [&_p]:my-1",
+      },
+      handlePaste: (view, event) => {
+        const files = Array.from(event.clipboardData?.files ?? []).filter(
+          (file) => file.type.startsWith("image/"),
+        );
+        if (files.length === 0) return false;
+
+        event.preventDefault();
+        void insertFilesAtView(view, files);
+        return true;
+      },
+      handleDrop: (view, event) => {
+        const files = Array.from(event.dataTransfer?.files ?? []).filter(
+          (file) => file.type.startsWith("image/"),
+        );
+        if (files.length === 0) return false;
+
+        event.preventDefault();
+        const point = view.posAtCoords({
+          left: event.clientX,
+          top: event.clientY,
+        });
+        if (point) {
+          const selection = TextSelection.create(view.state.doc, point.pos);
+          view.dispatch(view.state.tr.setSelection(selection));
+        }
+        void insertFilesAtView(view, files);
+        return true;
+      },
+    },
+  });
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -84,10 +138,11 @@ export function EmailCompose({
   }, [previewImageUrl]);
 
   useEffect(() => {
-    if (!editorRef.current || editorInitializedRef.current) return;
-    editorRef.current.innerHTML = initialEditorHtml || "";
-    editorInitializedRef.current = true;
-  }, [initialEditorHtml]);
+    if (!editor || !initialEditorHtml) return;
+    if (editor.isEmpty) {
+      editor.commands.setContent(initialEditorHtml, false);
+    }
+  }, [editor, initialEditorHtml]);
 
   useEffect(() => {
     return () => {
@@ -168,39 +223,11 @@ export function EmailCompose({
   };
 
   const getEditorPayload = () => {
-    const editor = editorRef.current;
     if (!editor) return { bodyHtml: "", bodyText: "" };
 
-    const bodyText = (editor.innerText ?? "").replace(/\u00a0/g, " ").trim();
-    const bodyHtml = buildLinkedHtmlFromEditor(editor);
+    const bodyHtml = editor.getHTML();
+    const bodyText = editor.getText();
     return { bodyHtml, bodyText };
-  };
-
-  const handleEditorPaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
-    const imageItems = Array.from(e.clipboardData.items).filter((item) =>
-      item.type.startsWith("image/"),
-    );
-
-    if (imageItems.length > 0) {
-      e.preventDefault();
-      for (const item of imageItems) {
-        const file = item.getAsFile();
-        if (!file) continue;
-        try {
-          const dataUrl = await fileToDataUrl(file);
-          insertImageAtCursor(dataUrl, editorRef.current);
-        } catch {
-          toast.error("Failed to paste image");
-        }
-      }
-      return;
-    }
-
-    const plain = e.clipboardData.getData("text/plain");
-    if (plain) {
-      e.preventDefault();
-      insertTextAtCursor(plain, editorRef.current);
-    }
   };
 
   const handleSend = async () => {
@@ -349,12 +376,12 @@ export function EmailCompose({
       if (nextSubject) {
         setSubject(nextSubject);
       }
-      if (editorRef.current) {
-        editorRef.current.innerHTML = buildInitialComposeHtml(
-          nextBody,
-          accountSignature,
+      if (editor) {
+        editor.commands.setContent(
+          buildInitialComposeHtml(nextBody, accountSignature),
+          false,
         );
-        editorRef.current.focus();
+        editor.commands.focus();
       }
       toast.success("AI outreach draft inserted");
     } catch (err: unknown) {
@@ -579,17 +606,45 @@ export function EmailCompose({
         </div>
       </div>
 
-      <div className="flex-1 p-4">
-        <div className="relative h-full min-h-[300px]">
-          <div
-            ref={editorRef}
-            contentEditable={!generatingAi}
-            suppressContentEditableWarning
-            onPaste={(e) => {
-              void handleEditorPaste(e);
-            }}
+      <div className="flex-1 p-4 flex flex-col">
+        <div className="flex flex-wrap items-center gap-2 border-b pb-2 mb-2">
+          <Button
+            type="button"
+            variant={editor?.isActive("bold") ? "default" : "outline"}
+            size="sm"
+            onClick={() => editor?.chain().focus().toggleBold().run()}
+            title="Bold"
+            disabled={!editor || generatingAi}
+          >
+            <Bold className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant={editor?.isActive("italic") ? "default" : "outline"}
+            size="sm"
+            onClick={() => editor?.chain().focus().toggleItalic().run()}
+            title="Italic"
+            disabled={!editor || generatingAi}
+          >
+            <Italic className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant={editor?.isActive("underline") ? "default" : "outline"}
+            size="sm"
+            onClick={() => editor?.chain().focus().toggleUnderline().run()}
+            title="Underline"
+            disabled={!editor || generatingAi}
+          >
+            <Underline className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="relative flex-1 min-h-[300px]">
+          <EditorContent
+            editor={editor}
+            className="w-full h-full"
             aria-busy={generatingAi}
-            className="h-full min-h-[300px] overflow-auto whitespace-pre-wrap rounded-md border border-transparent p-2 text-sm outline-none focus:border-border"
           />
           {generatingAi && (
             <div className="pointer-events-none absolute inset-0 z-10 rounded-md border bg-background/95 p-3">
@@ -635,38 +690,8 @@ export function EmailCompose({
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        [contenteditable='true'] :global(img[data-inline-image='true']) {
-          width: 100%;
-          height: auto;
-          display: block;
-          border-radius: 8px;
-        }
-
-        [contenteditable='true'] :global(span[data-inline-image-wrapper='true']) {
-          display: inline-block;
-          width: 320px;
-          max-width: 100%;
-          min-width: 120px;
-          resize: horizontal;
-          overflow: auto;
-          border: 1px solid hsl(var(--border));
-          border-radius: 8px;
-          margin: 6px 0;
-          background: hsl(var(--card));
-          vertical-align: top;
-        }
-      `}</style>
     </div>
   );
-}
-
-function buildLinkedHtmlFromEditor(editor: HTMLElement): string {
-  const clone = editor.cloneNode(true) as HTMLElement;
-  linkifyTextNodes(clone);
-  const html = clone.innerHTML.trim();
-  return html;
 }
 
 function buildInitialComposeHtml(
@@ -688,126 +713,55 @@ function buildInitialComposeHtml(
   return "<div><br></div>";
 }
 
-function linkifyTextNodes(root: HTMLElement) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const targets: Text[] = [];
-
-  while (walker.nextNode()) {
-    const node = walker.currentNode as Text;
-    if (!node.nodeValue || !node.nodeValue.trim()) continue;
-    const parent = node.parentElement;
-    if (!parent) continue;
-    const tag = parent.tagName.toLowerCase();
-    if (tag === "a" || tag === "script" || tag === "style") continue;
-    URL_REGEX.lastIndex = 0;
-    if (!URL_REGEX.test(node.nodeValue)) continue;
-    URL_REGEX.lastIndex = 0;
-    targets.push(node);
+async function fileToDataUrl(file: File): Promise<string | null> {
+  if (!file.type.startsWith("image/")) return null;
+  if (file.size > 2 * 1024 * 1024) {
+    toast.error("Image must be under 2 MB");
+    return null;
   }
 
-  for (const textNode of targets) {
-    const text = textNode.nodeValue ?? "";
-    const fragment = document.createDocumentFragment();
-    let lastIndex = 0;
-
-    for (const match of text.matchAll(URL_REGEX)) {
-      const full = match[0];
-      const index = match.index ?? 0;
-      fragment.appendChild(document.createTextNode(text.slice(lastIndex, index)));
-
-      const anchor = document.createElement("a");
-      anchor.textContent = full;
-      anchor.href = full.startsWith("http://") || full.startsWith("https://")
-        ? full
-        : `https://${full}`;
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-      fragment.appendChild(anchor);
-      lastIndex = index + full.length;
-    }
-
-    fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
-    textNode.parentNode?.replaceChild(fragment, textNode);
-  }
-}
-
-function insertTextAtCursor(text: string, editor: HTMLDivElement | null) {
-  if (!editor) return;
-  editor.focus();
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) {
-    editor.appendChild(document.createTextNode(text));
-    return;
-  }
-
-  const range = selection.getRangeAt(0);
-  range.deleteContents();
-  const textNode = document.createTextNode(text);
-  range.insertNode(textNode);
-  range.setStartAfter(textNode);
-  range.collapse(true);
-  selection.removeAllRanges();
-  selection.addRange(range);
-}
-
-function insertImageAtCursor(dataUrl: string, editor: HTMLDivElement | null) {
-  if (!editor) return;
-  editor.focus();
-
-  const wrapper = document.createElement("span");
-  wrapper.setAttribute("contenteditable", "false");
-  wrapper.setAttribute("data-inline-image-wrapper", "true");
-  wrapper.style.display = "inline-block";
-  wrapper.style.width = "320px";
-  wrapper.style.maxWidth = "100%";
-  wrapper.style.minWidth = "120px";
-  wrapper.style.resize = "horizontal";
-  wrapper.style.overflow = "auto";
-  wrapper.style.border = "1px solid rgba(0,0,0,0.15)";
-  wrapper.style.borderRadius = "8px";
-  wrapper.style.margin = "6px 0";
-  wrapper.style.verticalAlign = "top";
-  wrapper.style.background = "transparent";
-
-  const img = document.createElement("img");
-  img.setAttribute("src", dataUrl);
-  img.setAttribute("alt", "Pasted image");
-  img.setAttribute("data-inline-image", "true");
-  img.style.width = "100%";
-  img.style.height = "auto";
-  img.style.display = "block";
-  img.style.borderRadius = "8px";
-  wrapper.appendChild(img);
-
-  const breakLine = document.createElement("br");
-  const fragment = document.createDocumentFragment();
-  fragment.appendChild(wrapper);
-  fragment.appendChild(breakLine);
-
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) {
-    editor.appendChild(fragment);
-    return;
-  }
-
-  const range = selection.getRangeAt(0);
-  range.deleteContents();
-  range.insertNode(fragment);
-
-  const newRange = document.createRange();
-  newRange.setStartAfter(breakLine);
-  newRange.collapse(true);
-  selection.removeAllRanges();
-  selection.addRange(newRange);
-}
-
-async function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result ?? ""));
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
+  }).catch(() => {
+    toast.error("Failed to read image");
+    return null;
   });
+}
+
+async function insertFilesAtView(
+  view: {
+    state: {
+      schema: {
+        nodes: Record<
+          string,
+          { create: (attrs: Record<string, unknown>) => unknown }
+        >;
+      };
+      tr: {
+        replaceSelectionWith: (node: unknown) => {
+          scrollIntoView: () => unknown;
+        };
+      };
+    };
+    dispatch: (tr: unknown) => void;
+  },
+  files: File[],
+) {
+  for (const file of files) {
+    const dataUrl = await fileToDataUrl(file);
+    if (!dataUrl) continue;
+
+    const imageNodeType =
+      view.state.schema.nodes.imageResize ?? view.state.schema.nodes.image;
+    if (!imageNodeType) continue;
+
+    const node = imageNodeType.create({ src: dataUrl, alt: "Pasted image" });
+    const tr = view.state.tr.replaceSelectionWith(node).scrollIntoView();
+    view.dispatch(tr);
+  }
 }
 
 function RecipientChip({
