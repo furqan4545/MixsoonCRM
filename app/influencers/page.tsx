@@ -1,112 +1,112 @@
-import Link from "next/link";
 import { prisma } from "../lib/prisma";
 import { fixThumbnailUrl } from "../lib/thumbnail";
-import { Badge } from "@/components/ui/badge";
-import { ThumbnailImage } from "@/components/thumbnail-image";
+import { InfluencersDashboard } from "./influencers-dashboard";
 
 export const dynamic = "force-dynamic";
-
-function formatNumber(n: number | null): string {
-  if (n == null) return "—";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
 
 export default async function InfluencersPage() {
   const influencers = await prisma.influencer.findMany({
     orderBy: { createdAt: "desc" },
     include: {
-      _count: { select: { videos: true } },
+      videos: { orderBy: { uploadedAt: "desc" } },
+      _count: { select: { videos: true, emailMessages: true } },
       import: { select: { id: true, sourceFilename: true } },
+      aiEvaluations: {
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          score: true,
+          bucket: true,
+          reviewStatus: true,
+          reasons: true,
+          matchedSignals: true,
+          riskSignals: true,
+          run: { select: { campaign: { select: { name: true } } } },
+        },
+      },
+      activityLogs: {
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      },
+      campaignAssignments: {
+        include: {
+          campaign: {
+            select: { id: true, name: true, status: true },
+          },
+        },
+        orderBy: { assignedAt: "desc" },
+      },
     },
   });
 
-  return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Influencers</h1>
-        <p className="text-sm text-muted-foreground">
-          All scraped influencer profiles. Click on any influencer to see their videos.
-        </p>
-      </div>
+  const serialized = influencers.map((inf) => {
+    // Find the latest SAVED evaluation to determine queue bucket
+    const savedEval = inf.aiEvaluations.find((e) => e.reviewStatus === "SAVED");
+    const latestEval = inf.aiEvaluations[0] ?? null;
 
-      {influencers.length === 0 ? (
-        <div className="rounded-xl border bg-card px-6 py-12 text-center">
-          <p className="text-muted-foreground">No influencers yet.</p>
-          <Link
-            href="/data-scraper"
-            className="mt-2 inline-block text-sm text-primary underline hover:no-underline"
-          >
-            Upload a CSV to get started
-          </Link>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {influencers.map((inf) => (
-            <Link
-              key={inf.id}
-              href={`/influencers/${inf.id}`}
-              className="group rounded-xl border bg-card p-4 transition-all hover:shadow-md hover:border-primary/20"
-            >
-              <div className="flex items-center gap-3">
-                {/* Avatar */}
-                {inf.avatarUrl ? (
-                  <ThumbnailImage
-                    src={fixThumbnailUrl(inf.avatarUrl)!}
-                    alt={inf.username}
-                    className="h-12 w-12 rounded-full object-cover border border-border"
-                  />
-                ) : (
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-sm font-bold">
-                    {inf.username.charAt(0).toUpperCase()}
-                  </div>
-                )}
+    return {
+      id: inf.id,
+      username: inf.username,
+      displayName: inf.displayName,
+      avatarUrl: inf.avatarUrl,
+      avatarProxied: fixThumbnailUrl(inf.avatarUrl),
+      profileUrl: inf.profileUrl,
+      platform:
+        inf.platform ??
+        (inf.profileUrl?.includes("tiktok")
+          ? "TikTok"
+          : inf.profileUrl?.includes("instagram")
+            ? "Instagram"
+            : null),
+      followers: inf.followers,
+      engagementRate: inf.engagementRate,
+      rate: inf.rate,
+      country: inf.country,
+      email: inf.email,
+      phone: inf.phone,
+      biolink: inf.biolink,
+      bioLinkUrl: inf.bioLinkUrl,
+      socialLinks: inf.socialLinks,
+      sourceFilename: inf.sourceFilename,
+      importId: inf.import?.id ?? null,
+      importFilename: inf.import?.sourceFilename ?? null,
+      pipelineStage: inf.pipelineStage,
+      tags: inf.tags,
+      notes: inf.notes,
+      aiScore: inf.aiScore ?? latestEval?.score ?? null,
+      // Queue data
+      queueBucket: savedEval?.bucket ?? null, // APPROVED | OKISH | REJECTED | null
+      queueEvalId: savedEval?.id ?? null,
+      aiReasons: latestEval?.reasons ?? null,
+      aiMatchedSignals: latestEval?.matchedSignals ?? null,
+      aiRiskSignals: latestEval?.riskSignals ?? null,
+      campaignName: latestEval?.run?.campaign?.name ?? null,
+      videoCount: inf._count.videos,
+      conversationCount: inf._count.emailMessages,
+      videos: inf.videos.map((v) => ({
+        id: v.id,
+        title: v.title,
+        views: v.views,
+        bookmarks: v.bookmarks,
+        uploadedAt: v.uploadedAt?.toISOString() ?? null,
+        thumbnailUrl: v.thumbnailUrl,
+        thumbnailProxied: fixThumbnailUrl(v.thumbnailUrl),
+      })),
+      activityLogs: inf.activityLogs.map((log) => ({
+        id: log.id,
+        type: log.type,
+        title: log.title,
+        detail: log.detail,
+        createdAt: log.createdAt.toISOString(),
+      })),
+      campaignAssignments: inf.campaignAssignments.map((ca) => ({
+        campaignId: ca.campaign.id,
+        campaignName: ca.campaign.name,
+        campaignStatus: ca.campaign.status,
+      })),
+      createdAt: inf.createdAt.toISOString(),
+    };
+  });
 
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold group-hover:text-primary transition-colors">
-                    @{inf.username}
-                  </p>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    {inf.followers != null && (
-                      <span>{formatNumber(inf.followers)} followers</span>
-                    )}
-                    {inf._count.videos > 0 && (
-                      <span>&middot; {inf._count.videos} videos</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Details */}
-              <div className="mt-3 space-y-1.5">
-                {inf.email && (
-                  <p className="truncate text-xs text-muted-foreground">
-                    {inf.email}
-                  </p>
-                )}
-
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {inf.sourceFilename && (
-                    <Badge variant="outline" className="text-[10px]">
-                      {inf.sourceFilename}
-                    </Badge>
-                  )}
-                  {inf.import ? (
-                    <Badge variant="secondary" className="text-[10px]">
-                      Linked
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary" className="text-[10px] opacity-50">
-                      Unlinked
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  return <InfluencersDashboard influencers={serialized} />;
 }
