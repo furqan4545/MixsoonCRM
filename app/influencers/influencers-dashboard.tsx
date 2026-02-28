@@ -9,9 +9,16 @@ import {
   ChevronRight,
   Trash2,
   ArrowRightLeft,
+  Sparkles,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ThumbnailImage } from "@/components/thumbnail-image";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -362,6 +369,62 @@ export function InfluencersDashboard({ influencers }: Props) {
       .map((inf) => inf.queueEvalId!);
   }, [filtered, selectedRows]);
 
+  // Get IDs of selected influencers that have no queue bucket (unscored)
+  const selectedUnscoredIds = useMemo(() => {
+    return filtered
+      .filter((inf) => selectedRows.has(inf.id) && !inf.queueBucket)
+      .map((inf) => inf.id);
+  }, [filtered, selectedRows]);
+
+  // Campaigns for the AI filter dropdown
+  const [campaigns, setCampaigns] = useState<
+    { id: string; name: string }[] | null
+  >(null);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
+
+  const fetchCampaigns = useCallback(async () => {
+    if (campaigns) return; // already loaded
+    setLoadingCampaigns(true);
+    try {
+      const res = await fetch("/api/campaigns");
+      if (res.ok) setCampaigns(await res.json());
+    } catch {
+      toast.error("Failed to load campaigns");
+    } finally {
+      setLoadingCampaigns(false);
+    }
+  }, [campaigns]);
+
+  const runAiFilter = useCallback(
+    async (campaignId: string) => {
+      setMoving(true);
+      try {
+        const res = await fetch("/api/ai/filter", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ campaignId, influencerIds: selectedUnscoredIds }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Failed");
+        }
+        const { runId, totalCount } = await res.json();
+        toast.success(
+          `AI Filter started for ${totalCount} influencer${totalCount !== 1 ? "s" : ""}`,
+        );
+        setSelectedRows(new Set());
+        router.push(`/ai-filter/${runId}`);
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to start AI filter",
+        );
+      } finally {
+        setMoving(false);
+      }
+    },
+    [selectedUnscoredIds, router],
+  );
+
   return (
     <div className="flex h-full">
       {/* Main table area */}
@@ -437,46 +500,72 @@ export function InfluencersDashboard({ influencers }: Props) {
                 {selectedRows.size} selected
               </span>
               <div className="ml-auto flex items-center gap-2">
-                {/* Move to buttons */}
-                {queueFilter !== "ALL" && (
+                {/* Move to queue buttons — always visible */}
+                {selectedEvalIds.length > 0 && (
                   <>
-                    {queueFilter !== "APPROVED" && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={moving || selectedEvalIds.length === 0}
-                        onClick={() => moveToQueue(selectedEvalIds, "APPROVED")}
-                        className="gap-1.5 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50"
-                      >
-                        <ArrowRightLeft className="h-3 w-3" />
-                        Move to Approved
-                      </Button>
-                    )}
-                    {queueFilter !== "OKISH" && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={moving || selectedEvalIds.length === 0}
-                        onClick={() => moveToQueue(selectedEvalIds, "OKISH")}
-                        className="gap-1.5 text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
-                      >
-                        <ArrowRightLeft className="h-3 w-3" />
-                        Move to Ok-ish
-                      </Button>
-                    )}
-                    {queueFilter !== "REJECTED" && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={moving || selectedEvalIds.length === 0}
-                        onClick={() => moveToQueue(selectedEvalIds, "REJECTED")}
-                        className="gap-1.5 text-xs text-red-700 border-red-300 hover:bg-red-50"
-                      >
-                        <ArrowRightLeft className="h-3 w-3" />
-                        Move to Rejected
-                      </Button>
-                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={moving}
+                      onClick={() => moveToQueue(selectedEvalIds, "APPROVED")}
+                      className="gap-1.5 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                    >
+                      <ArrowRightLeft className="h-3 w-3" />
+                      Move to Approved
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={moving}
+                      onClick={() => moveToQueue(selectedEvalIds, "OKISH")}
+                      className="gap-1.5 text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+                    >
+                      <ArrowRightLeft className="h-3 w-3" />
+                      Move to Ok-ish
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={moving}
+                      onClick={() => moveToQueue(selectedEvalIds, "REJECTED")}
+                      className="gap-1.5 text-xs text-red-700 border-red-300 hover:bg-red-50"
+                    >
+                      <ArrowRightLeft className="h-3 w-3" />
+                      Move to Rejected
+                    </Button>
                   </>
+                )}
+                {/* Run AI Filter — shown when unscored influencers are selected */}
+                {selectedUnscoredIds.length >= 1 && (
+                  <DropdownMenu onOpenChange={(open) => open && fetchCampaigns()}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={moving}
+                        className="gap-1.5 text-xs text-blue-700 border-blue-300 hover:bg-blue-50"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Run AI Filter ({selectedUnscoredIds.length})
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {loadingCampaigns && (
+                        <DropdownMenuItem disabled>Loading campaigns…</DropdownMenuItem>
+                      )}
+                      {campaigns && campaigns.length === 0 && (
+                        <DropdownMenuItem disabled>No campaigns found</DropdownMenuItem>
+                      )}
+                      {campaigns?.map((c) => (
+                        <DropdownMenuItem
+                          key={c.id}
+                          onClick={() => runAiFilter(c.id)}
+                        >
+                          {c.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
                 {selectedEvalIds.length > 0 && (
                   <Button
@@ -495,7 +584,7 @@ export function InfluencersDashboard({ influencers }: Props) {
                   onClick={() => setSelectedRows(new Set())}
                   className="text-xs"
                 >
-                  Clear
+                  Deselect
                 </Button>
               </div>
             </div>

@@ -240,14 +240,21 @@ export async function POST(request: NextRequest) {
   }
   try {
     const body = await request.json();
-    const { campaignId, importId, strictness, targetKeywords, avoidKeywords } =
-      body as {
-        campaignId: string;
-        importId?: string;
-        strictness?: number;
-        targetKeywords?: string[] | string;
-        avoidKeywords?: string[] | string;
-      };
+    const {
+      campaignId,
+      importId,
+      influencerIds,
+      strictness,
+      targetKeywords,
+      avoidKeywords,
+    } = body as {
+      campaignId: string;
+      importId?: string;
+      influencerIds?: string[];
+      strictness?: number;
+      targetKeywords?: string[] | string;
+      avoidKeywords?: string[] | string;
+    };
 
     if (!campaignId) {
       return NextResponse.json(
@@ -255,9 +262,9 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-    if (!importId) {
+    if (!importId && (!influencerIds || influencerIds.length === 0)) {
       return NextResponse.json(
-        { error: "importId is required" },
+        { error: "importId or influencerIds is required" },
         { status: 400 },
       );
     }
@@ -273,7 +280,9 @@ export async function POST(request: NextRequest) {
     }
 
     const influencers = await prisma.influencer.findMany({
-      where: { importId },
+      where: influencerIds
+        ? { id: { in: influencerIds } }
+        : { importId: importId! },
       include: {
         videos: {
           take: 20,
@@ -286,7 +295,7 @@ export async function POST(request: NextRequest) {
 
     if (influencers.length === 0) {
       return NextResponse.json(
-        { error: "No influencers found for this import" },
+        { error: "No influencers found" },
         { status: 400 },
       );
     }
@@ -305,7 +314,7 @@ export async function POST(request: NextRequest) {
     const run = await prisma.aiFilterRun.create({
       data: {
         campaignId,
-        importId,
+        importId: importId || null,
         strictness: resolvedStrictness,
         status: "PROCESSING",
         totalCount: influencers.length,
