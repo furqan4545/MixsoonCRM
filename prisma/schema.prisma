@@ -12,6 +12,7 @@ datasource db {
 model Influencer {
   id             String   @id @default(cuid())
   username       String   @unique
+  displayName    String?  // full name, e.g. "Emma Chen"
   profileUrl     String?
   avatarUrl      String?  // profile picture URL
   biolink        String?  // raw bio text
@@ -21,6 +22,17 @@ model Influencer {
   phone          String?
   socialLinks    String?  // JSON array of URLs
   sourceFilename String?  // which CSV file this influencer came from
+
+  // CRM fields
+  platform       String?          // TikTok, Instagram, YouTube, etc.
+  engagementRate Float?           // e.g. 4.8 for 4.8%
+  rate           Float?           // payment rate in USD
+  country        String?          // e.g. "US", "KR"
+  pipelineStage  PipelineStage    @default(PROSPECT)
+  tags           String[]         // e.g. ["skincare", "beauty", "routine"]
+  notes          String?          // internal notes
+  aiScore        Int?             // 0-100 AI relevance score
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -29,9 +41,35 @@ model Influencer {
   importId String?
   aiEvaluations InfluencerAiEvaluation[]
   emailMessages EmailMessage[]
+  activityLogs  ActivityLog[]
+  campaignAssignments CampaignInfluencer[]
 
   @@index([username])
   @@index([importId])
+  @@index([pipelineStage])
+}
+
+enum PipelineStage {
+  PROSPECT
+  OUTREACH
+  NEGOTIATING
+  CONTRACTED
+  COMPLETED
+}
+
+// ─── ACTIVITY LOG ─────────────────────────────────────────
+
+model ActivityLog {
+  id           String   @id @default(cuid())
+  influencerId String
+  influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  type         String   // "ai_score", "pipeline_change", "email_extracted", "tag_added", "note_added", "campaign_assigned", etc.
+  title        String   // e.g. "AI Score assigned"
+  detail       String?  // e.g. "Score: 92/100"
+  createdAt    DateTime @default(now())
+
+  @@index([influencerId])
+  @@index([createdAt])
 }
 
 // ─── VIDEOS ────────────────────────────────────────────────
@@ -308,4 +346,43 @@ enum EmailFolder {
   DRAFTS
   SPAM
   TRASH
+}
+
+// ─── MARKETING CAMPAIGNS ──────────────────────────────────
+
+model MarketingCampaign {
+  id          String   @id @default(cuid())
+  name        String   // e.g. "Prime Day 2026", "Black Friday"
+  description String?
+  budget      Float?   // total budget in USD
+  startDate   DateTime?
+  endDate     DateTime?
+  status      CampaignStatus @default(PLANNING)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  influencers CampaignInfluencer[]
+
+  @@index([status])
+  @@index([name])
+}
+
+model CampaignInfluencer {
+  id           String   @id @default(cuid())
+  campaignId   String
+  campaign     MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  influencerId String
+  influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  assignedAt   DateTime @default(now())
+
+  @@unique([campaignId, influencerId])
+  @@index([campaignId])
+  @@index([influencerId])
+}
+
+enum CampaignStatus {
+  PLANNING
+  ACTIVE
+  PAUSED
+  COMPLETED
 }

@@ -1,10 +1,5 @@
-import { requirePermissionOrRedirect } from "@/app/lib/permissions";
-
-export default async function CampaignsLayout({
+export default function CampaignsLayout({
   children,
-}: {
-  children: React.ReactNode;
-}) {
-  await requirePermissionOrRedirect("ai-filter", "read");
+}: { children: React.ReactNode }) {
   return <>{children}</>;
 }

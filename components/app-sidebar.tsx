@@ -2,13 +2,17 @@
 
 import {
   Bell,
+  CheckSquare,
   ChevronsUpDown,
   Database,
   FileSpreadsheet,
+  GitBranch,
+  Inbox,
   Layers,
   LayoutDashboard,
   LogOut,
   Mail,
+  Megaphone,
   ShieldCheck,
   Sparkles,
   UserCog,
@@ -38,13 +42,23 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Badge } from "@/components/ui/badge";
+
+const workspaceItems = [
+  { title: "Pipeline", href: "/", icon: GitBranch },
+  { title: "Influencers", href: "/influencers", icon: Users },
+  { title: "Campaigns", href: "/campaigns", icon: Megaphone },
+  { title: "Inbox", href: "/email", icon: Inbox, badge: 3 },
+  { title: "Approvals", href: "/approvals", icon: CheckSquare, badge: 2 },
+];
 
 const navItems = [
-  { title: "Dashboard", href: "/", icon: LayoutDashboard },
+  { title: "Pipeline", href: "/", icon: GitBranch },
   { title: "Data Scraper", href: "/data-scraper", icon: Database },
   { title: "Imports", href: "/imports", icon: FileSpreadsheet },
   { title: "Influencers", href: "/influencers", icon: Users },
-  { title: "Campaign Filters", href: "/campaigns", icon: Sparkles },
+  { title: "Campaigns", href: "/campaigns", icon: Megaphone },
+  { title: "Campaign Filters", href: "/campaigns/filters", icon: Sparkles },
   { title: "Queues", href: "/queues", icon: Layers },
   { title: "Notifications", href: "/notifications", icon: Bell },
   { title: "Email", href: "/email", icon: Mail },
@@ -78,28 +92,31 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="h-14 border-b border-sidebar-border px-4 py-0 group-data-[collapsible=icon]:px-2">
+      <SidebarHeader className="h-16 border-b border-sidebar-border px-4 py-0 group-data-[collapsible=icon]:px-2">
         <Link
           href="/"
-          className="flex h-full items-center gap-2 group-data-[collapsible=icon]:justify-center"
+          className="flex h-full items-center gap-3 group-data-[collapsible=icon]:justify-center"
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
             <span className="text-sm font-bold">M</span>
           </div>
-          <span className="text-lg font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-            MIXSOON
-          </span>
+          <div className="group-data-[collapsible=icon]:hidden">
+            <span className="text-base font-bold tracking-tight">MIXSOON</span>
+            <p className="text-[10px] font-medium uppercase tracking-widest text-sidebar-foreground/60">
+              Influencer OS
+            </p>
+          </div>
         </Link>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems
+              {workspaceItems
                 .filter((item) => canSeeNavItem(item.href, permissions))
                 .map((item) => (
-                  <SidebarMenuItem key={item.href}>
+                  <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
                       asChild
                       tooltip={item.title}
@@ -112,6 +129,14 @@ export function AppSidebar() {
                       <Link href={item.href}>
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
+                        {item.badge ? (
+                          <Badge
+                            variant="destructive"
+                            className="ml-auto h-5 min-w-5 rounded-full px-1.5 text-[10px] font-semibold"
+                          >
+                            {item.badge}
+                          </Badge>
+                        ) : null}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

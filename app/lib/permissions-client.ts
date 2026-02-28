@@ -13,6 +13,8 @@ export const FEATURES = {
   NOTIFICATIONS: "notifications",
   USERS: "users",
   EMAIL: "email",
+  CAMPAIGNS: "campaigns",
+  APPROVALS: "approvals",
 } as const;
 
 /** Sidebar nav: path → required permission (read). null = no requirement (e.g. Dashboard). */
@@ -24,8 +26,10 @@ export const NAV_FEATURE_MAP: Record<
   "/data-scraper": { feature: FEATURES.DATA_SCRAPER, action: "read" },
   "/imports": { feature: FEATURES.IMPORTS, action: "read" },
   "/influencers": { feature: FEATURES.INFLUENCERS, action: "read" },
-  "/campaigns": { feature: FEATURES.AI_FILTER, action: "read" },
+  "/campaigns": { feature: FEATURES.CAMPAIGNS, action: "read" },
+  "/campaigns/filters": { feature: FEATURES.AI_FILTER, action: "read" },
   "/queues": { feature: FEATURES.QUEUES, action: "read" },
   "/notifications": { feature: FEATURES.NOTIFICATIONS, action: "read" },
   "/email": { feature: FEATURES.EMAIL, action: "read" },
+  "/approvals": { feature: FEATURES.APPROVALS, action: "read" },
 };
