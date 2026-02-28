@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ThumbnailImage } from "@/components/thumbnail-image";
 import type { InfluencerRow } from "./influencers-dashboard";
+import { InfluencerContactSection } from "@/components/influencer-contact-section";
 import { toast } from "sonner";
 
 function formatNumber(n: number | null): string {
@@ -306,11 +307,20 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Contact Information
             </h3>
-            <div className="space-y-0 rounded-lg border overflow-hidden">
-              <div className="flex items-center justify-between border-b px-4 py-3">
-                <span className="text-sm text-muted-foreground">Email</span>
-                <span className="text-sm font-medium">{influencer.email ?? "—"}</span>
+            <InfluencerContactSection
+              influencerId={influencer.id}
+              email={influencer.email}
+              phone={influencer.phone}
+              bioLinkUrl={influencer.bioLinkUrl}
+              socialLinksJson={influencer.socialLinks}
+            />
+            {influencer.biolink && (
+              <div className="mt-2 rounded-lg border bg-muted/30 px-3 py-2">
+                <p className="text-xs font-medium text-muted-foreground mb-1">Bio</p>
+                <p className="text-sm whitespace-pre-line">{influencer.biolink}</p>
               </div>
+            )}
+            <div className="mt-2 space-y-0 rounded-lg border overflow-hidden">
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <span className="text-sm text-muted-foreground">Platform</span>
                 <span className="text-sm font-medium">{influencer.platform ?? "—"}</span>
