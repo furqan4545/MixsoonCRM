@@ -22,6 +22,7 @@ interface EmailItem {
   sentAt: string | null;
   receivedAt: string | null;
   createdAt: string;
+  influencer: { id: string; username: string } | null;
 }
 
 interface Props {
@@ -177,6 +178,11 @@ export function EmailList({ folder, title }: Props) {
                       >
                         {displayAddress(email)}
                       </span>
+                      {email.influencer && (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                          @{email.influencer.username}
+                        </span>
+                      )}
                     </div>
                     <p
                       className={cn(

@@ -437,13 +437,14 @@ export async function fetchEmailsFromImap(
 
     const lock = await client.getMailboxLock(mailbox);
     try {
-      // Keep sync responsive: fetch latest headers only.
+      // Fetch latest messages with full source for body content.
       const allUids = await client.search(since ? { since } : { all: true });
-      const targetUids = allUids.slice(-40);
+      const targetUids = allUids.slice(-20);
       if (targetUids.length === 0) return results;
 
       const messages = client.fetch(targetUids, {
         envelope: true,
+        source: true,
         uid: true,
       });
 
@@ -460,6 +461,21 @@ export async function fetchEmailsFromImap(
           } | null;
           const fromList = envelopeAddressesToStrings(envelope?.from);
           const inReplyToValue = envelope?.inReplyTo;
+
+          let bodyHtml: string | undefined;
+          let bodyText: string | undefined;
+
+          // Parse full message source for body content
+          if (msg.source) {
+            try {
+              const parsed = await simpleParser(msg.source);
+              bodyHtml = parsed.html || undefined;
+              bodyText = parsed.text || undefined;
+            } catch {
+              // Ignore parse errors, body will remain undefined
+            }
+          }
+
           results.push({
             messageId: envelope?.messageId ?? undefined,
             inReplyTo:
@@ -468,8 +484,8 @@ export async function fetchEmailsFromImap(
             to: envelopeAddressesToStrings(envelope?.to),
             cc: envelopeAddressesToStrings(envelope?.cc),
             subject: envelope?.subject ?? "(no subject)",
-            bodyHtml: undefined,
-            bodyText: undefined,
+            bodyHtml,
+            bodyText,
             date: envelope?.date ?? undefined,
             uid: msg.uid,
           });

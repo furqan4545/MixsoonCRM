@@ -192,6 +192,19 @@ export async function POST(req: Request) {
       attachments: smtpAttachments.length > 0 ? smtpAttachments : undefined,
     });
 
+    // Normalize threadId: look up parent email's threadId to keep the whole
+    // thread under one root identifier.
+    let threadIdValue = inReplyTo || info.messageId || undefined;
+    if (inReplyTo) {
+      const parentEmail = await prisma.emailMessage.findFirst({
+        where: { accountId: account.id, messageId: inReplyTo },
+        select: { threadId: true },
+      });
+      if (parentEmail?.threadId) {
+        threadIdValue = parentEmail.threadId;
+      }
+    }
+
     const email = await prisma.emailMessage.create({
       data: {
         id: emailId,
@@ -208,7 +221,7 @@ export async function POST(req: Request) {
         isRead: true,
         sentAt: new Date(),
         influencerId: influencerId || undefined,
-        threadId: inReplyTo || info.messageId || undefined,
+        threadId: threadIdValue,
       },
     });
 

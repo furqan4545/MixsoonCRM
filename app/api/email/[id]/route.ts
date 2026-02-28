@@ -46,7 +46,29 @@ export async function GET(_req: NextRequest, { params }: Params) {
     });
   }
 
-  return NextResponse.json({ ...email, isRead: true, attachments });
+  // Fetch thread messages if this email has a threadId
+  let threadMessages: typeof email[] = [];
+
+  if (email.threadId) {
+    threadMessages = await prisma.emailMessage.findMany({
+      where: {
+        accountId: email.accountId,
+        threadId: email.threadId,
+        id: { not: email.id },
+      },
+      include: {
+        influencer: { select: { id: true, username: true, avatarUrl: true } },
+      },
+      orderBy: [{ receivedAt: "asc" }, { sentAt: "asc" }, { createdAt: "asc" }],
+    });
+  }
+
+  return NextResponse.json({
+    ...email,
+    isRead: true,
+    attachments,
+    threadMessages,
+  });
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {

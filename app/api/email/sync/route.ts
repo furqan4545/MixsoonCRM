@@ -18,7 +18,7 @@ const SYNC_FOLDERS: { remote: string; local: EmailFolder }[] = [
 
 const DEDUPE_WINDOW_MS = 2 * 60 * 1000;
 const POP3_FETCH_TIMEOUT_MS = 12000;
-const IMAP_FETCH_TIMEOUT_MS = 8000;
+const IMAP_FETCH_TIMEOUT_MS = 15000;
 
 async function emailExists(
   accountId: string,
@@ -62,6 +62,7 @@ function toCreateData(
   isRead: boolean;
   receivedAt: Date;
   threadId?: string;
+  influencerId?: string;
 } {
   return {
     accountId,
@@ -170,6 +171,52 @@ export async function POST() {
       }
 
       if (toInsert.length > 0) {
+        // --- Auto-match influencer by sender email (POP3) ---
+        const senderEmails = [
+          ...new Set(toInsert.map((item) => item.from.toLowerCase()).filter(Boolean)),
+        ];
+        if (senderEmails.length > 0) {
+          const matchedInfluencers = await prisma.influencer.findMany({
+            where: { email: { in: senderEmails, mode: "insensitive" } },
+            select: { id: true, email: true },
+          });
+          const emailToInfluencer = new Map<string, string>();
+          for (const inf of matchedInfluencers) {
+            if (inf.email) emailToInfluencer.set(inf.email.toLowerCase(), inf.id);
+          }
+          for (const item of toInsert) {
+            const influencerId = emailToInfluencer.get(item.from.toLowerCase());
+            if (influencerId) item.influencerId = influencerId;
+          }
+        }
+
+        // --- Normalize threadId to root (POP3) ---
+        const inReplyToValues = [
+          ...new Set(
+            toInsert.map((item) => item.inReplyTo).filter(Boolean) as string[],
+          ),
+        ];
+        if (inReplyToValues.length > 0) {
+          const parentEmails = await prisma.emailMessage.findMany({
+            where: {
+              accountId: account.id,
+              messageId: { in: inReplyToValues },
+            },
+            select: { messageId: true, threadId: true },
+          });
+          const threadIdMap = new Map<string, string>();
+          for (const parent of parentEmails) {
+            if (parent.messageId && parent.threadId) {
+              threadIdMap.set(parent.messageId, parent.threadId);
+            }
+          }
+          for (const item of toInsert) {
+            if (item.inReplyTo && threadIdMap.has(item.inReplyTo)) {
+              item.threadId = threadIdMap.get(item.inReplyTo)!;
+            }
+          }
+        }
+
         await prisma.emailMessage.createMany({ data: toInsert });
         totalSynced += toInsert.length;
       }
@@ -242,6 +289,52 @@ export async function POST() {
   }
 
   if (toInsert.length > 0) {
+    // --- Auto-match influencer by sender email ---
+    const senderEmails = [
+      ...new Set(toInsert.map((item) => item.from.toLowerCase()).filter(Boolean)),
+    ];
+    if (senderEmails.length > 0) {
+      const matchedInfluencers = await prisma.influencer.findMany({
+        where: { email: { in: senderEmails, mode: "insensitive" } },
+        select: { id: true, email: true },
+      });
+      const emailToInfluencer = new Map<string, string>();
+      for (const inf of matchedInfluencers) {
+        if (inf.email) emailToInfluencer.set(inf.email.toLowerCase(), inf.id);
+      }
+      for (const item of toInsert) {
+        const influencerId = emailToInfluencer.get(item.from.toLowerCase());
+        if (influencerId) item.influencerId = influencerId;
+      }
+    }
+
+    // --- Normalize threadId to root for proper threading ---
+    const inReplyToValues = [
+      ...new Set(
+        toInsert.map((item) => item.inReplyTo).filter(Boolean) as string[],
+      ),
+    ];
+    if (inReplyToValues.length > 0) {
+      const parentEmails = await prisma.emailMessage.findMany({
+        where: {
+          accountId: account.id,
+          messageId: { in: inReplyToValues },
+        },
+        select: { messageId: true, threadId: true },
+      });
+      const threadIdMap = new Map<string, string>();
+      for (const parent of parentEmails) {
+        if (parent.messageId && parent.threadId) {
+          threadIdMap.set(parent.messageId, parent.threadId);
+        }
+      }
+      for (const item of toInsert) {
+        if (item.inReplyTo && threadIdMap.has(item.inReplyTo)) {
+          item.threadId = threadIdMap.get(item.inReplyTo)!;
+        }
+      }
+    }
+
     await prisma.emailMessage.createMany({ data: toInsert });
     totalSynced += toInsert.length;
   }
