@@ -48,8 +48,8 @@ const workspaceItems = [
   { title: "Pipeline", href: "/", icon: GitBranch },
   { title: "Influencers", href: "/influencers", icon: Users },
   { title: "Campaigns", href: "/campaigns", icon: Megaphone },
-  { title: "Inbox", href: "/email", icon: Inbox, badge: 3 },
-  { title: "Approvals", href: "/approvals", icon: CheckSquare, badge: 2 },
+  { title: "Inbox", href: "/email", icon: Inbox },
+  { title: "Approvals", href: "/approvals", icon: CheckSquare },
 ];
 
 const navItems = [

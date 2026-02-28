@@ -83,12 +83,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
         token.status = user.status;
         token.role = user.role;
         token.permissions = user.permissions;
+      }
+      // Re-fetch permissions from DB when client calls update()
+      if (trigger === "update" && token.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          include: { role: { include: { permissions: true } } },
+        });
+        if (dbUser) {
+          token.status = dbUser.status;
+          token.role = dbUser.role.name;
+          token.permissions = dbUser.role.permissions.map((p) => ({
+            feature: p.feature,
+            action: p.action,
+          }));
+        }
       }
       return token;
     },

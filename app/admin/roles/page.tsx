@@ -1,7 +1,9 @@
 "use client";
 
 import { RefreshCw, Save } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { FEATURES } from "@/app/lib/permissions-client";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,11 +21,14 @@ const FEATURE_LABELS: Record<string, string> = {
   [FEATURES.DATA_SCRAPER]: "Data Scraper",
   [FEATURES.CSV_UPLOAD]: "CSV Upload",
   [FEATURES.IMPORTS]: "Imports",
-  [FEATURES.AI_FILTER]: "AI Filter / Campaigns",
+  [FEATURES.AI_FILTER]: "AI Filter",
   [FEATURES.QUEUES]: "Queues",
   [FEATURES.INFLUENCERS]: "Influencers",
   [FEATURES.NOTIFICATIONS]: "Notifications",
   [FEATURES.USERS]: "User management",
+  [FEATURES.EMAIL]: "Email",
+  [FEATURES.CAMPAIGNS]: "Campaigns",
+  [FEATURES.APPROVALS]: "Approvals",
 };
 
 const FEATURE_KEYS = Object.values(FEATURES);
@@ -39,6 +44,8 @@ function setToKey(p: { feature: string; action: string }): string {
 }
 
 export default function AdminRolesPage() {
+  const router = useRouter();
+  const { update: updateSession } = useSession();
   const [roles, setRoles] = useState<RoleWithPermissions[]>([]);
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -127,9 +134,6 @@ export default function AdminRolesPage() {
         setError(data.error ?? "Failed to save");
         return;
       }
-      setMessage(
-        "Permissions saved. Users with this role may need to sign out and sign in to see changes.",
-      );
       setRoles((prev) =>
         prev.map((r) =>
           r.id === selectedRoleId
@@ -137,6 +141,10 @@ export default function AdminRolesPage() {
             : r,
         ),
       );
+      // Refresh the current user's session so updated permissions take effect immediately
+      await updateSession();
+      router.refresh();
+      setMessage("Permissions saved and applied.");
     } catch {
       setError("Failed to save");
     } finally {
