@@ -52,6 +52,8 @@ export async function GET(request: NextRequest) {
           id: true,
           username: true,
           displayName: true,
+          avatarUrl: true,
+          email: true,
         },
       });
       return NextResponse.json({ influencers });

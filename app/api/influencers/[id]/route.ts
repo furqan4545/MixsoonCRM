@@ -73,6 +73,14 @@ export async function PATCH(
       });
     }
 
+    if ("email" in body) {
+      activityLogs.push({
+        type: "email_extracted",
+        title: body.email ? "Email updated" : "Email removed",
+        detail: body.email ? `Email: ${body.email}` : null,
+      });
+    }
+
     if (activityLogs.length > 0) {
       await prisma.activityLog.createMany({
         data: activityLogs.map((log) => ({

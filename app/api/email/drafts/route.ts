@@ -43,7 +43,7 @@ export async function PATCH(req: Request) {
   if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id, to, cc, subject, bodyHtml, bodyText } = await req.json();
+  const { id, to, cc, subject, bodyHtml, bodyText, influencerId } = await req.json();
   if (!id) {
     return NextResponse.json({ error: "Draft ID required" }, { status: 400 });
   }
@@ -63,6 +63,7 @@ export async function PATCH(req: Request) {
       subject: subject ?? existing.subject,
       bodyHtml: bodyHtml !== undefined ? bodyHtml : existing.bodyHtml,
       bodyText: bodyText !== undefined ? bodyText : existing.bodyText,
+      influencerId: influencerId !== undefined ? (influencerId || null) : existing.influencerId,
     },
   });
 
