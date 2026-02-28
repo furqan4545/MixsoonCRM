@@ -111,6 +111,10 @@ export function EmailDetail({ emailId }: Props) {
         : `Re: ${email.subject}`,
       inReplyTo: email.messageId ?? "",
     });
+    // Carry influencer link forward to reply
+    if (email.influencer?.id) {
+      params.set("influencerId", email.influencer.id);
+    }
     router.push(`/email/compose?${params}`);
   };
 

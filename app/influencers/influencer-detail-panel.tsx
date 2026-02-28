@@ -313,6 +313,7 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
               phone={influencer.phone}
               bioLinkUrl={influencer.bioLinkUrl}
               socialLinksJson={influencer.socialLinks}
+              onEmailChange={(newEmail) => saveField("email", newEmail)}
             />
             {influencer.biolink && (
               <div className="mt-2 rounded-lg border bg-muted/30 px-3 py-2">

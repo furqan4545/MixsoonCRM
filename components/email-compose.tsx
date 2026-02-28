@@ -11,13 +11,15 @@ import {
   Italic,
   Paperclip,
   Save,
+  Search,
   Send,
   Sparkles,
   Underline,
+  Users,
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import ImageResize from "tiptap-extension-resize-image";
 import { emitEmailRefresh } from "@/app/lib/email-events";
@@ -47,6 +49,14 @@ type ComposeAttachment = {
   isImage: boolean;
 };
 
+type LinkedInfluencer = {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  email: string | null;
+};
+
 export function EmailCompose({
   defaultTo,
   defaultSubject,
@@ -73,6 +83,15 @@ export function EmailCompose({
   const [showCc, setShowCc] = useState(false);
   const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  // Influencer picker state
+  const [linkedInfluencer, setLinkedInfluencer] = useState<LinkedInfluencer | null>(null);
+  const [influencerSearch, setInfluencerSearch] = useState("");
+  const [influencerResults, setInfluencerResults] = useState<LinkedInfluencer[]>([]);
+  const [influencerSearching, setInfluencerSearching] = useState(false);
+  const [showInfluencerDropdown, setShowInfluencerDropdown] = useState(false);
+  const influencerSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const influencerDropdownRef = useRef<HTMLDivElement>(null);
 
   const initialEditorHtml = useMemo(
     () => buildInitialComposeHtml(defaultBody, accountSignature),
@@ -161,6 +180,84 @@ export function EmailCompose({
       }
     };
   }, []);
+
+  // Fetch influencer data when influencerId prop is provided (e.g. from detail panel or reply)
+  useEffect(() => {
+    if (!influencerId) return;
+    fetch(`/api/influencers/${influencerId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) {
+          setLinkedInfluencer({
+            id: data.id,
+            username: data.username,
+            displayName: data.displayName,
+            avatarUrl: data.avatarUrl,
+            email: data.email,
+          });
+        }
+      })
+      .catch(() => {
+        /* silently fail, user can still search */
+      });
+  }, [influencerId]);
+
+  // Close influencer dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        influencerDropdownRef.current &&
+        !influencerDropdownRef.current.contains(e.target as Node)
+      ) {
+        setShowInfluencerDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleInfluencerSearchChange = useCallback((value: string) => {
+    setInfluencerSearch(value);
+    if (influencerSearchTimer.current) clearTimeout(influencerSearchTimer.current);
+
+    if (!value.trim()) {
+      setInfluencerResults([]);
+      setShowInfluencerDropdown(false);
+      return;
+    }
+
+    influencerSearchTimer.current = setTimeout(async () => {
+      setInfluencerSearching(true);
+      try {
+        const res = await fetch(
+          `/api/influencers?search=${encodeURIComponent(value.trim())}&minimal=true&limit=10`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setInfluencerResults(data.influencers ?? []);
+          setShowInfluencerDropdown(true);
+        }
+      } catch {
+        // silently fail
+      } finally {
+        setInfluencerSearching(false);
+      }
+    }, 300);
+  }, []);
+
+  const handleSelectInfluencer = useCallback(
+    (inf: LinkedInfluencer) => {
+      setLinkedInfluencer(inf);
+      setInfluencerSearch("");
+      setInfluencerResults([]);
+      setShowInfluencerDropdown(false);
+      // Auto-fill To field with influencer email if To is empty
+      if (inf.email && to.length === 0) {
+        setTo([inf.email]);
+      }
+    },
+    [to.length],
+  );
 
   const totalAttachmentBytes = useMemo(
     () => attachments.reduce((sum, item) => sum + item.file.size, 0),
@@ -281,7 +378,7 @@ export function EmailCompose({
       formData.append("subject", subject);
       formData.append("bodyHtml", bodyHtml);
       formData.append("bodyText", bodyText);
-      if (influencerId) formData.append("influencerId", influencerId);
+      if (linkedInfluencer) formData.append("influencerId", linkedInfluencer.id);
       if (inReplyTo) formData.append("inReplyTo", inReplyTo);
       attachments.forEach((item) =>
         formData.append("attachments", item.file, item.file.name),
@@ -332,6 +429,7 @@ export function EmailCompose({
             subject,
             bodyText,
             bodyHtml,
+            influencerId: linkedInfluencer?.id || undefined,
           }),
         });
       } else {
@@ -344,7 +442,7 @@ export function EmailCompose({
             subject,
             bodyText,
             bodyHtml,
-            influencerId: influencerId || undefined,
+            influencerId: linkedInfluencer?.id || undefined,
           }),
         });
       }
@@ -362,8 +460,8 @@ export function EmailCompose({
       ...to,
       ...splitRecipientInput(toInput),
     ]);
-    if (!influencerId && recipients.length === 0) {
-      toast.error("Open compose from an influencer or add a recipient first");
+    if (!linkedInfluencer && recipients.length === 0) {
+      toast.error("Link an influencer or add a recipient first");
       return;
     }
 
@@ -373,7 +471,7 @@ export function EmailCompose({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          influencerId: influencerId || undefined,
+          influencerId: linkedInfluencer?.id || undefined,
           to: recipients,
         }),
       });
@@ -445,6 +543,105 @@ export function EmailCompose({
       </div>
 
       <div className="space-y-3 border-b px-4 py-3">
+        {/* Influencer Link Field */}
+        <div className="flex items-center gap-3">
+          <Label className="w-12 shrink-0 text-right text-sm text-muted-foreground">
+            <Users className="ml-auto h-4 w-4" />
+          </Label>
+          {linkedInfluencer ? (
+            <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1">
+              {linkedInfluencer.avatarUrl ? (
+                <img
+                  src={`/api/thumbnail?url=${encodeURIComponent(linkedInfluencer.avatarUrl)}`}
+                  alt=""
+                  className="h-5 w-5 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-200 text-[9px] font-bold text-emerald-800">
+                  {(linkedInfluencer.displayName ?? linkedInfluencer.username)
+                    .substring(0, 2)
+                    .toUpperCase()}
+                </div>
+              )}
+              <span className="text-sm font-medium text-emerald-800">
+                @{linkedInfluencer.username}
+              </span>
+              {linkedInfluencer.displayName && (
+                <span className="text-xs text-emerald-600">
+                  {linkedInfluencer.displayName}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setLinkedInfluencer(null)}
+                className="ml-1 text-emerald-400 hover:text-emerald-700"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : (
+            <div ref={influencerDropdownRef} className="relative flex-1">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  placeholder="Search influencer to link..."
+                  value={influencerSearch}
+                  onChange={(e) => handleInfluencerSearchChange(e.target.value)}
+                  onFocus={() => {
+                    if (influencerResults.length > 0)
+                      setShowInfluencerDropdown(true);
+                  }}
+                  className="h-8 w-full rounded-md border border-amber-300 bg-amber-50/50 pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
+                />
+                {influencerSearching && (
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+                  </div>
+                )}
+              </div>
+              {showInfluencerDropdown && influencerResults.length > 0 && (
+                <div className="absolute left-0 top-full z-50 mt-1 max-h-48 w-full overflow-auto rounded-md border bg-popover shadow-lg">
+                  {influencerResults.map((inf) => (
+                    <button
+                      key={inf.id}
+                      type="button"
+                      onClick={() => handleSelectInfluencer(inf)}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-accent"
+                    >
+                      {inf.avatarUrl ? (
+                        <img
+                          src={`/api/thumbnail?url=${encodeURIComponent(inf.avatarUrl)}`}
+                          alt=""
+                          className="h-6 w-6 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[9px] font-bold">
+                          {(inf.displayName ?? inf.username)
+                            .substring(0, 2)
+                            .toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium">@{inf.username}</p>
+                        {inf.displayName && (
+                          <p className="truncate text-xs text-muted-foreground">
+                            {inf.displayName}
+                          </p>
+                        )}
+                      </div>
+                      {inf.email && (
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {inf.email}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center gap-3">
           <Label className="w-12 shrink-0 text-right text-sm text-muted-foreground">
             To
