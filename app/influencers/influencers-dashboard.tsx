@@ -409,9 +409,14 @@ export function InfluencersDashboard({ influencers }: Props) {
           throw new Error(data.error || "Failed");
         }
         const { runId, totalCount } = await res.json();
-        toast.success(
-          `AI Filter started for ${totalCount} influencer${totalCount !== 1 ? "s" : ""}`,
+        // Trigger progress indicator
+        localStorage.setItem("mixsoon_active_ai_run", runId);
+        window.dispatchEvent(
+          new CustomEvent("ai-filter-started", { detail: runId }),
         );
+        toast.info("AI filter started", {
+          description: `Scoring ${totalCount} influencer${totalCount !== 1 ? "s" : ""} in background.`,
+        });
         setSelectedRows(new Set());
         router.push(`/ai-filter/${runId}`);
       } catch (err) {

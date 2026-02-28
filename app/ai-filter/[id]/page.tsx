@@ -65,9 +65,26 @@ export default function AiFilterRunPage() {
     }
   }, [runId]);
 
+  // Load initially, then poll every 3s while PROCESSING
   useEffect(() => {
     void loadRun();
   }, [loadRun]);
+
+  useEffect(() => {
+    if (!run || run.status !== "PROCESSING") return;
+    const interval = setInterval(() => void loadRun(), 3000);
+    return () => clearInterval(interval);
+  }, [run?.status, loadRun]);
+
+  // Also listen for completion event from the progress widget
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const completedId = (e as CustomEvent<string>).detail;
+      if (completedId === runId) void loadRun();
+    };
+    window.addEventListener("ai-filter-complete", handler);
+    return () => window.removeEventListener("ai-filter-complete", handler);
+  }, [runId, loadRun]);
 
   const reviewQueue = useMemo(
     () =>
@@ -151,6 +168,8 @@ export default function AiFilterRunPage() {
     );
   }
 
+  const isProcessing = run.status === "PROCESSING";
+
   return (
     <div className="p-6">
       <div className="mb-5">
@@ -158,6 +177,14 @@ export default function AiFilterRunPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           {run.campaign.name} · strictness {run.strictness}
         </p>
+        {isProcessing && (
+          <div className="mt-3 flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-300 border-t-blue-600" />
+            <span className="text-sm font-medium text-blue-800">
+              Processing… {run.evaluations.length} of {run.evaluations.length} scored so far (auto-refreshing)
+            </span>
+          </div>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
           {run.import && (
             <Link href={`/imports/${run.import.id}`} className="underline">
