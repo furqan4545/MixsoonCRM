@@ -5,6 +5,19 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+
+const BUCKET_COLORS: Record<string, { bg: string; text: string; border: string; hover: string }> = {
+  APPROVED: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-300", hover: "hover:bg-emerald-100" },
+  OKISH: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-300", hover: "hover:bg-amber-100" },
+  REJECTED: { bg: "bg-red-50", text: "text-red-700", border: "border-red-300", hover: "hover:bg-red-100" },
+};
+
+const BUCKET_LABELS: Record<string, string> = {
+  APPROVED: "Approved",
+  OKISH: "Ok-ish",
+  REJECTED: "Rejected",
+};
 
 type Evaluation = {
   id: string;
@@ -153,6 +166,21 @@ export default function AiFilterRunPage() {
     }
   }
 
+  async function moveEval(evalId: string, targetBucket: string) {
+    try {
+      const res = await fetch(`/api/ai/queues/${evalId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bucket: targetBucket }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast.success(`Moved to ${BUCKET_LABELS[targetBucket] || targetBucket}`);
+      await loadRun();
+    } catch {
+      toast.error("Failed to move influencer");
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-6 text-sm text-muted-foreground">
@@ -268,6 +296,7 @@ export default function AiFilterRunPage() {
           variant="default"
           onSave={() => handleBucketAction("APPROVED", "save")}
           onDelete={() => handleBucketAction("APPROVED", "delete")}
+          onMoveEval={moveEval}
           actionLoading={bucketAction}
         />
         <BucketList
@@ -277,6 +306,7 @@ export default function AiFilterRunPage() {
           variant="secondary"
           onSave={() => handleBucketAction("OKISH", "save")}
           onDelete={() => handleBucketAction("OKISH", "delete")}
+          onMoveEval={moveEval}
           actionLoading={bucketAction}
         />
         <BucketList
@@ -286,6 +316,7 @@ export default function AiFilterRunPage() {
           variant="destructive"
           onSave={() => handleBucketAction("REJECTED", "save")}
           onDelete={() => handleBucketAction("REJECTED", "delete")}
+          onMoveEval={moveEval}
           actionLoading={bucketAction}
         />
       </section>
@@ -300,6 +331,7 @@ function BucketList({
   variant,
   onSave,
   onDelete,
+  onMoveEval,
   actionLoading,
 }: {
   title: string;
@@ -308,11 +340,17 @@ function BucketList({
   variant: "default" | "secondary" | "destructive";
   onSave: () => void;
   onDelete: () => void;
+  onMoveEval: (evalId: string, targetBucket: string) => void;
   actionLoading: string | null;
 }) {
   const allSaved =
     rows.length > 0 && rows.every((r) => r.reviewStatus === "SAVED");
   const hasSavable = rows.some((r) => r.reviewStatus !== "SAVED");
+
+  // Other buckets to show as move targets
+  const otherBuckets = (["APPROVED", "OKISH", "REJECTED"] as const).filter(
+    (b) => b !== bucket,
+  );
 
   return (
     <div className="rounded-xl border bg-card">
@@ -358,7 +396,10 @@ function BucketList({
       ) : (
         <div className="space-y-2 p-3">
           {rows.map((row) => (
-            <div key={row.id} className="rounded-md border px-3 py-2">
+            <div
+              key={row.id}
+              className="group rounded-md border px-3 py-2 transition-colors hover:bg-muted/40"
+            >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Link
@@ -378,7 +419,28 @@ function BucketList({
                     </a>
                   )}
                 </div>
-                <div className="text-sm">Score: {row.score ?? "—"}</div>
+                <div className="flex items-center gap-2">
+                  {/* Move-to buttons — hidden by default, shown on hover */}
+                  <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    {otherBuckets.map((target) => {
+                      const colors = BUCKET_COLORS[target];
+                      return (
+                        <button
+                          key={target}
+                          type="button"
+                          onClick={() => onMoveEval(row.id, target)}
+                          className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold transition-colors ${colors.border} ${colors.text} ${colors.hover}`}
+                          title={`Move to ${BUCKET_LABELS[target]}`}
+                        >
+                          → {BUCKET_LABELS[target]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <span className="text-sm tabular-nums">
+                    Score: {row.score ?? "—"}
+                  </span>
+                </div>
               </div>
               {row.reasons && (
                 <p className="mt-1 text-xs text-muted-foreground">

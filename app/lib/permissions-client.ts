@@ -28,6 +28,7 @@ export const NAV_FEATURE_MAP: Record<
   "/influencers": { feature: FEATURES.INFLUENCERS, action: "read" },
   "/campaigns": { feature: FEATURES.CAMPAIGNS, action: "read" },
   "/campaigns/filters": { feature: FEATURES.AI_FILTER, action: "read" },
+  "/ai-filter": { feature: FEATURES.AI_FILTER, action: "read" },
   "/queues": { feature: FEATURES.QUEUES, action: "read" },
   "/notifications": { feature: FEATURES.NOTIFICATIONS, action: "read" },
   "/email": { feature: FEATURES.EMAIL, action: "read" },
