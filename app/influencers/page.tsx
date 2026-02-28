@@ -1,112 +1,121 @@
-import { prisma } from "../lib/prisma";
-import { fixThumbnailUrl } from "../lib/thumbnail";
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
 import { InfluencersDashboard } from "./influencers-dashboard";
+import type { InfluencerRow } from "./influencers-dashboard";
 
-export const dynamic = "force-dynamic";
+export default function InfluencersPage() {
+  const [influencers, setInfluencers] = useState<InfluencerRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-export default async function InfluencersPage() {
-  const influencers = await prisma.influencer.findMany({
-    orderBy: { createdAt: "desc" },
-    include: {
-      videos: { orderBy: { uploadedAt: "desc" } },
-      _count: { select: { videos: true, emailMessages: true } },
-      import: { select: { id: true, sourceFilename: true } },
-      aiEvaluations: {
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true,
-          score: true,
-          bucket: true,
-          reviewStatus: true,
-          reasons: true,
-          matchedSignals: true,
-          riskSignals: true,
-          run: { select: { campaign: { select: { name: true } } } },
-        },
-      },
-      activityLogs: {
-        orderBy: { createdAt: "desc" },
-        take: 10,
-      },
-      campaignAssignments: {
-        include: {
-          campaign: {
-            select: { id: true, name: true, status: true },
-          },
-        },
-        orderBy: { assignedAt: "desc" },
-      },
-    },
-  });
+  const fetchPage = useCallback(async (cursor?: string | null) => {
+    const isFirst = !cursor;
+    if (isFirst) setLoading(true);
+    else setLoadingMore(true);
 
-  const serialized = influencers.map((inf) => {
-    // Find the latest SAVED evaluation to determine queue bucket
-    const savedEval = inf.aiEvaluations.find((e) => e.reviewStatus === "SAVED");
-    const latestEval = inf.aiEvaluations[0] ?? null;
+    try {
+      const url = cursor
+        ? `/api/influencers?limit=50&cursor=${cursor}`
+        : "/api/influencers?limit=50";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
 
-    return {
-      id: inf.id,
-      username: inf.username,
-      displayName: inf.displayName,
-      avatarUrl: inf.avatarUrl,
-      avatarProxied: fixThumbnailUrl(inf.avatarUrl),
-      profileUrl: inf.profileUrl,
-      platform:
-        inf.platform ??
-        (inf.profileUrl?.includes("tiktok")
-          ? "TikTok"
-          : inf.profileUrl?.includes("instagram")
-            ? "Instagram"
-            : null),
-      followers: inf.followers,
-      engagementRate: inf.engagementRate,
-      rate: inf.rate,
-      country: inf.country,
-      email: inf.email,
-      phone: inf.phone,
-      biolink: inf.biolink,
-      bioLinkUrl: inf.bioLinkUrl,
-      socialLinks: inf.socialLinks,
-      sourceFilename: inf.sourceFilename,
-      importId: inf.import?.id ?? null,
-      importFilename: inf.import?.sourceFilename ?? null,
-      pipelineStage: inf.pipelineStage,
-      tags: inf.tags,
-      notes: inf.notes,
-      aiScore: inf.aiScore ?? latestEval?.score ?? null,
-      // Queue data
-      queueBucket: savedEval?.bucket ?? null, // APPROVED | OKISH | REJECTED | null
-      queueEvalId: savedEval?.id ?? null,
-      aiReasons: latestEval?.reasons ?? null,
-      aiMatchedSignals: latestEval?.matchedSignals ?? null,
-      aiRiskSignals: latestEval?.riskSignals ?? null,
-      campaignName: latestEval?.run?.campaign?.name ?? null,
-      videoCount: inf._count.videos,
-      conversationCount: inf._count.emailMessages,
-      videos: inf.videos.map((v) => ({
-        id: v.id,
-        title: v.title,
-        views: v.views,
-        bookmarks: v.bookmarks,
-        uploadedAt: v.uploadedAt?.toISOString() ?? null,
-        thumbnailUrl: v.thumbnailUrl,
-        thumbnailProxied: fixThumbnailUrl(v.thumbnailUrl),
-      })),
-      activityLogs: inf.activityLogs.map((log) => ({
-        id: log.id,
-        type: log.type,
-        title: log.title,
-        detail: log.detail,
-        createdAt: log.createdAt.toISOString(),
-      })),
-      campaignAssignments: inf.campaignAssignments.map((ca) => ({
-        campaignId: ca.campaign.id,
-        campaignName: ca.campaign.name,
-        campaignStatus: ca.campaign.status,
-      })),
-      createdAt: inf.createdAt.toISOString(),
-    };
-  });
+      if (isFirst) {
+        setInfluencers(data.influencers ?? []);
+      } else {
+        setInfluencers((prev) => [...prev, ...(data.influencers ?? [])]);
+      }
+      setNextCursor(data.nextCursor ?? null);
+      setTotalCount(data.totalCount ?? 0);
+    } catch {
+      if (isFirst) setInfluencers([]);
+    } finally {
+      if (isFirst) setLoading(false);
+      else setLoadingMore(false);
+    }
+  }, []);
 
-  return <InfluencersDashboard influencers={serialized} />;
+  useEffect(() => {
+    fetchPage();
+  }, [fetchPage]);
+
+  if (loading) {
+    return <InfluencersLoadingSkeleton />;
+  }
+
+  return (
+    <>
+      <InfluencersDashboard influencers={influencers} />
+      {nextCursor && (
+        <div className="flex justify-center px-6 pb-6">
+          <button
+            onClick={() => fetchPage(nextCursor)}
+            disabled={loadingMore}
+            className="rounded-lg border bg-card px-6 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+          >
+            {loadingMore ? (
+              <span className="flex items-center gap-2">
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                Loading...
+              </span>
+            ) : (
+              `Load more (${influencers.length} of ${totalCount})`
+            )}
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function InfluencersLoadingSkeleton() {
+  return (
+    <div className="p-6">
+      {/* Header skeleton */}
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <div className="h-7 w-48 animate-pulse rounded bg-muted" />
+          <div className="mt-1 h-4 w-64 animate-pulse rounded bg-muted" />
+        </div>
+        <div className="flex gap-2">
+          <div className="h-9 w-64 animate-pulse rounded-md bg-muted" />
+          <div className="h-9 w-9 animate-pulse rounded-md bg-muted" />
+        </div>
+      </div>
+
+      {/* Tabs skeleton */}
+      <div className="mb-4 flex gap-2">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-7 w-20 animate-pulse rounded-full bg-muted"
+          />
+        ))}
+      </div>
+
+      {/* Table skeleton */}
+      <div className="rounded-xl border bg-card">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-4 border-b px-4 py-3 last:border-b-0"
+          >
+            <div className="h-9 w-9 animate-pulse rounded-full bg-muted" />
+            <div className="flex-1 space-y-1.5">
+              <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+              <div className="h-3 w-48 animate-pulse rounded bg-muted" />
+            </div>
+            <div className="h-4 w-16 animate-pulse rounded bg-muted" />
+            <div className="h-9 w-9 animate-pulse rounded-full bg-muted" />
+            <div className="h-5 w-16 animate-pulse rounded-full bg-muted" />
+            <div className="h-4 w-12 animate-pulse rounded bg-muted" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }

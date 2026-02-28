@@ -79,7 +79,7 @@ export function SubmitApprovalDialog({
     if (!open) return;
     setLoadingOptions(true);
     Promise.all([
-      fetch("/api/influencers?pipelineStage=NEGOTIATING&limit=500")
+      fetch("/api/influencers?pipelineStage=NEGOTIATING&limit=500&minimal=true")
         .then((r) => (r.ok ? r.json() : { influencers: [] }))
         .then((d) => d.influencers ?? []),
       fetch("/api/marketing-campaigns")
