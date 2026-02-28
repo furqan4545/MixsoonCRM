@@ -275,10 +275,27 @@ export async function POST() {
 
   const seenInBatch = new Set<string>();
   const toInsert: ReturnType<typeof toCreateData>[] = [];
+  const toBackfillBody: Array<{
+    messageId: string;
+    bodyHtml?: string;
+    bodyText?: string;
+  }> = [];
+
   for (const item of candidates) {
     const messageId = item.email.messageId;
     if (messageId) {
-      if (existingIdSet.has(messageId) || seenInBatch.has(messageId)) continue;
+      if (seenInBatch.has(messageId)) continue;
+      if (existingIdSet.has(messageId)) {
+        // Email exists — queue body backfill if we have content
+        if (item.email.bodyHtml || item.email.bodyText) {
+          toBackfillBody.push({
+            messageId,
+            bodyHtml: item.email.bodyHtml,
+            bodyText: item.email.bodyText,
+          });
+        }
+        continue;
+      }
       seenInBatch.add(messageId);
       toInsert.push(toCreateData(account.id, item.folder, item.email));
       continue;
@@ -337,6 +354,28 @@ export async function POST() {
 
     await prisma.emailMessage.createMany({ data: toInsert });
     totalSynced += toInsert.length;
+  }
+
+  // Backfill body content for existing emails that had no body (synced before body-fetch fix)
+  if (toBackfillBody.length > 0) {
+    for (const update of toBackfillBody) {
+      try {
+        await prisma.emailMessage.updateMany({
+          where: {
+            accountId: account.id,
+            messageId: update.messageId,
+            bodyHtml: null,
+            bodyText: null,
+          },
+          data: {
+            ...(update.bodyHtml ? { bodyHtml: update.bodyHtml } : {}),
+            ...(update.bodyText ? { bodyText: update.bodyText } : {}),
+          },
+        });
+      } catch {
+        // Non-critical, skip individual backfill failures
+      }
+    }
   }
 
   await prisma.emailAccount.update({

@@ -69,19 +69,25 @@ function MessageBubble({
   return (
     <div
       className={cn(
-        "rounded-lg border p-4",
-        isCurrentEmail && "ring-2 ring-primary/20",
-        isSent && "bg-primary/5",
+        "rounded-lg border-l-4 border p-4",
+        isSent
+          ? "border-l-blue-500 bg-blue-50 dark:bg-blue-950/30"
+          : "border-l-emerald-500 bg-emerald-50 dark:bg-emerald-950/30",
+        isCurrentEmail && "ring-2 ring-primary/30",
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-1 text-sm">
           <div className="flex items-center gap-2">
             <span className="font-medium truncate">{msg.from}</span>
-            {isSent && (
-              <Badge variant="outline" className="text-[10px] shrink-0">
-                Sent
-              </Badge>
+            {isSent ? (
+              <span className="inline-flex shrink-0 items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                You sent
+              </span>
+            ) : (
+              <span className="inline-flex shrink-0 items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                Received
+              </span>
             )}
             {msg.influencer && (
               <Badge variant="secondary" className="text-[10px] shrink-0">
