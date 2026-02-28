@@ -339,27 +339,18 @@ export function InfluencersDashboard({ influencers }: Props) {
     [router],
   );
 
-  // Move between queues — supports both scored (evalIds) and unscored (influencerIds)
+  // Move between queues
   const moveToQueue = useCallback(
-    async (
-      evalIds: string[],
-      unscoredIds: string[],
-      targetBucket: string,
-    ) => {
+    async (evalIds: string[], targetBucket: string) => {
       setMoving(true);
       try {
         const res = await fetch("/api/influencers/move-queue", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            evalIds: evalIds.length > 0 ? evalIds : undefined,
-            influencerIds: unscoredIds.length > 0 ? unscoredIds : undefined,
-            targetBucket,
-          }),
+          body: JSON.stringify({ evalIds, targetBucket }),
         });
         if (!res.ok) throw new Error("Failed");
-        const total = evalIds.length + unscoredIds.length;
-        toast.success(`Moved ${total} to ${targetBucket}`);
+        toast.success(`Moved ${evalIds.length} to ${targetBucket}`);
         setSelectedRows(new Set());
         router.refresh();
       } catch {
@@ -509,37 +500,41 @@ export function InfluencersDashboard({ influencers }: Props) {
                 {selectedRows.size} selected
               </span>
               <div className="ml-auto flex items-center gap-2">
-                {/* Move to queue buttons — always visible when any influencer is selected */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={moving}
-                  onClick={() => moveToQueue(selectedEvalIds, selectedUnscoredIds, "APPROVED")}
-                  className="gap-1.5 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50"
-                >
-                  <ArrowRightLeft className="h-3 w-3" />
-                  Move to Approved
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={moving}
-                  onClick={() => moveToQueue(selectedEvalIds, selectedUnscoredIds, "OKISH")}
-                  className="gap-1.5 text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
-                >
-                  <ArrowRightLeft className="h-3 w-3" />
-                  Move to Ok-ish
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={moving}
-                  onClick={() => moveToQueue(selectedEvalIds, selectedUnscoredIds, "REJECTED")}
-                  className="gap-1.5 text-xs text-red-700 border-red-300 hover:bg-red-50"
-                >
-                  <ArrowRightLeft className="h-3 w-3" />
-                  Move to Rejected
-                </Button>
+                {/* Move to queue buttons — visible when scored influencers are selected */}
+                {selectedEvalIds.length > 0 && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={moving}
+                      onClick={() => moveToQueue(selectedEvalIds, "APPROVED")}
+                      className="gap-1.5 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                    >
+                      <ArrowRightLeft className="h-3 w-3" />
+                      Move to Approved
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={moving}
+                      onClick={() => moveToQueue(selectedEvalIds, "OKISH")}
+                      className="gap-1.5 text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+                    >
+                      <ArrowRightLeft className="h-3 w-3" />
+                      Move to Ok-ish
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={moving}
+                      onClick={() => moveToQueue(selectedEvalIds, "REJECTED")}
+                      className="gap-1.5 text-xs text-red-700 border-red-300 hover:bg-red-50"
+                    >
+                      <ArrowRightLeft className="h-3 w-3" />
+                      Move to Rejected
+                    </Button>
+                  </>
+                )}
                 {/* Run AI Filter — shown when unscored influencers are selected */}
                 {selectedUnscoredIds.length >= 1 && (
                   <DropdownMenu onOpenChange={(open) => open && fetchCampaigns()}>

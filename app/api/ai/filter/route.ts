@@ -55,7 +55,6 @@ async function runAiFilterBackground(params: {
   const { runId, campaignName, influencers, campaignContext } = params;
   const total = influencers.length;
   let aiProcessedCount = 0;
-  let reviewQueueCount = 0;
   let approvedCount = 0;
   let okishCount = 0;
   let rejectedCount = 0;
@@ -89,14 +88,14 @@ async function runAiFilterBackground(params: {
       );
 
       if (!pre.shouldRunAi) {
-        reviewQueueCount += 1;
+        rejectedCount += 1;
         await prisma.influencerAiEvaluation.create({
           data: {
             runId,
             influencerId: influencer.id,
             prefilterLabel: pre.label,
-            score: null,
-            bucket: "REVIEW_QUEUE",
+            score: 0,
+            bucket: "REJECTED",
             reasons: pre.reason,
             matchedSignals: pre.matchedTarget.join(", ") || null,
             riskSignals: pre.matchedAvoid.join(", ") || null,
@@ -107,8 +106,8 @@ async function runAiFilterBackground(params: {
         await notifyQuiet({
           type: "ai_filter",
           status: "info",
-          title: `${tag} @${influencer.username} → Review Queue`,
-          message: pre.reason || "Sent to manual review (pre-filter).",
+          title: `${tag} @${influencer.username} → Rejected (pre-filter)`,
+          message: pre.reason || "Rejected by pre-filter (score 0).",
           runId,
         });
       } else {
@@ -190,7 +189,7 @@ async function runAiFilterBackground(params: {
         where: { id: runId },
         data: {
           aiProcessedCount,
-          reviewQueueCount,
+          reviewQueueCount: 0,
           approvedCount,
           okishCount,
           rejectedCount,
@@ -208,7 +207,7 @@ async function runAiFilterBackground(params: {
       type: "ai_filter",
       status: "success",
       title: `AI filter complete — ${campaignName}`,
-      message: `${total} influencer${total === 1 ? "" : "s"} scored. Approved: ${approvedCount}, OK-ish: ${okishCount}, Rejected: ${rejectedCount}, Review: ${reviewQueueCount}.`,
+      message: `${total} influencer${total === 1 ? "" : "s"} scored. Approved: ${approvedCount}, OK-ish: ${okishCount}, Rejected: ${rejectedCount}.`,
       runId,
     });
   } catch (error) {
