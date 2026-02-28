@@ -43,6 +43,7 @@ model Influencer {
   emailMessages EmailMessage[]
   activityLogs  ActivityLog[]
   campaignAssignments CampaignInfluencer[]
+  approvalRequests    ApprovalRequest[]
 
   @@index([username])
   @@index([importId])
@@ -226,6 +227,7 @@ model Notification {
   read       Boolean  @default(false)
   importId   String?
   runId      String?  // AiFilterRun id when type is ai_filter
+  approvalId String?  // ApprovalRequest id when type is approval
   createdAt  DateTime @default(now())
 
   @@index([read])
@@ -253,6 +255,8 @@ model User {
   updatedAt    DateTime   @updatedAt
 
   emailAccount EmailAccount?
+  submittedApprovals ApprovalRequest[] @relation("SubmittedApprovals")
+  reviewedApprovals  ApprovalRequest[] @relation("ReviewedApprovals")
 
   @@index([roleId])
   @@index([status])
@@ -361,7 +365,8 @@ model MarketingCampaign {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  influencers CampaignInfluencer[]
+  influencers      CampaignInfluencer[]
+  approvalRequests ApprovalRequest[]
 
   @@index([status])
   @@index([name])
@@ -385,4 +390,50 @@ enum CampaignStatus {
   ACTIVE
   PAUSED
   COMPLETED
+}
+
+// ─── INTERNAL APPROVALS ──────────────────────────────────
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COUNTER_OFFERED
+}
+
+model ApprovalRequest {
+  id             String         @id @default(cuid())
+  influencerId   String
+  influencer     Influencer     @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+
+  submittedById  String
+  submittedBy    User           @relation("SubmittedApprovals", fields: [submittedById], references: [id])
+
+  // Negotiation terms
+  rate           Float
+  currency       String         @default("USD")
+  deliverables   String
+  notes          String?
+
+  // Optional campaign link
+  campaignId     String?
+  campaign       MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  // Review
+  status         ApprovalStatus @default(PENDING)
+  reviewedById   String?
+  reviewedBy     User?          @relation("ReviewedApprovals", fields: [reviewedById], references: [id])
+  reviewedAt     DateTime?
+
+  // Counter-offer
+  counterRate    Float?
+  counterNotes   String?
+
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([submittedById])
+  @@index([status])
+  @@index([influencerId])
+  @@index([createdAt])
 }

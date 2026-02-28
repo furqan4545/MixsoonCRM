@@ -1,20 +1,14 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import {
-  Bell,
   CheckSquare,
   ChevronsUpDown,
-  Database,
-  FileSpreadsheet,
   GitBranch,
   Inbox,
-  Layers,
-  LayoutDashboard,
   LogOut,
-  Mail,
   Megaphone,
   ShieldCheck,
-  Sparkles,
   UserCog,
   Users,
 } from "lucide-react";
@@ -52,17 +46,6 @@ const workspaceItems = [
   { title: "Approvals", href: "/approvals", icon: CheckSquare },
 ];
 
-const navItems = [
-  { title: "Pipeline", href: "/", icon: GitBranch },
-  { title: "Data Scraper", href: "/data-scraper", icon: Database },
-  { title: "Imports", href: "/imports", icon: FileSpreadsheet },
-  { title: "Influencers", href: "/influencers", icon: Users },
-  { title: "Campaigns", href: "/campaigns", icon: Megaphone },
-  { title: "Campaign Filters", href: "/campaigns/filters", icon: Sparkles },
-  { title: "Queues", href: "/queues", icon: Layers },
-  { title: "Notifications", href: "/notifications", icon: Bell },
-  { title: "Email", href: "/email", icon: Mail },
-];
 
 function hasPermission(
   permissions: { feature: string; action: string }[] | undefined,
@@ -83,12 +66,40 @@ function canSeeNavItem(
   return hasPermission(permissions, req.feature, req.action);
 }
 
+function useApprovalCount(canSee: boolean) {
+  const [count, setCount] = useState(0);
+
+  const fetchCount = useCallback(async () => {
+    if (!canSee) return;
+    try {
+      const res = await fetch("/api/approvals/pending-count");
+      if (res.ok) {
+        const data = await res.json();
+        setCount(data.count ?? 0);
+      }
+    } catch {
+      // silent
+    }
+  }, [canSee]);
+
+  useEffect(() => {
+    fetchCount();
+    if (!canSee) return;
+    const id = setInterval(fetchCount, 30_000);
+    return () => clearInterval(id);
+  }, [fetchCount, canSee]);
+
+  return count;
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
   const { isMobile } = useSidebar();
   const { data: session } = useSession();
   const permissions = session?.user?.permissions ?? [];
   const showUserManagement = hasPermission(permissions, "users", "write");
+  const canSeeApprovals = canSeeNavItem("/approvals", permissions);
+  const pendingApprovalCount = useApprovalCount(canSeeApprovals);
 
   return (
     <Sidebar collapsible="icon">
@@ -129,12 +140,13 @@ export function AppSidebar() {
                       <Link href={item.href}>
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
-                        {item.badge ? (
+                        {item.href === "/approvals" &&
+                        pendingApprovalCount > 0 ? (
                           <Badge
                             variant="destructive"
                             className="ml-auto h-5 min-w-5 rounded-full px-1.5 text-[10px] font-semibold"
                           >
-                            {item.badge}
+                            {pendingApprovalCount}
                           </Badge>
                         ) : null}
                       </Link>

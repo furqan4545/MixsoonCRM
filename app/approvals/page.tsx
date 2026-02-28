@@ -1,77 +1,147 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { CheckCircle, Clock, Users, XCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
+import {
+  CheckCircle,
+  Clock,
+  Plus,
+  RefreshCw,
+  XCircle,
+  ArrowLeftRight,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ThumbnailImage } from "@/components/thumbnail-image";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { SubmitApprovalDialog } from "./submit-approval-dialog";
+import { ReviewApprovalDialog } from "./review-approval-dialog";
 
-type PendingUser = {
-  id: string;
-  email: string;
-  name: string | null;
-  createdAt: string;
-};
+/* ───────────── types ───────────── */
 
-type PendingEvaluation = {
+export interface ApprovalRow {
   id: string;
-  score: number | null;
-  bucket: "APPROVED" | "OKISH" | "REJECTED";
-  reasons: string | null;
   influencer: {
     id: string;
     username: string;
+    displayName: string | null;
     avatarUrl: string | null;
-    followers: number | null;
-    email: string | null;
+    rate: number | null;
   };
-  run: {
-    id: string;
-    campaign: { id: string; name: string };
-  };
-};
-
-function fixThumbnailUrl(url: string | null): string | null {
-  if (!url) return null;
-  return `/api/thumbnail?url=${encodeURIComponent(url)}`;
+  submittedBy: { id: string; name: string | null; email: string };
+  reviewedBy: { id: string; name: string | null; email: string } | null;
+  campaign: { id: string; name: string } | null;
+  rate: number;
+  currency: string;
+  deliverables: string;
+  notes: string | null;
+  status: string;
+  counterRate: number | null;
+  counterNotes: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
 }
 
-function formatNumber(n: number | null): string {
-  if (n == null) return "\u2014";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
+const TABS = [
+  { key: "ALL", label: "All" },
+  { key: "PENDING", label: "Pending", icon: Clock },
+  { key: "APPROVED", label: "Approved", icon: CheckCircle },
+  { key: "REJECTED", label: "Rejected", icon: XCircle },
+  { key: "COUNTER_OFFERED", label: "Counter-offered", icon: ArrowLeftRight },
+] as const;
+
+/* ───────────── helpers ───────────── */
+
+function statusBadge(status: string) {
+  const config: Record<string, { label: string; className: string }> = {
+    PENDING: {
+      label: "Pending",
+      className:
+        "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-200 dark:border-yellow-700",
+    },
+    APPROVED: {
+      label: "Approved",
+      className:
+        "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-200 dark:border-green-700",
+    },
+    REJECTED: {
+      label: "Rejected",
+      className:
+        "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-200 dark:border-red-700",
+    },
+    COUNTER_OFFERED: {
+      label: "Counter-offered",
+      className:
+        "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-700",
+    },
+  };
+  const c = config[status] ?? {
+    label: status,
+    className: "bg-gray-100 text-gray-800 border-gray-300",
+  };
+  return (
+    <Badge variant="outline" className={c.className}>
+      {c.label}
+    </Badge>
+  );
 }
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatCurrency(amount: number, currency: string) {
+  return `${currency} ${amount.toLocaleString()}`;
+}
+
+/* ───────────── page ───────────── */
 
 export default function ApprovalsPage() {
-  const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
-  const [evaluations, setEvaluations] = useState<PendingEvaluation[]>([]);
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "Admin";
+  const hasWrite = (session?.user?.permissions ?? []).some(
+    (p: { feature: string; action: string }) =>
+      p.feature === "approvals" && p.action === "write",
+  );
+
+  const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("ALL");
+
+  // Dialogs
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [submitPrefill, setSubmitPrefill] = useState<{
+    influencerId?: string;
+    rate?: number;
+    currency?: string;
+    deliverables?: string;
+    notes?: string;
+    campaignId?: string;
+  } | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [selectedApproval, setSelectedApproval] = useState<ApprovalRow | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [usersRes, queuesRes] = await Promise.all([
-        fetch("/api/admin/users").then((r) =>
-          r.ok ? r.json() : { users: [] },
-        ),
-        fetch("/api/ai/queues").then((r) => (r.ok ? r.json() : [])),
-      ]);
-      const users = Array.isArray(usersRes.users) ? usersRes.users : [];
-      setPendingUsers(
-        users.filter((u: { status: string }) => u.status === "PENDING"),
-      );
-      setEvaluations(
-        Array.isArray(queuesRes)
-          ? queuesRes.filter(
-              (e: PendingEvaluation) => e.bucket === "APPROVED",
-            )
-          : [],
-      );
+      const res = await fetch("/api/approvals");
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setApprovals(data.approvals ?? []);
     } catch {
-      console.error("Failed to load approvals");
+      setApprovals([]);
     } finally {
       setLoading(false);
     }
@@ -81,39 +151,44 @@ export default function ApprovalsPage() {
     void load();
   }, [load]);
 
-  async function approveUser(id: string) {
-    setUpdatingId(id);
-    try {
-      const res = await fetch(`/api/admin/users/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "ACTIVE" }),
-      });
-      if (res.ok) {
-        setPendingUsers((prev) => prev.filter((u) => u.id !== id));
-      }
-    } finally {
-      setUpdatingId(null);
+  // Tab counts
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { ALL: approvals.length };
+    for (const a of approvals) {
+      c[a.status] = (c[a.status] ?? 0) + 1;
     }
+    return c;
+  }, [approvals]);
+
+  // Filtered list
+  const filtered = useMemo(() => {
+    if (activeTab === "ALL") return approvals;
+    return approvals.filter((a) => a.status === activeTab);
+  }, [approvals, activeTab]);
+
+  function openReview(row: ApprovalRow) {
+    setSelectedApproval(row);
+    setReviewOpen(true);
   }
 
-  async function rejectUser(id: string) {
-    setUpdatingId(id);
-    try {
-      const res = await fetch(`/api/admin/users/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "SUSPENDED" }),
-      });
-      if (res.ok) {
-        setPendingUsers((prev) => prev.filter((u) => u.id !== id));
-      }
-    } finally {
-      setUpdatingId(null);
-    }
+  function openResubmit(row: ApprovalRow) {
+    setSubmitPrefill({
+      influencerId: row.influencer.id,
+      rate: row.counterRate ?? row.rate,
+      currency: row.currency,
+      deliverables: row.deliverables,
+      notes: row.counterNotes
+        ? `Re-submit: counter was ${row.currency} ${row.counterRate}. ${row.counterNotes}`
+        : undefined,
+      campaignId: row.campaign?.id,
+    });
+    setSubmitOpen(true);
   }
 
-  const totalPending = pendingUsers.length + evaluations.length;
+  function openNewSubmit() {
+    setSubmitPrefill(null);
+    setSubmitOpen(true);
+  }
 
   if (loading) {
     return (
@@ -125,133 +200,206 @@ export default function ApprovalsPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Approvals</h1>
-        <p className="text-sm text-muted-foreground">
-          Items that need your review and approval.
-        </p>
+      {/* Header */}
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Approvals</h1>
+          <p className="text-sm text-muted-foreground">
+            {isAdmin
+              ? "Review and approve influencer rate submissions."
+              : "Submit influencer rates for approval and track their status."}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={load}>
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+          {hasWrite && !isAdmin && (
+            <Button size="sm" onClick={openNewSubmit}>
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Submit Approval
+            </Button>
+          )}
+        </div>
       </div>
 
-      {totalPending === 0 ? (
+      {/* Status tabs */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {TABS.map((tab) => {
+          const count = counts[tab.key] ?? 0;
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                active
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-muted-foreground hover:bg-accent border-input"
+              }`}
+            >
+              {tab.icon && <tab.icon className="h-3 w-3" />}
+              {tab.label}
+              {count > 0 && (
+                <span
+                  className={`ml-0.5 rounded-full px-1.5 text-[10px] ${
+                    active
+                      ? "bg-primary-foreground/20"
+                      : "bg-muted"
+                  }`}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Table */}
+      {filtered.length === 0 ? (
         <div className="rounded-xl border bg-card px-6 py-12 text-center">
           <CheckCircle className="mx-auto mb-3 h-10 w-10 text-green-500" />
-          <p className="font-medium">All caught up!</p>
+          <p className="font-medium">
+            {activeTab === "ALL"
+              ? "No approval requests yet"
+              : `No ${activeTab.toLowerCase().replace("_", "-")} approvals`}
+          </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            No items pending approval right now.
+            {!isAdmin && hasWrite
+              ? "Submit your first approval request using the button above."
+              : "Approval requests will appear here."}
           </p>
         </div>
       ) : (
-        <div className="space-y-8">
-          {/* Pending Users */}
-          {pendingUsers.length > 0 && (
-            <section>
-              <div className="mb-3 flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Pending Users
-                </h2>
-                <Badge variant="secondary">{pendingUsers.length}</Badge>
-              </div>
-              <div className="space-y-2">
-                {pendingUsers.map((u) => (
-                  <div
-                    key={u.id}
-                    className="flex items-center justify-between rounded-xl border bg-card p-4"
+        <div className="rounded-xl border bg-card">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[140px]">Influencer</TableHead>
+                  <TableHead>Submitted By</TableHead>
+                  <TableHead className="text-right">Rate</TableHead>
+                  <TableHead className="hidden md:table-cell">
+                    Deliverables
+                  </TableHead>
+                  {isAdmin && (
+                    <TableHead className="hidden lg:table-cell">
+                      Campaign
+                    </TableHead>
+                  )}
+                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden sm:table-cell">Date</TableHead>
+                  <TableHead className="w-[1%]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    className={
+                      isAdmin && row.status === "PENDING"
+                        ? "cursor-pointer hover:bg-muted/50"
+                        : ""
+                    }
+                    onClick={() => {
+                      if (isAdmin && row.status === "PENDING") {
+                        openReview(row);
+                      }
+                    }}
                   >
-                    <div>
-                      <p className="font-medium">{u.email}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {u.name ?? "No name"} &middot; Registered{" "}
-                        {new Date(u.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        disabled={updatingId === u.id}
-                        onClick={() => approveUser(u.id)}
-                      >
-                        <CheckCircle className="mr-1 h-3.5 w-3.5" />
-                        Approve
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={updatingId === u.id}
-                        onClick={() => rejectUser(u.id)}
-                      >
-                        <XCircle className="mr-1 h-3.5 w-3.5" />
-                        Reject
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* AI-Approved Influencers */}
-          {evaluations.length > 0 && (
-            <section>
-              <div className="mb-3 flex items-center gap-2">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  AI-Approved Influencers
-                </h2>
-                <Badge variant="secondary">{evaluations.length}</Badge>
-              </div>
-              <p className="mb-3 text-xs text-muted-foreground">
-                Influencers approved by AI filtering, ready for campaign
-                assignment.
-              </p>
-              <div className="space-y-2">
-                {evaluations.map((ev) => (
-                  <div
-                    key={ev.id}
-                    className="flex items-center gap-4 rounded-xl border bg-card p-4"
-                  >
-                    {ev.influencer.avatarUrl ? (
-                      <ThumbnailImage
-                        src={fixThumbnailUrl(ev.influencer.avatarUrl)!}
-                        alt={ev.influencer.username}
-                        className="h-10 w-10 rounded-full object-cover border border-border"
-                      />
-                    ) : (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-sm font-bold">
-                        {ev.influencer.username.charAt(0).toUpperCase()}
-                      </div>
+                    <TableCell className="font-medium">
+                      @{row.influencer.username}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {row.submittedBy.name || row.submittedBy.email}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-sm">
+                      {formatCurrency(row.rate, row.currency)}
+                      {row.counterRate && (
+                        <div className="text-xs text-amber-600">
+                          Counter: {formatCurrency(row.counterRate, row.currency)}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden max-w-[200px] truncate text-sm md:table-cell">
+                      {row.deliverables}
+                    </TableCell>
+                    {isAdmin && (
+                      <TableCell className="hidden text-sm lg:table-cell">
+                        {row.campaign?.name ?? "—"}
+                      </TableCell>
                     )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/influencers/${ev.influencer.id}`}
-                          className="font-medium hover:underline"
+                    <TableCell>{statusBadge(row.status)}</TableCell>
+                    <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
+                      {formatDate(row.createdAt)}
+                    </TableCell>
+                    <TableCell>
+                      {/* PIC: re-submit on counter-offered */}
+                      {!isAdmin &&
+                        row.status === "COUNTER_OFFERED" &&
+                        hasWrite && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openResubmit(row);
+                            }}
+                          >
+                            Re-submit
+                          </Button>
+                        )}
+                      {/* Admin: view non-pending or click pending row */}
+                      {isAdmin && row.status !== "PENDING" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openReview(row);
+                          }}
                         >
-                          @{ev.influencer.username}
-                        </Link>
-                        <Badge variant="outline" className="text-xs">
-                          Score: {ev.score ?? "\u2014"}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span>
-                          {formatNumber(ev.influencer.followers)} followers
-                        </span>
-                        <span>Campaign: {ev.run.campaign.name}</span>
-                      </div>
-                    </div>
-                    <Link href="/campaigns">
-                      <Button size="sm" variant="outline">
-                        Assign to Campaign
-                      </Button>
-                    </Link>
-                  </div>
+                          View
+                        </Button>
+                      )}
+                      {/* PIC: view details */}
+                      {!isAdmin && row.status !== "COUNTER_OFFERED" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openReview(row);
+                          }}
+                        >
+                          View
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </div>
-            </section>
-          )}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
+
+      {/* Submit dialog */}
+      <SubmitApprovalDialog
+        open={submitOpen}
+        onOpenChange={setSubmitOpen}
+        onSuccess={load}
+        prefill={submitPrefill}
+      />
+
+      {/* Review dialog */}
+      <ReviewApprovalDialog
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        onSuccess={load}
+        approval={selectedApproval}
+      />
     </div>
   );
 }

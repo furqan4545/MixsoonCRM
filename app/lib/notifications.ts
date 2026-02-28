@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 
-export type NotificationType = "import_save" | "ai_filter";
+export type NotificationType = "import_save" | "ai_filter" | "approval";
 export type NotificationStatus = "success" | "error" | "info";
 
 export async function createNotification(params: {
@@ -10,6 +10,7 @@ export async function createNotification(params: {
   message?: string | null;
   importId?: string | null;
   runId?: string | null;
+  approvalId?: string | null;
 }): Promise<{ id: string } | null> {
   try {
     if (!prisma?.notification) {
@@ -26,6 +27,7 @@ export async function createNotification(params: {
         message: params.message ?? null,
         importId: params.importId ?? null,
         runId: params.runId ?? null,
+        approvalId: params.approvalId ?? null,
       },
     });
   } catch (err) {
