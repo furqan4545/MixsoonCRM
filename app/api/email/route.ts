@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
         sentAt: true,
         receivedAt: true,
         createdAt: true,
-        influencerId: true,
+        influencer: { select: { id: true, username: true } },
       },
     }),
     prisma.emailMessage.count({ where }),

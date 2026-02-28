@@ -3,7 +3,6 @@
 import {
   AlertTriangle,
   ArrowLeft,
-  MailOpen,
   Reply,
   Star,
   Trash2,
@@ -16,8 +15,9 @@ import { plainTextToLinkedHtml } from "@/app/lib/email-rich-text";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
-interface EmailData {
+interface ThreadMessage {
   id: string;
   from: string;
   to: string[];
@@ -27,12 +27,15 @@ interface EmailData {
   bodyText: string | null;
   folder: string;
   isRead: boolean;
-  isStarred: boolean;
   sentAt: string | null;
   receivedAt: string | null;
   createdAt: string;
   messageId: string | null;
   influencer: { id: string; username: string; avatarUrl: string | null } | null;
+}
+
+interface EmailData extends ThreadMessage {
+  isStarred: boolean;
   attachments?: Array<{
     id: string;
     filename: string;
@@ -42,10 +45,84 @@ interface EmailData {
     isImage: boolean;
     isVideo: boolean;
   }>;
+  threadMessages?: ThreadMessage[];
 }
 
 interface Props {
   emailId: string;
+}
+
+function MessageBubble({
+  msg,
+  isCurrentEmail,
+  accountEmail,
+}: {
+  msg: ThreadMessage;
+  isCurrentEmail: boolean;
+  accountEmail?: string;
+}) {
+  const date = msg.sentAt ?? msg.receivedAt ?? msg.createdAt;
+  const isSent =
+    msg.folder === "SENT" ||
+    (accountEmail && msg.from.toLowerCase() === accountEmail.toLowerCase());
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg border p-4",
+        isCurrentEmail && "ring-2 ring-primary/20",
+        isSent && "bg-primary/5",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-1 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="font-medium truncate">{msg.from}</span>
+            {isSent && (
+              <Badge variant="outline" className="text-[10px] shrink-0">
+                Sent
+              </Badge>
+            )}
+            {msg.influencer && (
+              <Badge variant="secondary" className="text-[10px] shrink-0">
+                @{msg.influencer.username}
+              </Badge>
+            )}
+          </div>
+          <p className="text-muted-foreground">
+            <span>To: </span>
+            {msg.to.join(", ")}
+          </p>
+          {msg.cc.length > 0 && (
+            <p className="text-muted-foreground">
+              <span>CC: </span>
+              {msg.cc.join(", ")}
+            </p>
+          )}
+        </div>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {date ? formatDistanceToNow(new Date(date)) : ""}
+        </span>
+      </div>
+
+      <div className="prose prose-sm mt-3 max-w-none dark:prose-invert">
+        {msg.bodyHtml ? (
+          <div dangerouslySetInnerHTML={{ __html: msg.bodyHtml }} />
+        ) : msg.bodyText ? (
+          <div
+            className="whitespace-pre-wrap font-sans text-sm"
+            dangerouslySetInnerHTML={{
+              __html: plainTextToLinkedHtml(msg.bodyText),
+            }}
+          />
+        ) : (
+          <p className="text-sm italic text-muted-foreground">
+            (no message content)
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function EmailDetail({ emailId }: Props) {
@@ -130,6 +207,21 @@ export function EmailDetail({ emailId }: Props) {
 
   const date = email.sentAt ?? email.receivedAt ?? email.createdAt;
 
+  // Build thread: combine thread messages + current email, sorted chronologically
+  const threadMessages = email.threadMessages ?? [];
+  const allMessages: ThreadMessage[] = [...threadMessages, email].sort(
+    (a, b) => {
+      const dateA = new Date(
+        a.sentAt ?? a.receivedAt ?? a.createdAt,
+      ).getTime();
+      const dateB = new Date(
+        b.sentAt ?? b.receivedAt ?? b.createdAt,
+      ).getTime();
+      return dateA - dateB;
+    },
+  );
+  const hasThread = threadMessages.length > 0;
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b px-4 py-2">
@@ -173,81 +265,106 @@ export function EmailDetail({ emailId }: Props) {
                   @{email.influencer.username}
                 </Badge>
               )}
-            </div>
-          </div>
-
-          <div className="flex items-start justify-between rounded-lg border p-4">
-            <div className="space-y-1 text-sm">
-              <p>
-                <span className="text-muted-foreground">From: </span>
-                <span className="font-medium">{email.from}</span>
-              </p>
-              <p>
-                <span className="text-muted-foreground">To: </span>
-                {email.to.join(", ")}
-              </p>
-              {email.cc.length > 0 && (
-                <p>
-                  <span className="text-muted-foreground">CC: </span>
-                  {email.cc.join(", ")}
-                </p>
+              {hasThread && (
+                <Badge variant="outline" className="text-xs text-muted-foreground">
+                  {allMessages.length} messages in thread
+                </Badge>
               )}
             </div>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {date ? formatDistanceToNow(new Date(date)) : ""}
-            </span>
           </div>
 
-          <div className="prose prose-sm max-w-none dark:prose-invert">
-            {(email.attachments?.length ?? 0) > 0 && (
-              <div className="mb-4 rounded-md border p-3">
-                <p className="mb-2 text-sm font-medium">Attachments</p>
-                <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                  {email.attachments?.map((attachment) => (
-                    <a
-                      key={attachment.id}
-                      href={attachment.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="overflow-hidden rounded-md border bg-muted/30 hover:bg-muted/50"
-                    >
-                      {attachment.isImage ? (
-                        <img
-                          src={attachment.url}
-                          alt={attachment.filename}
-                          className="h-28 w-full object-cover"
-                        />
-                      ) : attachment.isVideo ? (
-                        <video
-                          src={attachment.url}
-                          className="h-28 w-full object-cover"
-                          controls
-                        />
-                      ) : (
-                        <div className="flex h-28 items-center justify-center text-xs text-muted-foreground">
-                          Open file
-                        </div>
-                      )}
-                      <div className="truncate border-t px-2 py-1 text-xs">
-                        {attachment.filename}
-                      </div>
-                    </a>
-                  ))}
+          {/* Thread: show all messages in chronological order */}
+          {hasThread ? (
+            <div className="space-y-3">
+              {allMessages.map((msg) => (
+                <MessageBubble
+                  key={msg.id}
+                  msg={msg}
+                  isCurrentEmail={msg.id === email.id}
+                />
+              ))}
+            </div>
+          ) : (
+            <>
+              {/* Single email view (no thread) */}
+              <div className="flex items-start justify-between rounded-lg border p-4">
+                <div className="space-y-1 text-sm">
+                  <p>
+                    <span className="text-muted-foreground">From: </span>
+                    <span className="font-medium">{email.from}</span>
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">To: </span>
+                    {email.to.join(", ")}
+                  </p>
+                  {email.cc.length > 0 && (
+                    <p>
+                      <span className="text-muted-foreground">CC: </span>
+                      {email.cc.join(", ")}
+                    </p>
+                  )}
                 </div>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {date ? formatDistanceToNow(new Date(date)) : ""}
+                </span>
               </div>
-            )}
 
-            {email.bodyHtml ? (
-              <div dangerouslySetInnerHTML={{ __html: email.bodyHtml }} />
-            ) : (
-              <div
-                className="whitespace-pre-wrap font-sans text-sm"
-                dangerouslySetInnerHTML={{
-                  __html: plainTextToLinkedHtml(email.bodyText ?? ""),
-                }}
-              />
-            )}
-          </div>
+              <div className="prose prose-sm max-w-none dark:prose-invert">
+                {(email.attachments?.length ?? 0) > 0 && (
+                  <div className="mb-4 rounded-md border p-3">
+                    <p className="mb-2 text-sm font-medium">Attachments</p>
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                      {email.attachments?.map((attachment) => (
+                        <a
+                          key={attachment.id}
+                          href={attachment.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="overflow-hidden rounded-md border bg-muted/30 hover:bg-muted/50"
+                        >
+                          {attachment.isImage ? (
+                            <img
+                              src={attachment.url}
+                              alt={attachment.filename}
+                              className="h-28 w-full object-cover"
+                            />
+                          ) : attachment.isVideo ? (
+                            <video
+                              src={attachment.url}
+                              className="h-28 w-full object-cover"
+                              controls
+                            />
+                          ) : (
+                            <div className="flex h-28 items-center justify-center text-xs text-muted-foreground">
+                              Open file
+                            </div>
+                          )}
+                          <div className="truncate border-t px-2 py-1 text-xs">
+                            {attachment.filename}
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {email.bodyHtml ? (
+                  <div dangerouslySetInnerHTML={{ __html: email.bodyHtml }} />
+                ) : email.bodyText ? (
+                  <div
+                    className="whitespace-pre-wrap font-sans text-sm"
+                    dangerouslySetInnerHTML={{
+                      __html: plainTextToLinkedHtml(email.bodyText),
+                    }}
+                  />
+                ) : (
+                  <p className="text-sm italic text-muted-foreground">
+                    (no message content)
+                  </p>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </ScrollArea>
     </div>
