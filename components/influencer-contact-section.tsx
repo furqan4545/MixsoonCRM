@@ -8,10 +8,11 @@ import {
   Link2,
   Mail,
   Phone,
+  Save,
   Send,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -137,14 +138,24 @@ export function InfluencerContactSection({
 }: InfluencerContactSectionProps) {
   const [editingEmail, setEditingEmail] = useState(false);
   const [emailInput, setEmailInput] = useState(email ?? "");
+  // Track the displayed email locally so it updates immediately after save
+  const [displayEmail, setDisplayEmail] = useState(email);
+
+  // Sync with parent prop when it changes (e.g. after router.refresh())
+  useEffect(() => {
+    setDisplayEmail(email);
+    setEmailInput(email ?? "");
+  }, [email]);
 
   const handleSaveEmail = useCallback(() => {
     const trimmed = emailInput.trim();
+    const newEmail = trimmed || null;
     setEditingEmail(false);
-    if (trimmed !== (email ?? "")) {
-      onEmailChange?.(trimmed || null);
+    if (trimmed !== (displayEmail ?? "")) {
+      setDisplayEmail(newEmail);
+      onEmailChange?.(newEmail);
     }
-  }, [emailInput, email, onEmailChange]);
+  }, [emailInput, displayEmail, onEmailChange]);
   let socialUrls: string[] = [];
   try {
     if (socialLinksJson) {
@@ -159,10 +170,10 @@ export function InfluencerContactSection({
     // ignore
   }
 
-  const hasAny = email || phone || bioLinkUrl || socialUrls.length > 0 || onEmailChange;
+  const hasAny = displayEmail || phone || bioLinkUrl || socialUrls.length > 0 || onEmailChange;
   if (!hasAny) return null;
-  const composeHref = email
-    ? `/email/compose?to=${encodeURIComponent(email)}${influencerId ? `&influencerId=${influencerId}` : ""}`
+  const composeHref = displayEmail
+    ? `/email/compose?to=${encodeURIComponent(displayEmail)}${influencerId ? `&influencerId=${influencerId}` : ""}`
     : "";
 
   return (
@@ -172,34 +183,57 @@ export function InfluencerContactSection({
       </h3>
       <div className="space-y-2">
         {editingEmail ? (
-          <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-            <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <input
-              autoFocus
-              type="email"
-              value={emailInput}
-              onChange={(e) => setEmailInput(e.target.value)}
-              onBlur={handleSaveEmail}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSaveEmail();
-                if (e.key === "Escape") {
-                  setEditingEmail(false);
-                  setEmailInput(email ?? "");
-                }
+          <div className="flex items-center gap-2">
+            <div className="flex flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+              <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                autoFocus
+                type="email"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveEmail();
+                  if (e.key === "Escape") {
+                    setEditingEmail(false);
+                    setEmailInput(displayEmail ?? "");
+                  }
+                }}
+                placeholder="influencer@example.com"
+                className="h-6 flex-1 bg-transparent text-sm outline-none"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              className="shrink-0 gap-1"
+              onClick={handleSaveEmail}
+            >
+              <Save className="h-3.5 w-3.5" />
+              Save
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="shrink-0"
+              onClick={() => {
+                setEditingEmail(false);
+                setEmailInput(displayEmail ?? "");
               }}
-              placeholder="influencer@example.com"
-              className="h-6 flex-1 bg-transparent text-sm outline-none"
-            />
+            >
+              Cancel
+            </Button>
           </div>
-        ) : email ? (
+        ) : displayEmail ? (
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <ContactRow
                 icon={<Mail className="h-4 w-4" />}
                 label="email"
                 href={composeHref}
-                copyValue={email}
-                displayText={email}
+                copyValue={displayEmail!}
+                displayText={displayEmail!}
               />
             </div>
             {onEmailChange && (
@@ -208,7 +242,7 @@ export function InfluencerContactSection({
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => {
-                  setEmailInput(email);
+                  setEmailInput(displayEmail ?? "");
                   setEditingEmail(true);
                 }}
                 title="Edit email"
