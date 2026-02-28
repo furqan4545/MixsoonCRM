@@ -13,7 +13,9 @@ export async function createNotification(params: {
 }): Promise<{ id: string } | null> {
   try {
     if (!prisma?.notification) {
-      console.error("[notifications] Prisma client missing notification delegate");
+      console.error(
+        "[notifications] Prisma client missing notification delegate",
+      );
       return null;
     }
     return await prisma.notification.create({

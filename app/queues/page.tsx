@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { ThumbnailImage } from "@/components/thumbnail-image";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ThumbnailImage } from "@/components/thumbnail-image";
 
 type SavedEvaluation = {
   id: string;
@@ -71,14 +71,33 @@ export default function QueuesPage() {
   }
 
   const filtered = evaluations.filter((e) => e.bucket === tab);
-  const approvedCount = evaluations.filter((e) => e.bucket === "APPROVED").length;
+  const approvedCount = evaluations.filter(
+    (e) => e.bucket === "APPROVED",
+  ).length;
   const okishCount = evaluations.filter((e) => e.bucket === "OKISH").length;
-  const rejectedCount = evaluations.filter((e) => e.bucket === "REJECTED").length;
+  const rejectedCount = evaluations.filter(
+    (e) => e.bucket === "REJECTED",
+  ).length;
 
-  const tabs: { key: Tab; label: string; count: number; variant: "default" | "secondary" | "destructive" }[] = [
-    { key: "APPROVED", label: "Approved", count: approvedCount, variant: "default" },
+  const tabs: {
+    key: Tab;
+    label: string;
+    count: number;
+    variant: "default" | "secondary" | "destructive";
+  }[] = [
+    {
+      key: "APPROVED",
+      label: "Approved",
+      count: approvedCount,
+      variant: "default",
+    },
     { key: "OKISH", label: "Okish", count: okishCount, variant: "secondary" },
-    { key: "REJECTED", label: "Rejected", count: rejectedCount, variant: "destructive" },
+    {
+      key: "REJECTED",
+      label: "Rejected",
+      count: rejectedCount,
+      variant: "destructive",
+    },
   ];
 
   return (
@@ -125,10 +144,7 @@ export default function QueuesPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map((ev) => (
-            <div
-              key={ev.id}
-              className="rounded-xl border bg-card p-4"
-            >
+            <div key={ev.id} className="rounded-xl border bg-card p-4">
               <div className="flex items-start gap-4">
                 {ev.influencer.avatarUrl ? (
                   <ThumbnailImage
@@ -166,7 +182,9 @@ export default function QueuesPage() {
                   </div>
 
                   <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                    <span>{formatNumber(ev.influencer.followers)} followers</span>
+                    <span>
+                      {formatNumber(ev.influencer.followers)} followers
+                    </span>
                     {ev.influencer.email && <span>{ev.influencer.email}</span>}
                     <span className="text-muted-foreground/50">
                       Campaign: {ev.run.campaign.name}

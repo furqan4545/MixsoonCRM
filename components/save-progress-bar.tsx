@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { isSaveStoppedMessage } from "@/app/lib/import-save";
 import { toast } from "sonner";
+import { isSaveStoppedMessage } from "@/app/lib/import-save";
 
 const STORAGE_KEY = "mixsoon_active_save";
 
@@ -37,7 +37,8 @@ export function SaveProgressBar() {
       setDismissed(false);
     };
     const showHandler = (e: Event) => {
-      const { type, id } = (e as CustomEvent<{ type: string; id: string }>).detail;
+      const { type, id } = (e as CustomEvent<{ type: string; id: string }>)
+        .detail;
       if (type === "save" && id) {
         setImportId(id);
         setDismissed(false);
@@ -140,9 +141,9 @@ export function SaveProgressBar() {
 
   const isProcessing = status.status === "PROCESSING";
   const isComplete = status.status === "COMPLETED";
-  const isStopped = isSaveStoppedMessage(status.errorMessage) || Boolean(status.stopped);
-  const isFailed =
-    status.status === "DRAFT" || status.status === "FAILED";
+  const isStopped =
+    isSaveStoppedMessage(status.errorMessage) || Boolean(status.stopped);
+  const isFailed = status.status === "DRAFT" || status.status === "FAILED";
   const pct =
     status.saveTotal > 0
       ? Math.round((status.saveProgress / status.saveTotal) * 100)
@@ -160,7 +161,8 @@ export function SaveProgressBar() {
         throw new Error(data.error ?? "Failed to request stop");
       }
       toast.info("Stopping save job…", {
-        description: "Current in-flight uploads will finish, then save will stop.",
+        description:
+          "Current in-flight uploads will finish, then save will stop.",
       });
     } catch (e) {
       setStopping(false);
@@ -206,7 +208,8 @@ export function SaveProgressBar() {
           `${status.saveProgress} / ${status.saveTotal} influencers`}
         {isComplete && "All images cached to cloud storage"}
         {isFailed &&
-          (status.errorMessage || (isStopped ? "Stopped by user." : "An error occurred"))}
+          (status.errorMessage ||
+            (isStopped ? "Stopped by user." : "An error occurred"))}
       </p>
       {isProcessing && (
         <div className="mt-3 flex justify-end">

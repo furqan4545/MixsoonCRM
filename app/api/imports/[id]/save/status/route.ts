@@ -1,12 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
-import { SAVE_STOP_REQUESTED, isSaveStoppedMessage } from "@/app/lib/import-save";
+import { type NextRequest, NextResponse } from "next/server";
+import {
+  isSaveStoppedMessage,
+  SAVE_STOP_REQUESTED,
+} from "@/app/lib/import-save";
 import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../../../../lib/prisma";
 
 const SAVE_STALE_AFTER_MS = Math.max(
   60_000,
-  Number(process.env.SAVE_STALE_AFTER_MS ?? 30 * 60 * 1000) ||
-    30 * 60 * 1000,
+  Number(process.env.SAVE_STALE_AFTER_MS ?? 30 * 60 * 1000) || 30 * 60 * 1000,
 );
 
 export async function GET(

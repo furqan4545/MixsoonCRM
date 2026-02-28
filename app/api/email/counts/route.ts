@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/app/lib/rbac";
 import { prisma } from "@/app/lib/prisma";
+import { getCurrentUser } from "@/app/lib/rbac";
 
 export async function GET() {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const account = await prisma.emailAccount.findUnique({
     where: { userId: user.id },

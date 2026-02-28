@@ -1,6 +1,8 @@
 "use client";
 
+import { RefreshCw, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { FEATURES } from "@/app/lib/permissions-client";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -10,8 +12,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FEATURES } from "@/app/lib/permissions-client";
-import { RefreshCw, Save } from "lucide-react";
 
 const ACTIONS = ["read", "write", "delete"] as const;
 
@@ -64,8 +64,13 @@ export default function AdminRolesPage() {
       if (list.length > 0 && !selectedRoleId) {
         setSelectedRoleId(list[0].id);
       }
-      if (selectedRoleId && list.some((r: RoleWithPermissions) => r.id === selectedRoleId)) {
-        const role = list.find((r: RoleWithPermissions) => r.id === selectedRoleId);
+      if (
+        selectedRoleId &&
+        list.some((r: RoleWithPermissions) => r.id === selectedRoleId)
+      ) {
+        const role = list.find(
+          (r: RoleWithPermissions) => r.id === selectedRoleId,
+        );
         if (role) setChecked(new Set(role.permissions.map(setToKey)));
       }
     } catch (e) {
@@ -109,17 +114,22 @@ export default function AdminRolesPage() {
         const [feature, action] = key.split(":");
         return { feature, action };
       });
-      const res = await fetch(`/api/admin/roles/${selectedRoleId}/permissions`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ permissions }),
-      });
+      const res = await fetch(
+        `/api/admin/roles/${selectedRoleId}/permissions`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ permissions }),
+        },
+      );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error ?? "Failed to save");
         return;
       }
-      setMessage("Permissions saved. Users with this role may need to sign out and sign in to see changes.");
+      setMessage(
+        "Permissions saved. Users with this role may need to sign out and sign in to see changes.",
+      );
       setRoles((prev) =>
         prev.map((r) =>
           r.id === selectedRoleId
@@ -161,7 +171,8 @@ export default function AdminRolesPage() {
             Roles & permissions
           </h1>
           <p className="text-sm text-muted-foreground">
-            Choose which features and actions each role can use. Changes apply to all users with that role.
+            Choose which features and actions each role can use. Changes apply
+            to all users with that role.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -236,10 +247,7 @@ export default function AdminRolesPage() {
             </Table>
           </div>
           <div className="flex justify-end border-t p-4">
-            <Button
-              onClick={save}
-              disabled={saving}
-            >
+            <Button onClick={save} disabled={saving}>
               {saving ? (
                 <span className="flex items-center gap-2">
                   <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />

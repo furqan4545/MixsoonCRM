@@ -1,7 +1,6 @@
-import NextAuth from "next-auth";
-import { CredentialsSignin } from "next-auth";
-import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
+import NextAuth, { CredentialsSignin } from "next-auth";
+import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/app/lib/prisma";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -14,10 +13,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
       async authorize(credentials) {
         const raw = credentials ?? {};
-        const email = raw.email != null ? String(raw.email).toLowerCase().trim() : "";
+        const email =
+          raw.email != null ? String(raw.email).toLowerCase().trim() : "";
         const password = raw.password;
         if (!email || typeof password !== "string") {
-          console.error("[auth] authorize: missing email or password. Keys received:", Object.keys(raw));
+          console.error(
+            "[auth] authorize: missing email or password. Keys received:",
+            Object.keys(raw),
+          );
           return null;
         }
 
@@ -34,8 +37,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           console.error("[auth] authorize: user not found", email);
           return null;
         }
-        if (!user.passwordHash || user.passwordHash.startsWith("$2a$12$MIGRATION_PLACEHOLDER")) {
-          console.error("[auth] authorize: invalid password hash (run: npm run db:seed)");
+        if (
+          !user.passwordHash ||
+          user.passwordHash.startsWith("$2a$12$MIGRATION_PLACEHOLDER")
+        ) {
+          console.error(
+            "[auth] authorize: invalid password hash (run: npm run db:seed)",
+          );
           return null;
         }
 

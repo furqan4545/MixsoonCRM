@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
 import convert from "heic-convert";
+import { type NextRequest, NextResponse } from "next/server";
 import { isGcsUrl, readGcsImage } from "../../lib/gcs-media";
 
 const TIKTOK_HEADERS = {
@@ -72,7 +72,10 @@ export async function GET(request: NextRequest) {
     try {
       const gcs = await readGcsImage(url);
       if (!gcs) {
-        return NextResponse.json({ error: "GCS image not found" }, { status: 404 });
+        return NextResponse.json(
+          { error: "GCS image not found" },
+          { status: 404 },
+        );
       }
       setCache(url, gcs.body, gcs.contentType);
       return new NextResponse(gcs.body, {

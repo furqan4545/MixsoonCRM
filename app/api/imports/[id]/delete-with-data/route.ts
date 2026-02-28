@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
 import { deleteImportMediaFromGcs } from "../../../../lib/gcs-media";
 import { prisma } from "../../../../lib/prisma";

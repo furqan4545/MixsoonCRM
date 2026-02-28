@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { CheckCheck, RefreshCw, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,7 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CheckCheck, RefreshCw, Trash2 } from "lucide-react";
 
 type NotificationRow = {
   id: string;
@@ -44,7 +44,9 @@ export default function NotificationsPage() {
       const data = await res.json().catch(() => ({}));
       const list = Array.isArray(data.notifications) ? data.notifications : [];
       setNotifications(list);
-      setUnreadCount(typeof data.unreadCount === "number" ? data.unreadCount : 0);
+      setUnreadCount(
+        typeof data.unreadCount === "number" ? data.unreadCount : 0,
+      );
       if (!res.ok && list.length === 0) {
         setFetchError(data.error ?? `Request failed (${res.status})`);
       }
@@ -62,7 +64,10 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     if (autoRefresh) {
-      intervalRef.current = setInterval(() => fetchAll(false), AUTO_REFRESH_INTERVAL);
+      intervalRef.current = setInterval(
+        () => fetchAll(false),
+        AUTO_REFRESH_INTERVAL,
+      );
     }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -155,7 +160,12 @@ export default function NotificationsPage() {
             </Button>
           )}
           {notifications.length > 0 && (
-            <Button variant="outline" size="sm" onClick={clearAll} className="text-destructive hover:text-destructive">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearAll}
+              className="text-destructive hover:text-destructive"
+            >
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
               Clear all
             </Button>
@@ -225,7 +235,9 @@ export default function NotificationsPage() {
                       {n.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className={`font-medium ${!n.read ? "" : "text-muted-foreground"}`}>
+                  <TableCell
+                    className={`font-medium ${!n.read ? "" : "text-muted-foreground"}`}
+                  >
                     {n.title}
                   </TableCell>
                   <TableCell className="max-w-md truncate text-xs text-muted-foreground">

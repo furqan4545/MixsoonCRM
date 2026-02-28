@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../../lib/prisma";
 
@@ -29,10 +29,7 @@ export async function GET(
     });
 
     if (!importRecord) {
-      return NextResponse.json(
-        { error: "Import not found" },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: "Import not found" }, { status: 404 });
     }
 
     return NextResponse.json(importRecord);

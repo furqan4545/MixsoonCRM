@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const STORAGE_KEY = "mixsoon_active_ai_run";
@@ -36,7 +36,8 @@ export function AiFilterProgress() {
       setDismissed(dismissedId === id);
     };
     const showHandler = (e: Event) => {
-      const { type, id } = (e as CustomEvent<{ type: string; id: string }>).detail;
+      const { type, id } = (e as CustomEvent<{ type: string; id: string }>)
+        .detail;
       if (type === "ai_filter" && id) {
         const dismissedId = localStorage.getItem(DISMISSED_KEY);
         if (dismissedId === id) return;

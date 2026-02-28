@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
-import { EmailSidebar } from "@/components/email-sidebar";
-import { SaveProgressBar } from "@/components/save-progress-bar";
+import { useEffect } from "react";
 import { AiFilterProgress } from "@/components/ai-filter-progress";
+import { AppSidebar } from "@/components/app-sidebar";
 import { BackgroundJobsButton } from "@/components/background-jobs-button";
+import { EmailSidebar } from "@/components/email-sidebar";
 import { NotificationBell } from "@/components/notification-bell";
+import { SaveProgressBar } from "@/components/save-progress-bar";
+import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
 const authPaths = ["/login", "/register", "/pending-approval"];

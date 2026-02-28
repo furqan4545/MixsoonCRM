@@ -89,9 +89,7 @@ export async function hasPermission(
 /**
  * Get a user's role name by email.
  */
-export async function getUserRole(
-  userEmail: string,
-): Promise<string | null> {
+export async function getUserRole(userEmail: string): Promise<string | null> {
   const user = await prisma.user.findUnique({
     where: { email: userEmail },
     include: { role: true },

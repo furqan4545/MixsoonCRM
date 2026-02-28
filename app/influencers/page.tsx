@@ -1,8 +1,8 @@
 import Link from "next/link";
+import { ThumbnailImage } from "@/components/thumbnail-image";
+import { Badge } from "@/components/ui/badge";
 import { prisma } from "../lib/prisma";
 import { fixThumbnailUrl } from "../lib/thumbnail";
-import { Badge } from "@/components/ui/badge";
-import { ThumbnailImage } from "@/components/thumbnail-image";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,8 @@ export default async function InfluencersPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Influencers</h1>
         <p className="text-sm text-muted-foreground">
-          All scraped influencer profiles. Click on any influencer to see their videos.
+          All scraped influencer profiles. Click on any influencer to see their
+          videos.
         </p>
       </div>
 
@@ -38,7 +39,7 @@ export default async function InfluencersPage() {
             href="/data-scraper"
             className="mt-2 inline-block text-sm text-primary underline hover:no-underline"
           >
-            Upload a CSV to get started
+            Upload a file to get started
           </Link>
         </div>
       ) : (
@@ -97,7 +98,10 @@ export default async function InfluencersPage() {
                       Linked
                     </Badge>
                   ) : (
-                    <Badge variant="secondary" className="text-[10px] opacity-50">
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] opacity-50"
+                    >
                       Unlinked
                     </Badge>
                   )}

@@ -19,7 +19,8 @@ export async function GET() {
     });
     diagnostics.admin_exists = !!admin;
     diagnostics.admin_status = admin?.status ?? null;
-    diagnostics.admin_hash_prefix = admin?.passwordHash?.substring(0, 7) ?? null;
+    diagnostics.admin_hash_prefix =
+      admin?.passwordHash?.substring(0, 7) ?? null;
   } catch (err: unknown) {
     diagnostics.db_connected = false;
     diagnostics.db_error = err instanceof Error ? err.message : String(err);

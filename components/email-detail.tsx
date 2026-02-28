@@ -1,22 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import {
-  ArrowLeft,
-  Reply,
-  Trash2,
-  Star,
   AlertTriangle,
+  ArrowLeft,
   MailOpen,
+  Reply,
+  Star,
+  Trash2,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { formatDistanceToNow } from "@/app/lib/date-utils";
-
+import { plainTextToLinkedHtml } from "@/app/lib/email-rich-text";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
-import { plainTextToLinkedHtml } from "@/app/lib/email-rich-text";
 
 interface EmailData {
   id: string;
@@ -107,7 +106,9 @@ export function EmailDetail({ emailId }: Props) {
     if (!email) return;
     const params = new URLSearchParams({
       to: email.from,
-      subject: email.subject.startsWith("Re:") ? email.subject : `Re: ${email.subject}`,
+      subject: email.subject.startsWith("Re:")
+        ? email.subject
+        : `Re: ${email.subject}`,
       inReplyTo: email.messageId ?? "",
     });
     router.push(`/email/compose?${params}`);
@@ -143,7 +144,12 @@ export function EmailDetail({ emailId }: Props) {
         <Button variant="ghost" size="icon" onClick={handleSpam} title="Spam">
           <AlertTriangle className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="icon" onClick={handleDelete} title="Delete">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleDelete}
+          title="Delete"
+        >
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
@@ -228,9 +234,7 @@ export function EmailDetail({ emailId }: Props) {
             )}
 
             {email.bodyHtml ? (
-              <div
-                dangerouslySetInnerHTML={{ __html: email.bodyHtml }}
-              />
+              <div dangerouslySetInnerHTML={{ __html: email.bodyHtml }} />
             ) : (
               <div
                 className="whitespace-pre-wrap font-sans text-sm"

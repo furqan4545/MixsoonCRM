@@ -1,6 +1,8 @@
 "use client";
 
+import { CheckCircle, RefreshCw, UserX } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -10,8 +12,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { CheckCircle, RefreshCw, UserX } from "lucide-react";
 
 type UserRow = {
   id: string;
@@ -125,9 +125,7 @@ export default function AdminUsersPage() {
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            User management
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight">User management</h1>
           <p className="text-sm text-muted-foreground">
             Approve pending users, change roles, or suspend accounts.
           </p>

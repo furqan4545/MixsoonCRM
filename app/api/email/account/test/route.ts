@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/app/lib/rbac";
+import { decrypt } from "@/app/lib/crypto";
 import {
-  testSmtpConnection,
   testImapConnection,
   testPop3Connection,
+  testSmtpConnection,
 } from "@/app/lib/email";
 import { prisma } from "@/app/lib/prisma";
-import { decrypt } from "@/app/lib/crypto";
+import { getCurrentUser } from "@/app/lib/rbac";
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { smtpHost, smtpPort, imapHost, imapPort, username, password } =
     await req.json();

@@ -1,9 +1,9 @@
 "use client";
 
-import { Suspense, useState } from "react";
 import Link from "next/link";
-import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
+import { signIn } from "next-auth/react";
+import { Suspense, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -37,9 +37,13 @@ function LoginForm() {
       if (result?.error) {
         const code = (result as { code?: string }).code;
         if (code === "AccountPendingApproval") {
-          setError("Your account is still pending approval. Please wait for an admin to activate it.");
+          setError(
+            "Your account is still pending approval. Please wait for an admin to activate it.",
+          );
         } else if (code === "AccountSuspended") {
-          setError("Your account has been suspended. Contact an administrator.");
+          setError(
+            "Your account has been suspended. Contact an administrator.",
+          );
         } else {
           setError("Invalid email or password");
         }
@@ -64,7 +68,10 @@ function LoginForm() {
       <h1 className="mb-4 text-lg font-semibold">Log in</h1>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="email" className="mb-1 block text-xs font-medium text-muted-foreground">
+          <label
+            htmlFor="email"
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+          >
             Email
           </label>
           <Input
@@ -78,7 +85,10 @@ function LoginForm() {
           />
         </div>
         <div>
-          <label htmlFor="password" className="mb-1 block text-xs font-medium text-muted-foreground">
+          <label
+            htmlFor="password"
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+          >
             Password
           </label>
           <Input
@@ -91,9 +101,7 @@ function LoginForm() {
             className="mt-1"
           />
         </div>
-        {error && (
-          <p className="text-sm text-destructive">{error}</p>
-        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
         <Button type="submit" className="w-full" disabled={loading}>
           {loading ? "Signing in…" : "Log in"}
         </Button>
@@ -107,4 +115,3 @@ function LoginForm() {
     </div>
   );
 }
-

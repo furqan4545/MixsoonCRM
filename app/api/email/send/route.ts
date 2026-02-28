@@ -1,13 +1,13 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/app/lib/rbac";
-import { prisma } from "@/app/lib/prisma";
 import { getSmtpTransport } from "@/app/lib/email";
 import {
   deleteEmailAttachments,
-  persistEmailAttachments,
   type PersistableAttachment,
+  persistEmailAttachments,
 } from "@/app/lib/email-attachments";
+import { prisma } from "@/app/lib/prisma";
+import { getCurrentUser } from "@/app/lib/rbac";
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const INLINE_IMAGE_REGEX =
@@ -15,13 +15,17 @@ const INLINE_IMAGE_REGEX =
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const account = await prisma.emailAccount.findUnique({
     where: { userId: user.id },
   });
   if (!account) {
-    return NextResponse.json({ error: "No email account connected" }, { status: 404 });
+    return NextResponse.json(
+      { error: "No email account connected" },
+      { status: 404 },
+    );
   }
 
   const contentType = req.headers.get("content-type") ?? "";
@@ -36,20 +40,30 @@ export async function POST(req: Request) {
 
   if (contentType.includes("multipart/form-data")) {
     const form = await req.formData();
-    to = form.getAll("to").map((v) => String(v).trim()).filter(Boolean);
-    cc = form.getAll("cc").map((v) => String(v).trim()).filter(Boolean);
+    to = form
+      .getAll("to")
+      .map((v) => String(v).trim())
+      .filter(Boolean);
+    cc = form
+      .getAll("cc")
+      .map((v) => String(v).trim())
+      .filter(Boolean);
     subject = String(form.get("subject") ?? "").trim();
     bodyHtml = String(form.get("bodyHtml") ?? "");
     bodyText = String(form.get("bodyText") ?? "");
     influencerId = String(form.get("influencerId") ?? "");
     inReplyTo = String(form.get("inReplyTo") ?? "");
-    uploadAttachmentFiles = form.getAll("attachments").filter(
-      (v): v is File => v instanceof File,
-    );
+    uploadAttachmentFiles = form
+      .getAll("attachments")
+      .filter((v): v is File => v instanceof File);
   } else {
     const body = await req.json();
-    to = Array.isArray(body.to) ? body.to.map((v: unknown) => String(v).trim()).filter(Boolean) : [];
-    cc = Array.isArray(body.cc) ? body.cc.map((v: unknown) => String(v).trim()).filter(Boolean) : [];
+    to = Array.isArray(body.to)
+      ? body.to.map((v: unknown) => String(v).trim()).filter(Boolean)
+      : [];
+    cc = Array.isArray(body.cc)
+      ? body.cc.map((v: unknown) => String(v).trim()).filter(Boolean)
+      : [];
     subject = String(body.subject ?? "").trim();
     bodyHtml = String(body.bodyHtml ?? "");
     bodyText = String(body.bodyText ?? "");
@@ -58,7 +72,10 @@ export async function POST(req: Request) {
   }
 
   if (to.length === 0) {
-    return NextResponse.json({ error: "At least one recipient is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "At least one recipient is required" },
+      { status: 400 },
+    );
   }
   if (!subject) {
     return NextResponse.json({ error: "Subject is required" }, { status: 400 });
@@ -77,10 +94,7 @@ export async function POST(req: Request) {
   for (const file of uploadAttachmentFiles) {
     if (file.size <= 0) continue;
 
-    if (
-      !file.type.startsWith("image/") &&
-      !file.type.startsWith("video/")
-    ) {
+    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
       return NextResponse.json(
         { error: `Unsupported attachment type: ${file.type || file.name}` },
         { status: 400 },
@@ -210,7 +224,9 @@ export async function POST(req: Request) {
   }
 }
 
-function parseDataImageUri(dataUri: string): { mime: string; buffer: Buffer } | null {
+function parseDataImageUri(
+  dataUri: string,
+): { mime: string; buffer: Buffer } | null {
   const match = dataUri.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) return null;
   const mime = match[1] ?? "image/png";

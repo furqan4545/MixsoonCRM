@@ -1,13 +1,13 @@
 "use client";
 
+import { Activity } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { isSaveStoppedMessage } from "@/app/lib/import-save";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Activity } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
 
 const SAVE_KEY = "mixsoon_active_save";
 const AI_RUN_KEY = "mixsoon_active_ai_run";
@@ -147,7 +147,8 @@ export function BackgroundJobsButton() {
               <p className="truncate text-sm font-medium">Save to cloud</p>
               <p className="text-xs text-muted-foreground">
                 {saveStatus
-                  ? saveStatus.status === "PROCESSING" && saveStatus.stopRequested
+                  ? saveStatus.status === "PROCESSING" &&
+                    saveStatus.stopRequested
                     ? `Stopping… ${saveStatus.saveProgress} / ${saveStatus.saveTotal}`
                     : saveStatus.status === "DRAFT" &&
                         isSaveStoppedMessage(saveStatus.errorMessage)

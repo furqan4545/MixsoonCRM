@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
 
@@ -206,7 +206,7 @@ function normalizeUrlCandidate(
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
   if (
-    /^[a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,}(?:\/[^\s\]\)]*)?$/i.test(trimmed)
+    /^[a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,}(?:\/[^\s\])]*)?$/i.test(trimmed)
   ) {
     return `https://${trimmed}`;
   }
@@ -222,7 +222,7 @@ function extractUrlFromBio(text: string | undefined | null): string | null {
     " ",
   );
   const matches = withoutEmails.match(
-    /https?:\/\/[^\s\]\)]+|www\.[^\s\]\)]+|[a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,}(?:\/[^\s\]\)]*)?/gi,
+    /https?:\/\/[^\s\])]+|www\.[^\s\])]+|[a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,}(?:\/[^\s\])]*)?/gi,
   );
   if (!matches) return null;
   for (const raw of matches) {

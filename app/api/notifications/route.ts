@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
 
@@ -15,7 +15,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const limit = Math.min(
       MAX_LIMIT,
-      Math.max(1, parseInt(searchParams.get("limit") ?? String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT),
+      Math.max(
+        1,
+        parseInt(searchParams.get("limit") ?? String(DEFAULT_LIMIT), 10) ||
+          DEFAULT_LIMIT,
+      ),
     );
     const unreadOnly = searchParams.get("unreadOnly") === "true";
 
@@ -32,7 +36,11 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[GET /api/notifications]", error);
     return NextResponse.json(
-      { notifications: [], unreadCount: 0, error: "Failed to load notifications" },
+      {
+        notifications: [],
+        unreadCount: 0,
+        error: "Failed to load notifications",
+      },
       { status: 200 },
     );
   }

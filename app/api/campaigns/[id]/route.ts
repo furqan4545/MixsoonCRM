@@ -42,19 +42,14 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const {
-      name,
-      notes,
-      strictnessDefault,
-      targetKeywords,
-      avoidKeywords,
-    } = body as {
-      name?: string;
-      notes?: string | null;
-      strictnessDefault?: number;
-      targetKeywords?: string[];
-      avoidKeywords?: string[];
-    };
+    const { name, notes, strictnessDefault, targetKeywords, avoidKeywords } =
+      body as {
+        name?: string;
+        notes?: string | null;
+        strictnessDefault?: number;
+        targetKeywords?: string[];
+        avoidKeywords?: string[];
+      };
 
     const campaign = await prisma.campaign.update({
       where: { id },

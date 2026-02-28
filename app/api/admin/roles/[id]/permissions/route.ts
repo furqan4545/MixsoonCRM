@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
 
@@ -20,10 +20,7 @@ export async function PATCH(
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON body" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   const permissions = Array.isArray(body.permissions) ? body.permissions : [];
@@ -53,7 +50,11 @@ export async function PATCH(
       ...(unique.length > 0
         ? [
             prisma.permission.createMany({
-              data: unique.map((p) => ({ roleId, feature: p.feature, action: p.action })),
+              data: unique.map((p) => ({
+                roleId,
+                feature: p.feature,
+                action: p.action,
+              })),
             }),
           ]
         : []),

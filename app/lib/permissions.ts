@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "./rbac";
 import { FEATURES, NAV_FEATURE_MAP } from "./permissions-client";
+import { getCurrentUser } from "./rbac";
 
 export { FEATURES, NAV_FEATURE_MAP };
 export type FeatureKey = (typeof FEATURES)[keyof typeof FEATURES];

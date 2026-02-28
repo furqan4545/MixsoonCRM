@@ -17,7 +17,10 @@ function json500(err: unknown) {
 export async function GET() {
   try {
     if (process.env.NODE_ENV === "production") {
-      return NextResponse.json({ error: "Not available in production" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Not available in production" },
+        { status: 404 },
+      );
     }
 
     const bcrypt = await import("bcryptjs");

@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import {
-  SAVE_STOPPED_BY_USER_PREFIX,
   SAVE_STOP_REQUESTED,
+  SAVE_STOPPED_BY_USER_PREFIX,
 } from "@/app/lib/import-save";
 import { requirePermission } from "@/app/lib/rbac";
 import {
@@ -21,15 +21,16 @@ const SAVE_MEDIA_CONCURRENCY = Math.max(
 );
 const SAVE_STALE_AFTER_MS = Math.max(
   60_000,
-  Number(process.env.SAVE_STALE_AFTER_MS ?? 30 * 60 * 1000) ||
-    30 * 60 * 1000,
+  Number(process.env.SAVE_STALE_AFTER_MS ?? 30 * 60 * 1000) || 30 * 60 * 1000,
 );
 const SAVE_STOP_CHECK_INTERVAL_MS = Math.max(
   500,
   Number(process.env.SAVE_STOP_CHECK_INTERVAL_MS ?? 1_500) || 1_500,
 );
 
-function notifyQuiet(data: Parameters<typeof prisma.notification.create>[0]["data"]) {
+function notifyQuiet(
+  data: Parameters<typeof prisma.notification.create>[0]["data"],
+) {
   return prisma.notification.create({ data }).catch((e) => {
     console.error("[save] notification error:", e);
   });
@@ -114,10 +115,11 @@ async function processGcsSave(id: string) {
         let thumbnailsCached = 0;
         let influencerError: string | null = null;
 
-        const videosToCache = influencer.videos.filter((v) => Boolean(v.thumbnailUrl));
+        const videosToCache = influencer.videos.filter((v) =>
+          Boolean(v.thumbnailUrl),
+        );
         const targetAssets =
-          (influencer.avatarUrl ? 1 : 0) +
-          videosToCache.length;
+          (influencer.avatarUrl ? 1 : 0) + videosToCache.length;
 
         try {
           if (influencer.avatarUrl) {
@@ -139,43 +141,51 @@ async function processGcsSave(id: string) {
                 failedGcsSourceCopies += 1;
               }
             } catch (err) {
-              console.error(`Avatar GCS error for ${influencer.username}:`, err);
+              console.error(
+                `Avatar GCS error for ${influencer.username}:`,
+                err,
+              );
               if (isGcsUrl(influencer.avatarUrl)) {
                 failedGcsSourceCopies += 1;
               }
             }
           }
 
-          await runWithConcurrency(videosToCache, SAVE_MEDIA_CONCURRENCY, async (video) => {
-            if (await refreshStopRequested()) return;
-            const sourceUrl = video.thumbnailUrl;
-            if (!sourceUrl) return;
-            try {
-              const gcsThumb = await cacheRemoteImageToGcs({
-                sourceUrl,
-                importId: id,
-                kind: "thumbnails",
-                username: influencer.username,
-                runKey,
-              });
-              if (gcsThumb) {
-                await prisma.video.update({
-                  where: { id: video.id },
-                  data: { thumbnailUrl: gcsThumb },
+          await runWithConcurrency(
+            videosToCache,
+            SAVE_MEDIA_CONCURRENCY,
+            async (video) => {
+              if (await refreshStopRequested()) return;
+              const sourceUrl = video.thumbnailUrl;
+              if (!sourceUrl) return;
+              try {
+                const gcsThumb = await cacheRemoteImageToGcs({
+                  sourceUrl,
+                  importId: id,
+                  kind: "thumbnails",
+                  username: influencer.username,
+                  runKey,
                 });
-                thumbnailsCached += 1;
-              } else if (isGcsUrl(sourceUrl)) {
-                failedGcsSourceCopies += 1;
+                if (gcsThumb) {
+                  await prisma.video.update({
+                    where: { id: video.id },
+                    data: { thumbnailUrl: gcsThumb },
+                  });
+                  thumbnailsCached += 1;
+                } else if (isGcsUrl(sourceUrl)) {
+                  failedGcsSourceCopies += 1;
+                }
+              } catch (err) {
+                console.error(`Thumbnail GCS error for ${video.id}:`, err);
+                if (isGcsUrl(sourceUrl)) {
+                  failedGcsSourceCopies += 1;
+                }
               }
-            } catch (err) {
-              console.error(`Thumbnail GCS error for ${video.id}:`, err);
-              if (isGcsUrl(sourceUrl)) {
-                failedGcsSourceCopies += 1;
-              }
-            }
-          });
+            },
+          );
         } catch (err) {
-          influencerError = err instanceof Error ? err.message : "Unknown save error";
+          influencerError =
+            err instanceof Error ? err.message : "Unknown save error";
         }
 
         const progressRow = await prisma.import.update({
@@ -338,9 +348,7 @@ export async function POST(
     },
   });
 
-  processGcsSave(id).catch((err) =>
-    console.error("[save] Unhandled:", err),
-  );
+  processGcsSave(id).catch((err) => console.error("[save] Unhandled:", err));
 
   return NextResponse.json({ started: true, total }, { status: 202 });
 }

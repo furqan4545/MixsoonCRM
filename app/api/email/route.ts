@@ -1,22 +1,29 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { getCurrentUser } from "@/app/lib/rbac";
+import { type NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
+import { getCurrentUser } from "@/app/lib/rbac";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const account = await prisma.emailAccount.findUnique({
     where: { userId: user.id },
   });
   if (!account) {
-    return NextResponse.json({ error: "No email account connected" }, { status: 404 });
+    return NextResponse.json(
+      { error: "No email account connected" },
+      { status: 404 },
+    );
   }
 
   const url = new URL(req.url);
   const folder = (url.searchParams.get("folder") ?? "INBOX").toUpperCase();
   const page = Math.max(1, Number(url.searchParams.get("page") ?? "1"));
-  const pageSize = Math.min(50, Math.max(1, Number(url.searchParams.get("pageSize") ?? "30")));
+  const pageSize = Math.min(
+    50,
+    Math.max(1, Number(url.searchParams.get("pageSize") ?? "30")),
+  );
   const search = url.searchParams.get("q") ?? "";
 
   const where: Record<string, unknown> = {

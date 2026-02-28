@@ -1,9 +1,8 @@
 "use client";
 
-import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
+import { signOut, useSession } from "next-auth/react";
 import { useEffect } from "react";
-import { signOut } from "next-auth/react";
 
 const authPaths = ["/login", "/register", "/pending-approval"];
 

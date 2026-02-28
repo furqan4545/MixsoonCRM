@@ -75,7 +75,8 @@ function parseModelJson(rawText: string): Partial<AiDraftResult> | null {
 }
 
 function buildFallbackDraft(ctx: InfluencerPromptContext): AiDraftResult {
-  const topicHint = ctx.videoTitles[0]?.trim() || ctx.bio?.trim() || "your content";
+  const topicHint =
+    ctx.videoTitles[0]?.trim() || ctx.bio?.trim() || "your content";
   const subject = `Collab idea for @${ctx.username}`;
   const bodyText = [
     `Hi @${ctx.username},`,

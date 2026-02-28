@@ -1,4 +1,4 @@
-import { type NextRequest, NextResponse, after } from "next/server";
+import { after, type NextRequest, NextResponse } from "next/server";
 import {
   mapScoreToBucket,
   runPreFilter,
@@ -25,14 +25,22 @@ type CampaignContext = {
 };
 
 type InfluencerWithVideos = Awaited<
-  ReturnType<typeof prisma.influencer.findMany<{
-    include: {
-      videos: { take: number; orderBy: { uploadedAt: "desc" }; select: { title: true; views: true } };
-    };
-  }>>
+  ReturnType<
+    typeof prisma.influencer.findMany<{
+      include: {
+        videos: {
+          take: number;
+          orderBy: { uploadedAt: "desc" };
+          select: { title: true; views: true };
+        };
+      };
+    }>
+  >
 >[number];
 
-function notifyQuiet(data: Parameters<typeof prisma.notification.create>[0]["data"]) {
+function notifyQuiet(
+  data: Parameters<typeof prisma.notification.create>[0]["data"],
+) {
   return prisma.notification.create({ data }).catch((e) => {
     console.error("[AI filter] notification error:", e);
   });
@@ -134,7 +142,8 @@ async function runAiFilterBackground(params: {
               reasons: ai.reasons || pre.reason,
               matchedSignals:
                 ai.matchedSignals || pre.matchedTarget.join(", ") || null,
-              riskSignals: ai.riskSignals || pre.matchedAvoid.join(", ") || null,
+              riskSignals:
+                ai.riskSignals || pre.matchedAvoid.join(", ") || null,
               reviewStatus: "APPROVED_FOR_AI",
             },
           });
@@ -313,14 +322,13 @@ export async function POST(request: NextRequest) {
       strictness: resolvedStrictness,
     };
 
-    after(
-      () =>
-        runAiFilterBackground({
-          runId: run.id,
-          campaignName: campaign.name,
-          influencers,
-          campaignContext,
-        }).catch((err) => console.error("[AI filter] unhandled:", err)),
+    after(() =>
+      runAiFilterBackground({
+        runId: run.id,
+        campaignName: campaign.name,
+        influencers,
+        campaignContext,
+      }).catch((err) => console.error("[AI filter] unhandled:", err)),
     );
 
     return NextResponse.json(

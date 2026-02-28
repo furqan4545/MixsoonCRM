@@ -1,19 +1,24 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/app/lib/rbac";
 import { prisma } from "@/app/lib/prisma";
+import { getCurrentUser } from "@/app/lib/rbac";
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const account = await prisma.emailAccount.findUnique({
     where: { userId: user.id },
   });
   if (!account) {
-    return NextResponse.json({ error: "No email account connected" }, { status: 404 });
+    return NextResponse.json(
+      { error: "No email account connected" },
+      { status: 404 },
+    );
   }
 
-  const { to, cc, subject, bodyHtml, bodyText, influencerId } = await req.json();
+  const { to, cc, subject, bodyHtml, bodyText, influencerId } =
+    await req.json();
 
   const draft = await prisma.emailMessage.create({
     data: {
@@ -35,7 +40,8 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id, to, cc, subject, bodyHtml, bodyText } = await req.json();
   if (!id) {

@@ -283,7 +283,8 @@ function BucketList({
   onDelete: () => void;
   actionLoading: string | null;
 }) {
-  const allSaved = rows.length > 0 && rows.every((r) => r.reviewStatus === "SAVED");
+  const allSaved =
+    rows.length > 0 && rows.every((r) => r.reviewStatus === "SAVED");
   const hasSavable = rows.some((r) => r.reviewStatus !== "SAVED");
 
   return (
@@ -293,7 +294,10 @@ function BucketList({
           <p className="font-semibold">{title}</p>
           <Badge variant={variant}>{rows.length}</Badge>
           {allSaved && (
-            <Badge variant="outline" className="text-green-600 border-green-300">
+            <Badge
+              variant="outline"
+              className="text-green-600 border-green-300"
+            >
               Saved
             </Badge>
           )}

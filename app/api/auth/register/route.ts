@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { type NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
       name?: string;
     };
 
-    const trimmedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+    const trimmedEmail =
+      typeof email === "string" ? email.trim().toLowerCase() : "";
     if (!trimmedEmail || !EMAIL_REGEX.test(trimmedEmail)) {
       return NextResponse.json(
         { error: "Valid email is required" },
@@ -24,7 +25,9 @@ export async function POST(request: NextRequest) {
 
     if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
       return NextResponse.json(
-        { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` },
+        {
+          error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+        },
         { status: 400 },
       );
     }
@@ -66,7 +69,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Registration failed";
+    const message =
+      error instanceof Error ? error.message : "Registration failed";
     const details = error instanceof Error ? String(error) : null;
     console.error("[register]", error);
     return NextResponse.json(

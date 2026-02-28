@@ -51,8 +51,12 @@ export async function listEmailAttachments(
   return files.map((file) => {
     const pathValue = `${GCS_SCHEME}${bucketName}/${file.name}`;
     const meta = file.metadata;
-    const filename = meta?.metadata?.originalFilename ||
-      file.name.split("/").pop()?.replace(/^[^-]+-/, "") ||
+    const filename =
+      meta?.metadata?.originalFilename ||
+      file.name
+        .split("/")
+        .pop()
+        ?.replace(/^[^-]+-/, "") ||
       "attachment";
     const mimeType = meta?.contentType || "application/octet-stream";
     const size = Number(meta?.size ?? 0);
@@ -84,9 +88,16 @@ export async function readEmailAttachmentById(
   const file = storage.bucket(bucketName).file(objectPath);
 
   try {
-    const [buf, meta] = await Promise.all([file.download(), file.getMetadata()]);
-    const filename = meta[0]?.metadata?.originalFilename ||
-      objectPath.split("/").pop()?.replace(/^[^-]+-/, "") ||
+    const [buf, meta] = await Promise.all([
+      file.download(),
+      file.getMetadata(),
+    ]);
+    const filename =
+      meta[0]?.metadata?.originalFilename ||
+      objectPath
+        .split("/")
+        .pop()
+        ?.replace(/^[^-]+-/, "") ||
       "attachment";
     const mimeType = meta[0]?.contentType || "application/octet-stream";
     return {
@@ -128,7 +139,10 @@ export async function deleteAllAccountEmailAttachments(
   );
 }
 
-export function buildAttachmentUrl(emailId: string, attachmentId: string): string {
+export function buildAttachmentUrl(
+  emailId: string,
+  attachmentId: string,
+): string {
   return `/api/email/${emailId}/attachments/${attachmentId}`;
 }
 

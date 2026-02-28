@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
 
@@ -19,44 +19,91 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    if (!file.name.endsWith(".csv")) {
+    const isCsv = file.name.endsWith(".csv");
+    const isExcel = file.name.match(/\.(xlsx|xls)$/i);
+
+    if (!isCsv && !isExcel) {
       return NextResponse.json(
-        { error: "Only CSV files are accepted" },
+        { error: "Only CSV and Excel files are accepted" },
         { status: 400 },
       );
     }
 
-    const text = await file.text();
-    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    let rawUsernames: string[] = [];
 
-    if (lines.length < 2) {
-      return NextResponse.json(
-        { error: "CSV must have a header row and at least one data row" },
-        { status: 400 },
+    if (isCsv) {
+      const text = await file.text();
+      const lines = text
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      if (lines.length === 0) {
+        return NextResponse.json({ error: "File is empty" }, { status: 400 });
+      }
+
+      // Parse header to find Username column
+      const headers = lines[0]
+        .split(",")
+        .map((h) => h.trim().replace(/^"|"$/g, ""));
+      let usernameIndex = headers.findIndex(
+        (h) => h.toLowerCase() === "username",
       );
-    }
 
-    // Parse header to find Username column
-    const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
-    const usernameIndex = headers.findIndex(
-      (h) => h.toLowerCase() === "username",
-    );
+      let dataLines = lines.slice(1);
 
-    if (usernameIndex === -1) {
-      return NextResponse.json(
-        { error: 'CSV must contain a "Username" column' },
-        { status: 400 },
+      // If no "Username" header is found, assume the first column is the username column
+      // and that the first row might be data if it doesn't look like a header row
+      if (usernameIndex === -1) {
+        usernameIndex = 0;
+        // If the first row doesn't contain "username" (we know it doesn't), we treat it as data
+        dataLines = lines;
+      }
+
+      // Extract and dedupe usernames
+      rawUsernames = dataLines
+        .map((line) => {
+          const cols = line
+            .split(",")
+            .map((c) => c.trim().replace(/^"|"$/g, ""));
+          return cols[usernameIndex] ?? "";
+        })
+        .filter(Boolean);
+    } else if (isExcel) {
+      const arrayBuffer = await file.arrayBuffer();
+      const xlsx = await import("xlsx");
+      const workbook = xlsx.read(arrayBuffer, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+
+      // Convert to array of arrays
+      const data = xlsx.utils.sheet_to_json<string[]>(worksheet, {
+        header: 1,
+        defval: "",
+      });
+
+      if (data.length === 0) {
+        return NextResponse.json({ error: "File is empty" }, { status: 400 });
+      }
+
+      const headers = (data[0] || []).map((h) => String(h).trim());
+      let usernameIndex = headers.findIndex(
+        (h) => h.toLowerCase() === "username",
       );
-    }
 
-    // Extract and dedupe usernames
-    const rawUsernames = lines
-      .slice(1)
-      .map((line) => {
-        const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
-        return cols[usernameIndex] ?? "";
-      })
-      .filter(Boolean);
+      let dataRows = data.slice(1);
+
+      if (usernameIndex === -1) {
+        usernameIndex = 0;
+        dataRows = data;
+      }
+
+      rawUsernames = dataRows
+        .map((row) => {
+          return String(row[usernameIndex] || "").trim();
+        })
+        .filter(Boolean);
+    }
 
     const uniqueUsernames = [...new Set(rawUsernames)];
     const finalUsernames =
@@ -118,7 +165,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Import error:", error);
     return NextResponse.json(
-      { error: "Failed to process CSV" },
+      { error: "Failed to process file" },
       { status: 500 },
     );
   }

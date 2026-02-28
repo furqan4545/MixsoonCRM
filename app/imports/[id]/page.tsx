@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
 import { ThumbnailImage } from "@/components/thumbnail-image";
+import { Badge } from "@/components/ui/badge";
 import { prisma } from "../../lib/prisma";
 import { fixThumbnailUrl } from "../../lib/thumbnail";
 import { AiFilterPanel } from "./ai-filter-panel";

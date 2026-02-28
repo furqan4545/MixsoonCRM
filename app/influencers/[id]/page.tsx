@@ -1,12 +1,19 @@
-import { notFound } from "next/navigation";
+import {
+  ArrowLeft,
+  Bookmark,
+  Calendar,
+  ExternalLink,
+  Eye,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
-import { prisma } from "../../lib/prisma";
-import { fixThumbnailUrl } from "../../lib/thumbnail";
+import { notFound } from "next/navigation";
+import { InfluencerContactSection } from "@/components/influencer-contact-section";
+import { ThumbnailImage } from "@/components/thumbnail-image";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ThumbnailImage } from "@/components/thumbnail-image";
-import { InfluencerContactSection } from "@/components/influencer-contact-section";
-import { ArrowLeft, ExternalLink, Users, Eye, Bookmark, Calendar } from "lucide-react";
+import { prisma } from "../../lib/prisma";
+import { fixThumbnailUrl } from "../../lib/thumbnail";
 
 export const dynamic = "force-dynamic";
 
@@ -34,10 +41,22 @@ export default async function InfluencerDetailPage({
 
   if (!influencer) notFound();
 
-  const totalViews = influencer.videos.reduce((sum, v) => sum + (v.views ?? 0), 0);
-  const totalBookmarks = influencer.videos.reduce((sum, v) => sum + (v.bookmarks ?? 0), 0);
-  const avgViews = influencer.videos.length > 0 ? Math.round(totalViews / influencer.videos.length) : 0;
-  const avgBookmarks = influencer.videos.length > 0 ? Math.round(totalBookmarks / influencer.videos.length) : 0;
+  const totalViews = influencer.videos.reduce(
+    (sum, v) => sum + (v.views ?? 0),
+    0,
+  );
+  const totalBookmarks = influencer.videos.reduce(
+    (sum, v) => sum + (v.bookmarks ?? 0),
+    0,
+  );
+  const avgViews =
+    influencer.videos.length > 0
+      ? Math.round(totalViews / influencer.videos.length)
+      : 0;
+  const avgBookmarks =
+    influencer.videos.length > 0
+      ? Math.round(totalBookmarks / influencer.videos.length)
+      : 0;
 
   return (
     <div className="p-6">
@@ -93,7 +112,9 @@ export default async function InfluencerDetailPage({
               {influencer.followers != null && (
                 <div className="inline-flex items-center gap-1.5 text-sm">
                   <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="font-semibold">{formatNumber(influencer.followers)}</span>
+                  <span className="font-semibold">
+                    {formatNumber(influencer.followers)}
+                  </span>
                   <span className="text-muted-foreground">followers</span>
                 </div>
               )}
@@ -102,18 +123,25 @@ export default async function InfluencerDetailPage({
               )}
               {influencer.import && (
                 <Link href={`/imports/${influencer.import.id}`}>
-                  <Badge variant="secondary" className="cursor-pointer hover:bg-accent">
+                  <Badge
+                    variant="secondary"
+                    className="cursor-pointer hover:bg-accent"
+                  >
                     Import: {influencer.import.sourceFilename}
                   </Badge>
                 </Link>
               )}
             </div>
 
-            {!influencer.email && !influencer.phone && (influencer.biolink || influencer.bioLinkUrl || influencer.socialLinks) && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Email & phone not on TikTok profile; only shown if in bio.
-              </p>
-            )}
+            {!influencer.email &&
+              !influencer.phone &&
+              (influencer.biolink ||
+                influencer.bioLinkUrl ||
+                influencer.socialLinks) && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Email & phone not on TikTok profile; only shown if in bio.
+                </p>
+              )}
 
             {/* Contact & socials — tap to open, copy button for all */}
             <div className="mt-4">
@@ -131,20 +159,34 @@ export default async function InfluencerDetailPage({
         {/* Stat Cards */}
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-lg border bg-background p-4">
-            <p className="text-xs font-medium text-muted-foreground">Total Videos</p>
-            <p className="mt-1 text-2xl font-bold">{influencer.videos.length}</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              Total Videos
+            </p>
+            <p className="mt-1 text-2xl font-bold">
+              {influencer.videos.length}
+            </p>
           </div>
           <div className="rounded-lg border bg-background p-4">
-            <p className="text-xs font-medium text-muted-foreground">Total Views</p>
-            <p className="mt-1 text-2xl font-bold">{formatNumber(totalViews)}</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              Total Views
+            </p>
+            <p className="mt-1 text-2xl font-bold">
+              {formatNumber(totalViews)}
+            </p>
           </div>
           <div className="rounded-lg border bg-background p-4">
-            <p className="text-xs font-medium text-muted-foreground">Avg Views</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              Avg Views
+            </p>
             <p className="mt-1 text-2xl font-bold">{formatNumber(avgViews)}</p>
           </div>
           <div className="rounded-lg border bg-background p-4">
-            <p className="text-xs font-medium text-muted-foreground">Avg Bookmarks</p>
-            <p className="mt-1 text-2xl font-bold">{formatNumber(avgBookmarks)}</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              Avg Bookmarks
+            </p>
+            <p className="mt-1 text-2xl font-bold">
+              {formatNumber(avgBookmarks)}
+            </p>
           </div>
         </div>
       </div>
@@ -203,7 +245,9 @@ export default async function InfluencerDetailPage({
                     {video.uploadedAt && (
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <Calendar className="h-3 w-3" />
-                        <span>{new Date(video.uploadedAt).toLocaleDateString()}</span>
+                        <span>
+                          {new Date(video.uploadedAt).toLocaleDateString()}
+                        </span>
                       </div>
                     )}
                   </div>

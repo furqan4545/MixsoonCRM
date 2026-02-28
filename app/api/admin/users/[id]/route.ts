@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
 
@@ -21,9 +21,13 @@ export async function PATCH(
   const body = await request.json().catch(() => ({}));
   const { status, roleId } = body as { status?: string; roleId?: string };
 
-  const data: { status?: (typeof VALID_STATUSES)[number]; roleId?: string } = {};
+  const data: { status?: (typeof VALID_STATUSES)[number]; roleId?: string } =
+    {};
 
-  if (typeof status === "string" && VALID_STATUSES.includes(status as (typeof VALID_STATUSES)[number])) {
+  if (
+    typeof status === "string" &&
+    VALID_STATUSES.includes(status as (typeof VALID_STATUSES)[number])
+  ) {
     data.status = status as (typeof VALID_STATUSES)[number];
   }
 

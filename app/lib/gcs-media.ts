@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import convert from "heic-convert";
 import { Storage } from "@google-cloud/storage";
+import convert from "heic-convert";
 
 const REQUEST_HEADERS = {
   "User-Agent":
@@ -46,14 +46,21 @@ function getStorage(): Storage {
   return cachedStorage;
 }
 
-function toArrayBufferView(input: ArrayBuffer | SharedArrayBuffer | Uint8Array | Buffer): Uint8Array {
+function toArrayBufferView(
+  input: ArrayBuffer | SharedArrayBuffer | Uint8Array | Buffer,
+): Uint8Array {
   if (input instanceof Uint8Array) return input;
   if (Buffer.isBuffer(input)) return new Uint8Array(input);
   return new Uint8Array(input);
 }
 
 function sanitizeSegment(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 64) || "unknown";
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "-")
+      .slice(0, 64) || "unknown"
+  );
 }
 
 function hashUrl(value: string): string {
@@ -123,7 +130,9 @@ export function isGcsUrl(url: string | null | undefined): boolean {
   return !!url && url.startsWith("gcs://");
 }
 
-export function parseGcsUrl(url: string): { bucket: string; objectPath: string } | null {
+export function parseGcsUrl(
+  url: string,
+): { bucket: string; objectPath: string } | null {
   if (!url.startsWith("gcs://")) return null;
   const withoutScheme = url.slice("gcs://".length);
   const slash = withoutScheme.indexOf("/");
@@ -234,7 +243,9 @@ export async function deleteImportMediaExceptRunFromGcs(
   const prefix = `imports/${importId}/`;
   const keepPrefix = `imports/${importId}/${runKey}/`;
   const [files] = await bucket.getFiles({ prefix });
-  const filesToDelete = files.filter((file) => !file.name.startsWith(keepPrefix));
+  const filesToDelete = files.filter(
+    (file) => !file.name.startsWith(keepPrefix),
+  );
   if (filesToDelete.length === 0) return { deletedCount: 0, failedCount: 0 };
 
   const results = await Promise.allSettled(

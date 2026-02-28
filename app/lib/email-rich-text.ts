@@ -27,9 +27,10 @@ export function plainTextToLinkedHtml(text: string): string {
     const index = match.index ?? 0;
     html += escapeHtml(text.slice(lastIndex, index));
 
-    const href = full.startsWith("http://") || full.startsWith("https://")
-      ? full
-      : `https://${full}`;
+    const href =
+      full.startsWith("http://") || full.startsWith("https://")
+        ? full
+        : `https://${full}`;
 
     html += `<a href="${escapeAttribute(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(full)}</a>`;
     lastIndex = index + full.length;

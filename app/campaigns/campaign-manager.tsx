@@ -125,7 +125,11 @@ export function CampaignManager({
           />
         </div>
         {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
-        <Button className="mt-4" onClick={createCampaign} disabled={loading || !name.trim()}>
+        <Button
+          className="mt-4"
+          onClick={createCampaign}
+          disabled={loading || !name.trim()}
+        >
           {loading ? "Saving..." : "Save Campaign Filter"}
         </Button>
       </div>

@@ -52,7 +52,8 @@ export function EmailSignatureForm() {
     },
     editorProps: {
       attributes: {
-        class: "min-h-[280px] w-full rounded-md border border-input bg-transparent px-4 py-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring [&_h1]:text-3xl [&_h1]:font-extrabold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_p]:my-1",
+        class:
+          "min-h-[280px] w-full rounded-md border border-input bg-transparent px-4 py-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring [&_h1]:text-3xl [&_h1]:font-extrabold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_p]:my-1",
       },
       handlePaste: (view, event) => {
         const files = Array.from(event.clipboardData?.files ?? []).filter(
@@ -294,10 +295,7 @@ export function EmailSignatureForm() {
             </span>
           </div>
 
-          <EditorContent 
-            editor={editor} 
-            className="w-full" 
-          />
+          <EditorContent editor={editor} className="w-full" />
 
           <p className="text-xs text-muted-foreground">
             H1/H2 are toggle buttons. If both are off, text is normal.
@@ -318,7 +316,6 @@ export function EmailSignatureForm() {
           {deleting ? "Deleting..." : "Delete Signature"}
         </Button>
       </div>
-
     </div>
   );
 }

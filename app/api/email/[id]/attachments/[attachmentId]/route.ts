@@ -1,15 +1,14 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { getCurrentUser } from "@/app/lib/rbac";
+import { type NextRequest, NextResponse } from "next/server";
+import { readEmailAttachmentById } from "@/app/lib/email-attachments";
 import { prisma } from "@/app/lib/prisma";
-import {
-  readEmailAttachmentById,
-} from "@/app/lib/email-attachments";
+import { getCurrentUser } from "@/app/lib/rbac";
 
 type Params = { params: Promise<{ id: string; attachmentId: string }> };
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id, attachmentId } = await params;
 
@@ -27,13 +26,17 @@ export async function GET(_req: NextRequest, { params }: Params) {
     attachmentId,
   );
   if (!attachment) {
-    return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Attachment not found" },
+      { status: 404 },
+    );
   }
 
-  const disposition = attachment.mimeType.startsWith("image/") ||
-      attachment.mimeType.startsWith("video/")
-    ? "inline"
-    : "attachment";
+  const disposition =
+    attachment.mimeType.startsWith("image/") ||
+    attachment.mimeType.startsWith("video/")
+      ? "inline"
+      : "attachment";
   return new Response(attachment.buffer, {
     status: 200,
     headers: {

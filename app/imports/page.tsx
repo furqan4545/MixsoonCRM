@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { prisma } from "../lib/prisma";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { prisma } from "../lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,7 @@ export default async function ImportsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Imports</h1>
           <p className="text-sm text-muted-foreground">
-            Manage your CSV imports and their linked influencer data.
+            Manage your imports and their linked influencer data.
           </p>
         </div>
         <Button asChild>
@@ -39,7 +39,7 @@ export default async function ImportsPage() {
         <div className="rounded-xl border bg-card px-6 py-12 text-center">
           <p className="text-muted-foreground">No imports yet.</p>
           <Button asChild className="mt-4" variant="outline">
-            <Link href="/data-scraper">Upload your first CSV</Link>
+            <Link href="/data-scraper">Upload your first file</Link>
           </Button>
         </div>
       ) : (

@@ -11,13 +11,13 @@ import {
   Mail,
   ShieldCheck,
   Sparkles,
-  Users,
   UserCog,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession, signOut } from "next-auth/react";
-
+import { signOut, useSession } from "next-auth/react";
+import { NAV_FEATURE_MAP } from "@/app/lib/permissions-client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,7 +38,6 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { NAV_FEATURE_MAP } from "@/app/lib/permissions-client";
 
 const navItems = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -160,7 +159,9 @@ export function AppSidebar() {
                     className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                   >
                     <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg text-sm font-medium">
-                      {(session.user.name ?? session.user.email ?? "U").charAt(0).toUpperCase()}
+                      {(session.user.name ?? session.user.email ?? "U")
+                        .charAt(0)
+                        .toUpperCase()}
                     </div>
                     <div className="grid flex-1 text-left text-sm leading-tight">
                       <span className="truncate font-medium">

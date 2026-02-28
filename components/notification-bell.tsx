@@ -1,15 +1,15 @@
 "use client";
 
+import { Bell, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, Trash2 } from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
 
 type NotificationRow = {
   id: string;
@@ -39,7 +39,8 @@ export function NotificationBell() {
       if (!res.ok) return;
       const data = await res.json();
       const list = Array.isArray(data.notifications) ? data.notifications : [];
-      const newUnread = typeof data.unreadCount === "number" ? data.unreadCount : 0;
+      const newUnread =
+        typeof data.unreadCount === "number" ? data.unreadCount : 0;
 
       setNotifications(list);
       setUnreadCount(newUnread);

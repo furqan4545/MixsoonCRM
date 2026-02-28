@@ -1,22 +1,31 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { Bold, Film, Italic, Paperclip, Save, Send, Sparkles, Underline, X } from "lucide-react";
 import Link from "@tiptap/extension-link";
 import UnderlineExtension from "@tiptap/extension-underline";
 import { TextSelection } from "@tiptap/pm/state";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import {
+  Bold,
+  Film,
+  Italic,
+  Paperclip,
+  Save,
+  Send,
+  Sparkles,
+  Underline,
+  X,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import ImageResize from "tiptap-extension-resize-image";
-
-import { Button } from "@/components/ui/button";
-import { signatureToHtml } from "@/app/lib/email-signature";
-import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { emitEmailRefresh } from "@/app/lib/email-events";
 import { plainTextToLinkedHtml } from "@/app/lib/email-rich-text";
+import { signatureToHtml } from "@/app/lib/email-signature";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Props {
   defaultTo?: string;
@@ -87,7 +96,8 @@ export function EmailCompose({
     content: initialEditorHtml || "<p></p>",
     editorProps: {
       attributes: {
-        class: "min-h-[300px] w-full rounded-md border border-input bg-transparent px-4 py-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring prose prose-sm max-w-none dark:prose-invert [&_p]:my-1",
+        class:
+          "min-h-[300px] w-full rounded-md border border-input bg-transparent px-4 py-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring prose prose-sm max-w-none dark:prose-invert [&_p]:my-1",
       },
       handlePaste: (view, event) => {
         const files = Array.from(event.clipboardData?.files ?? []).filter(
@@ -189,7 +199,8 @@ export function EmailCompose({
     if (files.length === 0) return;
 
     const mediaFiles = files.filter(
-      (file) => file.type.startsWith("image/") || file.type.startsWith("video/"),
+      (file) =>
+        file.type.startsWith("image/") || file.type.startsWith("video/"),
     );
     const skippedCount = files.length - mediaFiles.length;
     if (skippedCount > 0) {
@@ -198,7 +209,8 @@ export function EmailCompose({
     if (mediaFiles.length === 0) return;
 
     const nextTotal =
-      totalAttachmentBytes + mediaFiles.reduce((sum, file) => sum + file.size, 0);
+      totalAttachmentBytes +
+      mediaFiles.reduce((sum, file) => sum + file.size, 0);
     if (nextTotal > MAX_TOTAL_ATTACHMENT_BYTES) {
       toast.error("Attachments exceed 20 MB total limit");
       return;
@@ -207,7 +219,9 @@ export function EmailCompose({
     const nextItems = mediaFiles.map((file) => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       file,
-      previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+      previewUrl: file.type.startsWith("image/")
+        ? URL.createObjectURL(file)
+        : null,
       isImage: file.type.startsWith("image/"),
     }));
 
@@ -270,7 +284,8 @@ export function EmailCompose({
       if (influencerId) formData.append("influencerId", influencerId);
       if (inReplyTo) formData.append("inReplyTo", inReplyTo);
       attachments.forEach((item) =>
-        formData.append("attachments", item.file, item.file.name));
+        formData.append("attachments", item.file, item.file.name),
+      );
 
       const res = await fetch("/api/email/send", {
         method: "POST",
@@ -299,7 +314,10 @@ export function EmailCompose({
   const handleSaveDraft = async () => {
     setSavingDraft(true);
     try {
-      const recipients = uniqueRecipients([...to, ...splitRecipientInput(toInput)]);
+      const recipients = uniqueRecipients([
+        ...to,
+        ...splitRecipientInput(toInput),
+      ]);
       const ccList = uniqueRecipients([...cc, ...splitRecipientInput(ccInput)]);
       const { bodyHtml, bodyText } = getEditorPayload();
 
@@ -340,7 +358,10 @@ export function EmailCompose({
   };
 
   const handleGenerateAiDraft = async () => {
-    const recipients = uniqueRecipients([...to, ...splitRecipientInput(toInput)]);
+    const recipients = uniqueRecipients([
+      ...to,
+      ...splitRecipientInput(toInput),
+    ]);
     if (!influencerId && recipients.length === 0) {
       toast.error("Open compose from an influencer or add a recipient first");
       return;
@@ -433,7 +454,9 @@ export function EmailCompose({
               <RecipientChip
                 key={email}
                 value={email}
-                onRemove={() => setTo((prev) => prev.filter((x) => x !== email))}
+                onRemove={() =>
+                  setTo((prev) => prev.filter((x) => x !== email))
+                }
                 onEdit={() => {
                   setTo((prev) => prev.filter((x) => x !== email));
                   setToInput(email);
@@ -485,7 +508,9 @@ export function EmailCompose({
                 <RecipientChip
                   key={email}
                   value={email}
-                  onRemove={() => setCc((prev) => prev.filter((x) => x !== email))}
+                  onRemove={() =>
+                    setCc((prev) => prev.filter((x) => x !== email))
+                  }
                   onEdit={() => {
                     setCc((prev) => prev.filter((x) => x !== email));
                     setCcInput(email);
@@ -508,7 +533,11 @@ export function EmailCompose({
                   ) {
                     e.preventDefault();
                     handleRecipientCommit(ccInput, setCc, setCcInput);
-                  } else if (e.key === "Backspace" && !ccInput && cc.length > 0) {
+                  } else if (
+                    e.key === "Backspace" &&
+                    !ccInput &&
+                    cc.length > 0
+                  ) {
                     e.preventDefault();
                     setCc((prev) => prev.slice(0, -1));
                   }
@@ -545,7 +574,8 @@ export function EmailCompose({
                 Attach Media
               </Button>
               <span className="text-xs text-muted-foreground">
-                {formatBytes(totalAttachmentBytes)} / {formatBytes(MAX_TOTAL_ATTACHMENT_BYTES)}
+                {formatBytes(totalAttachmentBytes)} /{" "}
+                {formatBytes(MAX_TOTAL_ATTACHMENT_BYTES)}
               </span>
               <input
                 ref={attachmentInputRef}

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -66,7 +66,10 @@ export default function RegisterPage() {
       <h1 className="mb-4 text-lg font-semibold">Create account</h1>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="name" className="mb-1 block text-xs font-medium text-muted-foreground">
+          <label
+            htmlFor="name"
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+          >
             Name (optional)
           </label>
           <Input
@@ -79,7 +82,10 @@ export default function RegisterPage() {
           />
         </div>
         <div>
-          <label htmlFor="email" className="mb-1 block text-xs font-medium text-muted-foreground">
+          <label
+            htmlFor="email"
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+          >
             Email
           </label>
           <Input
@@ -93,7 +99,10 @@ export default function RegisterPage() {
           />
         </div>
         <div>
-          <label htmlFor="password" className="mb-1 block text-xs font-medium text-muted-foreground">
+          <label
+            htmlFor="password"
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+          >
             Password (min 8 characters)
           </label>
           <Input
@@ -108,7 +117,10 @@ export default function RegisterPage() {
           />
         </div>
         <div>
-          <label htmlFor="confirmPassword" className="mb-1 block text-xs font-medium text-muted-foreground">
+          <label
+            htmlFor="confirmPassword"
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+          >
             Confirm password
           </label>
           <Input
@@ -122,9 +134,7 @@ export default function RegisterPage() {
             className="mt-1"
           />
         </div>
-        {error && (
-          <p className="text-sm text-destructive">{error}</p>
-        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
         <Button type="submit" className="w-full" disabled={loading}>
           {loading ? "Creating account…" : "Register"}
         </Button>

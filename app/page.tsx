@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { prisma } from "./lib/prisma";
 import { Badge } from "@/components/ui/badge";
+import { prisma } from "./lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +69,7 @@ export default async function DashboardPage({ searchParams }: Props) {
               href="/data-scraper"
               className="text-primary underline hover:no-underline"
             >
-              Upload a CSV
+              Upload a File
             </Link>{" "}
             to get started.
           </div>

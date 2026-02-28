@@ -45,10 +45,7 @@ export async function POST(request: NextRequest) {
     };
 
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: "name is required" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "name is required" }, { status: 400 });
     }
 
     const campaign = await prisma.campaign.create({

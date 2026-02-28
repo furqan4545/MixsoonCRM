@@ -1,14 +1,22 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  Link2,
+  Mail,
+  Phone,
+  Send,
+} from "lucide-react";
 import Link from "next/link";
-import { Mail, Phone, Link2, ExternalLink, Copy, Check, Send } from "lucide-react";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
-  TooltipTrigger,
   TooltipProvider,
+  TooltipTrigger,
 } from "@/components/ui/tooltip";
 
 function getPlatformLabel(url: string): string {
@@ -138,8 +146,7 @@ export function InfluencerContactSection({
     // ignore
   }
 
-  const hasAny =
-    email || phone || bioLinkUrl || socialUrls.length > 0;
+  const hasAny = email || phone || bioLinkUrl || socialUrls.length > 0;
   if (!hasAny) return null;
   const composeHref = email
     ? `/email/compose?to=${encodeURIComponent(email)}${influencerId ? `&influencerId=${influencerId}` : ""}`
@@ -165,10 +172,13 @@ export function InfluencerContactSection({
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button asChild variant="outline" size="sm" className="shrink-0 gap-1.5">
-                    <Link
-                      href={composeHref}
-                    >
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 gap-1.5"
+                  >
+                    <Link href={composeHref}>
                       <Send className="h-3.5 w-3.5" />
                       Send
                     </Link>
@@ -212,7 +222,8 @@ export function InfluencerContactSection({
                 rel="noopener noreferrer"
                 className="min-w-0 truncate text-sm text-blue-600 hover:underline dark:text-blue-400"
               >
-                {getPlatformLabel(url)} — {url.replace(/^https?:\/\//, "").split("/")[0]}
+                {getPlatformLabel(url)} —{" "}
+                {url.replace(/^https?:\/\//, "").split("/")[0]}
               </a>
             </div>
             <CopyButton value={url} label={getPlatformLabel(url)} />

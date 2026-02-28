@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ThumbnailImage } from "@/components/thumbnail-image";
+import { useCallback, useEffect, useState } from "react";
 import { startSaveImport } from "@/components/save-progress-bar";
+import { ThumbnailImage } from "@/components/thumbnail-image";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 function fixThumbnailUrl(url: string | null): string | null {
   if (!url) return null;
@@ -92,7 +92,7 @@ export default function DataScraperPage() {
   const handleUpload = useCallback(async () => {
     if (!file) return;
     setError("");
-    setProgress("Uploading CSV...");
+    setProgress("Uploading File...");
 
     try {
       const formData = new FormData();
@@ -273,7 +273,8 @@ export default function DataScraperPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Data Scraper</h1>
         <p className="text-sm text-muted-foreground">
-          Upload a CSV with TikTok usernames to scrape influencer data.
+          Upload a CSV or Excel file with TikTok usernames to scrape influencer
+          data.
         </p>
       </div>
 
@@ -303,15 +304,15 @@ export default function DataScraperPage() {
                 />
               </svg>
               <span className="text-sm font-medium">
-                {file ? file.name : "Click to upload CSV"}
+                {file ? file.name : "Click to upload CSV or Excel"}
               </span>
               <span className="mt-1 text-xs text-muted-foreground">
-                Must contain a &quot;Username&quot; column
+                First column will be used if "Username" header is missing
               </span>
               <input
                 id="csv-upload"
                 type="file"
-                accept=".csv"
+                accept=".csv, .xlsx, .xls"
                 className="hidden"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
@@ -368,7 +369,7 @@ export default function DataScraperPage() {
               className="mt-6 w-full"
               size="lg"
             >
-              Upload CSV
+              Upload File
             </Button>
           </div>
         </div>

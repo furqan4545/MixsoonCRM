@@ -1,17 +1,18 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { getCurrentUser } from "@/app/lib/rbac";
-import { prisma } from "@/app/lib/prisma";
+import { type NextRequest, NextResponse } from "next/server";
 import {
   buildAttachmentUrl,
   deleteEmailAttachments,
   listEmailAttachments,
 } from "@/app/lib/email-attachments";
+import { prisma } from "@/app/lib/prisma";
+import { getCurrentUser } from "@/app/lib/rbac";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
 
@@ -26,7 +27,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const attachments = (await listEmailAttachments(email.accountId, email.id)).map((attachment) => ({
+  const attachments = (
+    await listEmailAttachments(email.accountId, email.id)
+  ).map((attachment) => ({
     id: attachment.id,
     filename: attachment.filename,
     mimeType: attachment.mimeType,
@@ -48,7 +51,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
 export async function PATCH(req: NextRequest, { params }: Params) {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
 
@@ -75,7 +79,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
 export async function DELETE(req: NextRequest, { params }: Params) {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
 
