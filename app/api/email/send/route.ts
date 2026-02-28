@@ -212,6 +212,32 @@ export async function POST(req: Request) {
       },
     });
 
+    // Auto-save recipient email to influencer profile if they don't have one
+    if (influencerId && to[0]) {
+      try {
+        const influencer = await prisma.influencer.findUnique({
+          where: { id: influencerId },
+          select: { email: true },
+        });
+        if (influencer && !influencer.email) {
+          await prisma.influencer.update({
+            where: { id: influencerId },
+            data: { email: to[0] },
+          });
+          await prisma.activityLog.create({
+            data: {
+              influencerId,
+              type: "email_extracted",
+              title: "Email added from compose",
+              detail: `Email: ${to[0]}`,
+            },
+          });
+        }
+      } catch {
+        // Non-critical, don't fail the send
+      }
+    }
+
     transport.close();
     return NextResponse.json({ id: email.id, messageId: info.messageId });
   } catch (err: unknown) {
