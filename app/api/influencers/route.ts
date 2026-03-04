@@ -23,12 +23,13 @@ export async function GET(request: NextRequest) {
     const pipelineStage = searchParams.get("pipelineStage");
     const cursor = searchParams.get("cursor");
     const search = searchParams.get("search");
+    const minimal = searchParams.get("minimal") === "true";
+    // Minimal mode can fetch more (small payload per record); full mode caps at 100
+    const maxLimit = minimal ? 2000 : 100;
     const limit = Math.min(
       parseInt(searchParams.get("limit") ?? "50", 10) || 50,
-      100,
+      maxLimit,
     );
-    // "minimal" mode for dropdowns (e.g. approval submit dialog)
-    const minimal = searchParams.get("minimal") === "true";
 
     const where: Record<string, unknown> = {};
     if (pipelineStage) {

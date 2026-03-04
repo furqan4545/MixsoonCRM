@@ -150,8 +150,15 @@ export function SubmitApprovalDialog({
 
   // Auto-fill profile link when influencer selected
   useEffect(() => {
-    if (selectedInfluencer?.profileUrl && !profileLink) {
-      setProfileLink(selectedInfluencer.profileUrl);
+    if (selectedInfluencer && !profileLink) {
+      if (selectedInfluencer.profileUrl) {
+        setProfileLink(selectedInfluencer.profileUrl);
+      } else {
+        const handle = selectedInfluencer.username.startsWith(".")
+          ? selectedInfluencer.username.slice(1)
+          : selectedInfluencer.username;
+        setProfileLink(`https://www.tiktok.com/@${handle}`);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedInfluencer]);
@@ -161,7 +168,7 @@ export function SubmitApprovalDialog({
     if (!open) return;
     setLoadingOptions(true);
     Promise.all([
-      fetch("/api/influencers?limit=1000&minimal=true")
+      fetch("/api/influencers?limit=2000&minimal=true")
         .then((r) => (r.ok ? r.json() : { influencers: [] }))
         .then((d) => d.influencers ?? []),
       fetch("/api/marketing-campaigns")
@@ -179,9 +186,15 @@ export function SubmitApprovalDialog({
     setInfluencerId(inf.id);
     setSearchQuery("");
     setShowDropdown(false);
-    // Auto-fill profile link
+    // Auto-fill profile link — use stored URL or construct TikTok fallback
     if (inf.profileUrl) {
       setProfileLink(inf.profileUrl);
+    } else {
+      // Fallback: construct TikTok URL from username
+      const handle = inf.username.startsWith(".")
+        ? inf.username.slice(1)
+        : inf.username;
+      setProfileLink(`https://www.tiktok.com/@${handle}`);
     }
   };
 
