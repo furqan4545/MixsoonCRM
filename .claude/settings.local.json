@@ -33,7 +33,16 @@
       "Bash(npx prisma db push --schema=.claude/worktrees/clever-matsumoto/prisma/schema.prisma)",
       "Bash(git add -A)",
       "Bash(git merge claude/clever-matsumoto --ff-only)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(npx prisma:*)",
+      "Bash(git add app/api/influencers/route.ts app/approvals/submit-approval-dialog.tsx)",
+      "Bash(git add app/api/approvals/route.ts app/api/influencers/route.ts app/approvals/page.tsx app/approvals/submit-approval-dialog.tsx app/approvals/review-approval-dialog.tsx)",
+      "Bash(git add app/approvals/submit-approval-dialog.tsx)",
+      "Bash(ls -la /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/clever-matsumoto/app/api/notifications/[id]/)",
+      "Bash(grep -n \"notifyQuiet\\\\|notification\" /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/clever-matsumoto/app/api/imports/[id]/save/route.ts)",
+      "Bash(npx tsx -e \":*)",
+      "Bash(npx shadcn@latest add switch --yes)",
+      "Bash(npx shadcn@latest add select --yes)"
     ]
   }
 }

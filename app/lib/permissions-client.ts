@@ -15,6 +15,7 @@ export const FEATURES = {
   EMAIL: "email",
   CAMPAIGNS: "campaigns",
   APPROVALS: "approvals",
+  ALERTS: "alerts",
 } as const;
 
 /** Sidebar nav: path → required permission (read). null = no requirement (e.g. Dashboard). */
@@ -33,4 +34,5 @@ export const NAV_FEATURE_MAP: Record<
   "/notifications": { feature: FEATURES.NOTIFICATIONS, action: "read" },
   "/email": { feature: FEATURES.EMAIL, action: "read" },
   "/approvals": { feature: FEATURES.APPROVALS, action: "read" },
+  "/alerts": { feature: FEATURES.ALERTS, action: "read" },
 };

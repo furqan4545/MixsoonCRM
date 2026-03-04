@@ -244,6 +244,16 @@ export async function PATCH(
       });
     }
 
+    // Auto-resolve any ACTIVE alert events for this approval
+    try {
+      await prisma.alertEvent.updateMany({
+        where: { approvalId: id, status: "ACTIVE" },
+        data: { status: "RESOLVED", resolvedAt: new Date() },
+      });
+    } catch (alertErr) {
+      console.error("[PATCH /api/approvals/:id] alert resolve error:", alertErr);
+    }
+
     // Notify PIC of the decision
     const decisionMsg: Record<string, string> = {
       approve: `approved @${existing.influencer.username} at ${existing.currency} ${existing.rate}`,
