@@ -219,17 +219,33 @@ function StageCell({
   onUpdated: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (
+        btnRef.current?.contains(e.target as Node) ||
+        menuRef.current?.contains(e.target as Node)
+      )
+        return;
+      setOpen(false);
     }
     if (open) document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
   const current = STAGE_OPTIONS.find((s) => s.key === currentStage) ?? STAGE_OPTIONS[0];
+
+  const toggleOpen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.right - 144 }); // 144 = menu w-36
+    }
+    setOpen(!open);
+  };
 
   const handleSelect = async (stageKey: string) => {
     setOpen(false);
@@ -249,12 +265,10 @@ function StageCell({
   };
 
   return (
-    <div className="relative" ref={ref}>
+    <>
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen(!open);
-        }}
+        ref={btnRef}
+        onClick={toggleOpen}
         className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors hover:opacity-80 ${current.badgeColor}`}
       >
         {current.label}
@@ -262,7 +276,9 @@ function StageCell({
       </button>
       {open && (
         <div
-          className="absolute right-0 top-full z-50 mt-1 w-36 rounded-lg border bg-card shadow-lg py-1"
+          ref={menuRef}
+          className="fixed z-[9999] w-36 rounded-lg border bg-card shadow-lg py-1"
+          style={{ top: pos.top, left: pos.left }}
           onClick={(e) => e.stopPropagation()}
         >
           {STAGE_OPTIONS.map((stage) => (
@@ -283,7 +299,7 @@ function StageCell({
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
