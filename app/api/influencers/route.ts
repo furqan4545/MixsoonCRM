@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    // Minimal mode: just id/username/displayName for selects
+    // Minimal mode: for selects & approval dialogs
     if (minimal) {
       const influencers = await prisma.influencer.findMany({
         where,
@@ -54,6 +54,11 @@ export async function GET(request: NextRequest) {
           displayName: true,
           avatarUrl: true,
           email: true,
+          followers: true,
+          platform: true,
+          country: true,
+          engagementRate: true,
+          profileUrl: true,
         },
       });
       return NextResponse.json({ influencers });

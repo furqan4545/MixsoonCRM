@@ -9,17 +9,10 @@ import {
   RefreshCw,
   XCircle,
   ArrowLeftRight,
+  ExternalLink,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { SubmitApprovalDialog } from "./submit-approval-dialog";
 import { ReviewApprovalDialog } from "./review-approval-dialog";
 
@@ -33,6 +26,11 @@ export interface ApprovalRow {
     displayName: string | null;
     avatarUrl: string | null;
     rate: number | null;
+    followers: number | null;
+    platform: string | null;
+    country: string | null;
+    engagementRate: number | null;
+    profileUrl: string | null;
   };
   submittedBy: { id: string; name: string | null; email: string };
   reviewedBy: { id: string; name: string | null; email: string } | null;
@@ -41,6 +39,15 @@ export interface ApprovalRow {
   currency: string;
   deliverables: string;
   notes: string | null;
+  videosPerBundle: number | null;
+  ratePerVideo: number | null;
+  totalPriceLocal: number | null;
+  totalPriceUsd: number | null;
+  profileLink: string | null;
+  picFeedback: string | null;
+  ceoFeedback: string | null;
+  feedbackStatus: string;
+  contractStatus: string;
   status: string;
   counterRate: number | null;
   counterNotes: string | null;
@@ -76,7 +83,7 @@ function statusBadge(status: string) {
         "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-200 dark:border-red-700",
     },
     COUNTER_OFFERED: {
-      label: "Counter-offered",
+      label: "Counter",
       className:
         "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-700",
     },
@@ -86,22 +93,79 @@ function statusBadge(status: string) {
     className: "bg-gray-100 text-gray-800 border-gray-300",
   };
   return (
-    <Badge variant="outline" className={c.className}>
+    <Badge variant="outline" className={`text-[10px] whitespace-nowrap ${c.className}`}>
       {c.label}
     </Badge>
   );
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+function feedbackStatusBadge(status: string) {
+  const config: Record<string, { label: string; className: string }> = {
+    REQUESTED: {
+      label: "피드백 요청",
+      className:
+        "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-700",
+    },
+    CEO_REVIEWED: {
+      label: "대표님 피드백",
+      className:
+        "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/30 dark:text-purple-200 dark:border-purple-700",
+    },
+    APPLIED: {
+      label: "반영 완료",
+      className:
+        "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-200 dark:border-green-700",
+    },
+    SPECIAL: {
+      label: "특별 관리",
+      className:
+        "bg-pink-100 text-pink-800 border-pink-300 dark:bg-pink-900/30 dark:text-pink-200 dark:border-pink-700",
+    },
+  };
+  const c = config[status] ?? { label: status, className: "bg-gray-100 text-gray-800 border-gray-300" };
+  return (
+    <Badge variant="outline" className={`text-[10px] whitespace-nowrap ${c.className}`}>
+      {c.label}
+    </Badge>
+  );
 }
 
-function formatCurrency(amount: number, currency: string) {
-  return `${currency} ${amount.toLocaleString()}`;
+function contractStatusBadge(status: string) {
+  const config: Record<string, { label: string; className: string }> = {
+    NEGOTIATE: {
+      label: "Negotiate",
+      className:
+        "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-200 dark:border-yellow-700",
+    },
+    APPROVED: {
+      label: "Approved",
+      className:
+        "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-200 dark:border-green-700",
+    },
+    DROP: {
+      label: "Drop",
+      className:
+        "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-200 dark:border-red-700",
+    },
+    FINAL_DROP: {
+      label: "Final Drop",
+      className:
+        "bg-red-200 text-red-900 border-red-400 dark:bg-red-900/50 dark:text-red-100 dark:border-red-600",
+    },
+  };
+  const c = config[status] ?? { label: status, className: "bg-gray-100 text-gray-800 border-gray-300" };
+  return (
+    <Badge variant="outline" className={`text-[10px] whitespace-nowrap ${c.className}`}>
+      {c.label}
+    </Badge>
+  );
+}
+
+function formatFollowers(n: number | null) {
+  if (!n) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
 }
 
 /* ───────────── page ───────────── */
@@ -214,7 +278,7 @@ export default function ApprovalsPage() {
           <Button variant="outline" size="sm" onClick={load}>
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
-          {hasWrite && !isAdmin && (
+          {hasWrite && (
             <Button size="sm" onClick={openNewSubmit}>
               <Plus className="mr-1 h-3.5 w-3.5" />
               Submit Approval
@@ -274,74 +338,159 @@ export default function ApprovalsPage() {
       ) : (
         <div className="rounded-xl border bg-card">
           <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[140px]">Influencer</TableHead>
-                  <TableHead>Submitted By</TableHead>
-                  <TableHead className="text-right">Rate</TableHead>
-                  <TableHead className="hidden md:table-cell">
-                    Deliverables
-                  </TableHead>
-                  {isAdmin && (
-                    <TableHead className="hidden lg:table-cell">
-                      Campaign
-                    </TableHead>
-                  )}
-                  <TableHead>Status</TableHead>
-                  <TableHead className="hidden sm:table-cell">Date</TableHead>
-                  <TableHead className="w-[1%]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Username</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">담당자 (PIC)</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Country</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Platform</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Followers</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">번들 당 영상 갯수</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">통화 단위</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">$/Video (VAT)</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">총 가격 (Local)</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">총 가격 ($)</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap max-w-[200px]">담당자 피드백</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">프로필 링크</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap max-w-[200px]">주업님 Feedback</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">피드백 진행 사항</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">계약현황</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">Status</th>
+                  <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap w-[1%]" />
+                </tr>
+              </thead>
+              <tbody>
                 {filtered.map((row) => (
-                  <TableRow
+                  <tr
                     key={row.id}
-                    className={
-                      isAdmin && row.status === "PENDING"
-                        ? "cursor-pointer hover:bg-muted/50"
-                        : ""
-                    }
-                    onClick={() => {
-                      if (isAdmin && row.status === "PENDING") {
-                        openReview(row);
-                      }
-                    }}
+                    className="border-b last:border-0 cursor-pointer hover:bg-muted/30 transition-colors"
+                    onClick={() => openReview(row)}
                   >
-                    <TableCell className="font-medium">
-                      @{row.influencer.username}
-                    </TableCell>
-                    <TableCell className="text-sm">
+                    {/* Username (sticky) */}
+                    <td className="sticky left-0 z-10 bg-card px-3 py-2.5 font-medium whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        {row.influencer.avatarUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={row.influencer.avatarUrl}
+                            alt=""
+                            className="h-6 w-6 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-pink-500 text-[10px] font-bold text-white">
+                            {row.influencer.username.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <span>@{row.influencer.username}</span>
+                      </div>
+                    </td>
+
+                    {/* PIC */}
+                    <td className="px-3 py-2.5 whitespace-nowrap text-muted-foreground">
                       {row.submittedBy.name || row.submittedBy.email}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {formatCurrency(row.rate, row.currency)}
-                      {row.counterRate && (
-                        <div className="text-xs text-amber-600">
-                          Counter: {formatCurrency(row.counterRate, row.currency)}
-                        </div>
+                    </td>
+
+                    {/* Country */}
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {row.influencer.country || "—"}
+                    </td>
+
+                    {/* Platform */}
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {row.influencer.platform || "—"}
+                    </td>
+
+                    {/* Followers */}
+                    <td className="px-3 py-2.5 text-right whitespace-nowrap font-mono text-xs">
+                      {formatFollowers(row.influencer.followers)}
+                    </td>
+
+                    {/* Videos per Bundle */}
+                    <td className="px-3 py-2.5 text-center whitespace-nowrap font-mono">
+                      {row.videosPerBundle ?? "—"}
+                    </td>
+
+                    {/* Currency */}
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {row.currency}
+                    </td>
+
+                    {/* $/Video */}
+                    <td className="px-3 py-2.5 text-right whitespace-nowrap font-mono text-xs">
+                      {row.ratePerVideo != null ? `$${row.ratePerVideo.toLocaleString()}` : "—"}
+                    </td>
+
+                    {/* Total Local */}
+                    <td className="px-3 py-2.5 text-right whitespace-nowrap font-mono text-xs">
+                      {row.totalPriceLocal != null
+                        ? `${row.currency} ${row.totalPriceLocal.toLocaleString()}`
+                        : "—"}
+                    </td>
+
+                    {/* Total USD */}
+                    <td className="px-3 py-2.5 text-right whitespace-nowrap font-mono text-xs">
+                      {row.totalPriceUsd != null
+                        ? `$${row.totalPriceUsd.toLocaleString()}`
+                        : "—"}
+                    </td>
+
+                    {/* PIC Feedback */}
+                    <td className="px-3 py-2.5 max-w-[200px]">
+                      <p className="truncate text-xs text-muted-foreground">
+                        {row.picFeedback || "—"}
+                      </p>
+                    </td>
+
+                    {/* Profile Link */}
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {(row.profileLink || row.influencer.profileUrl) ? (
+                        <a
+                          href={row.profileLink || row.influencer.profileUrl || "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Link
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
                       )}
-                    </TableCell>
-                    <TableCell className="hidden max-w-[200px] truncate text-sm md:table-cell">
-                      {row.deliverables}
-                    </TableCell>
-                    {isAdmin && (
-                      <TableCell className="hidden text-sm lg:table-cell">
-                        {row.campaign?.name ?? "—"}
-                      </TableCell>
-                    )}
-                    <TableCell>{statusBadge(row.status)}</TableCell>
-                    <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
-                      {formatDate(row.createdAt)}
-                    </TableCell>
-                    <TableCell>
-                      {/* PIC: re-submit on counter-offered */}
+                    </td>
+
+                    {/* CEO Feedback */}
+                    <td className="px-3 py-2.5 max-w-[200px]">
+                      <p className="truncate text-xs text-muted-foreground">
+                        {row.ceoFeedback || "—"}
+                      </p>
+                    </td>
+
+                    {/* Feedback Status */}
+                    <td className="px-3 py-2.5 text-center">
+                      {feedbackStatusBadge(row.feedbackStatus)}
+                    </td>
+
+                    {/* Contract Status */}
+                    <td className="px-3 py-2.5 text-center">
+                      {contractStatusBadge(row.contractStatus)}
+                    </td>
+
+                    {/* Approval Status */}
+                    <td className="px-3 py-2.5 text-center">
+                      {statusBadge(row.status)}
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-3 py-2.5 whitespace-nowrap">
                       {!isAdmin &&
                         row.status === "COUNTER_OFFERED" &&
                         hasWrite && (
                           <Button
                             size="sm"
                             variant="outline"
+                            className="h-7 text-xs"
                             onClick={(e) => {
                               e.stopPropagation();
                               openResubmit(row);
@@ -350,37 +499,11 @@ export default function ApprovalsPage() {
                             Re-submit
                           </Button>
                         )}
-                      {/* Admin: view non-pending or click pending row */}
-                      {isAdmin && row.status !== "PENDING" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openReview(row);
-                          }}
-                        >
-                          View
-                        </Button>
-                      )}
-                      {/* PIC: view details */}
-                      {!isAdmin && row.status !== "COUNTER_OFFERED" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openReview(row);
-                          }}
-                        >
-                          View
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                  </tr>
                 ))}
-              </TableBody>
-            </Table>
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -399,6 +522,7 @@ export default function ApprovalsPage() {
         onOpenChange={setReviewOpen}
         onSuccess={load}
         approval={selectedApproval}
+        isAdmin={isAdmin}
       />
     </div>
   );

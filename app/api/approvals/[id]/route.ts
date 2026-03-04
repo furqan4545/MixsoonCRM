@@ -31,6 +31,11 @@ export async function GET(
             avatarUrl: true,
             rate: true,
             pipelineStage: true,
+            followers: true,
+            platform: true,
+            country: true,
+            engagementRate: true,
+            profileUrl: true,
           },
         },
         submittedBy: { select: { id: true, name: true, email: true } },
@@ -85,19 +90,44 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { action, counterRate, counterNotes } = body as {
-    action?: string;
-    counterRate?: number;
-    counterNotes?: string;
-  };
+  const { action, counterRate, counterNotes, ceoFeedback, feedbackStatus, contractStatus } =
+    body as {
+      action?: string;
+      counterRate?: number;
+      counterNotes?: string;
+      ceoFeedback?: string;
+      feedbackStatus?: string;
+      contractStatus?: string;
+    };
 
-  const VALID_ACTIONS = ["approve", "reject", "counter"];
+  const VALID_ACTIONS = ["approve", "reject", "counter", "update"];
   if (!action || !VALID_ACTIONS.includes(action)) {
     return NextResponse.json(
-      { error: "action must be: approve, reject, or counter" },
+      { error: "action must be: approve, reject, counter, or update" },
       { status: 400 },
     );
   }
+
+  const richInclude = {
+    influencer: {
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatarUrl: true,
+        rate: true,
+        pipelineStage: true,
+        followers: true,
+        platform: true,
+        country: true,
+        engagementRate: true,
+        profileUrl: true,
+      },
+    },
+    submittedBy: { select: { id: true, name: true, email: true } },
+    reviewedBy: { select: { id: true, name: true, email: true } },
+    campaign: { select: { id: true, name: true } },
+  };
 
   try {
     const existing = await prisma.approvalRequest.findUnique({
@@ -111,6 +141,28 @@ export async function PATCH(
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    // "update" action — save CEO feedback / status without changing approval status
+    if (action === "update") {
+      const updateFields: Record<string, unknown> = {};
+      if (ceoFeedback !== undefined) updateFields.ceoFeedback = ceoFeedback.trim() || null;
+      if (feedbackStatus) updateFields.feedbackStatus = feedbackStatus;
+      if (contractStatus) updateFields.contractStatus = contractStatus;
+
+      if (Object.keys(updateFields).length === 0) {
+        return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+      }
+
+      const updated = await prisma.approvalRequest.update({
+        where: { id },
+        data: updateFields,
+        include: richInclude,
+      });
+
+      return NextResponse.json(updated);
+    }
+
+    // For approve/reject/counter, must still be PENDING
     if (existing.status !== "PENDING") {
       return NextResponse.json(
         { error: "This approval has already been reviewed" },
@@ -141,15 +193,15 @@ export async function PATCH(
       updateData.counterNotes = counterNotes?.trim() || null;
     }
 
+    // Auto-set contract status on approve
+    if (action === "approve") {
+      updateData.contractStatus = "APPROVED";
+    }
+
     const updated = await prisma.approvalRequest.update({
       where: { id },
       data: updateData,
-      include: {
-        influencer: { select: { id: true, username: true } },
-        submittedBy: { select: { id: true, name: true, email: true } },
-        reviewedBy: { select: { id: true, name: true, email: true } },
-        campaign: { select: { id: true, name: true } },
-      },
+      include: richInclude,
     });
 
     const influencerId = existing.influencerId;

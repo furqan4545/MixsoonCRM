@@ -22,15 +22,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { influencerId, rate, currency, deliverables, notes, campaignId } =
-    body as {
-      influencerId?: string;
-      rate?: number;
-      currency?: string;
-      deliverables?: string;
-      notes?: string;
-      campaignId?: string;
-    };
+  const {
+    influencerId, rate, currency, deliverables, notes, campaignId,
+    videosPerBundle, ratePerVideo, totalPriceLocal, totalPriceUsd,
+    profileLink, picFeedback,
+  } = body as {
+    influencerId?: string;
+    rate?: number;
+    currency?: string;
+    deliverables?: string;
+    notes?: string;
+    campaignId?: string;
+    videosPerBundle?: number;
+    ratePerVideo?: number;
+    totalPriceLocal?: number;
+    totalPriceUsd?: number;
+    profileLink?: string;
+    picFeedback?: string;
+  };
 
   if (!influencerId || !rate || !deliverables) {
     return NextResponse.json(
@@ -60,6 +69,12 @@ export async function POST(request: NextRequest) {
         deliverables: String(deliverables).trim(),
         notes: notes?.trim() || null,
         campaignId: campaignId || null,
+        videosPerBundle: videosPerBundle != null ? Number(videosPerBundle) : null,
+        ratePerVideo: ratePerVideo != null ? Number(ratePerVideo) : null,
+        totalPriceLocal: totalPriceLocal != null ? Number(totalPriceLocal) : null,
+        totalPriceUsd: totalPriceUsd != null ? Number(totalPriceUsd) : null,
+        profileLink: profileLink?.trim() || null,
+        picFeedback: picFeedback?.trim() || null,
       },
       include: {
         influencer: { select: { id: true, username: true } },
@@ -135,6 +150,11 @@ export async function GET(request: NextRequest) {
             displayName: true,
             avatarUrl: true,
             rate: true,
+            followers: true,
+            platform: true,
+            country: true,
+            engagementRate: true,
+            profileUrl: true,
           },
         },
         submittedBy: { select: { id: true, name: true, email: true } },

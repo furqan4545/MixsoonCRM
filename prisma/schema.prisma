@@ -401,6 +401,20 @@ enum ApprovalStatus {
   COUNTER_OFFERED
 }
 
+enum FeedbackStatus {
+  REQUESTED       // 피드백 요청
+  CEO_REVIEWED    // 대표님 피드백
+  APPLIED         // 피드백 반영 완료
+  SPECIAL         // 특별 관리
+}
+
+enum ContractStatus {
+  NEGOTIATE       // Negotiate
+  APPROVED        // Approved
+  DROP            // Drop
+  FINAL_DROP      // Final Drop Notice
+}
+
 model ApprovalRequest {
   id             String         @id @default(cuid())
   influencerId   String
@@ -414,6 +428,19 @@ model ApprovalRequest {
   currency       String         @default("USD")
   deliverables   String
   notes          String?
+
+  // Pricing details (from client spreadsheet)
+  videosPerBundle Int?           // 번들 당 영상 갯수
+  ratePerVideo    Float?         // $/Video (VAT포함)
+  totalPriceLocal Float?         // 인플루언서 제시 총 가격 (local currency)
+  totalPriceUsd   Float?         // 인플루언서 제시 총 가격 ($)
+  profileLink     String?        // 프로필 링크
+
+  // Feedback
+  picFeedback    String?        // 담당자 피드백
+  ceoFeedback    String?        // 주업님 Feedback
+  feedbackStatus FeedbackStatus @default(REQUESTED)  // 피드백 진행 사항
+  contractStatus ContractStatus @default(NEGOTIATE)   // 계약현황
 
   // Optional campaign link
   campaignId     String?
@@ -436,4 +463,6 @@ model ApprovalRequest {
   @@index([status])
   @@index([influencerId])
   @@index([createdAt])
+  @@index([feedbackStatus])
+  @@index([contractStatus])
 }
