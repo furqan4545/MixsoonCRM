@@ -466,3 +466,71 @@ model ApprovalRequest {
   @@index([feedbackStatus])
   @@index([contractStatus])
 }
+
+// ─── ALERTS & REMINDERS ───────────────────────────────────
+
+enum AlertType {
+  APPROVAL_PENDING          // Approval not reviewed in X days
+  EMAIL_NO_REPLY_INFLUENCER // Influencer hasn't replied in X days
+  EMAIL_NO_REPLY_US         // We haven't replied to influencer in X days
+}
+
+enum AlertEventStatus {
+  ACTIVE
+  DISMISSED
+  RESOLVED
+}
+
+model AlertRule {
+  id            String    @id @default(cuid())
+  type          AlertType @unique // one rule per alert type
+  thresholdDays Int       @default(3)
+  enabled       Boolean   @default(true)
+  templateId    String?
+  template      EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  events AlertEvent[]
+
+  @@index([type])
+}
+
+model AlertEvent {
+  id           String           @id @default(cuid())
+  ruleId       String
+  rule         AlertRule        @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  status       AlertEventStatus @default(ACTIVE)
+
+  // Polymorphic reference — exactly one is set
+  approvalId   String?
+  emailId      String?          // EmailMessage id
+  influencerId String?          // For quick lookups
+
+  title        String
+  message      String?
+  daysSince    Int              // Computed at creation time
+
+  dismissedAt  DateTime?
+  resolvedAt   DateTime?
+  createdAt    DateTime         @default(now())
+
+  @@unique([ruleId, approvalId])
+  @@unique([ruleId, emailId])
+  @@index([status])
+  @@index([ruleId])
+  @@index([createdAt])
+}
+
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  subject   String
+  bodyHtml  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  alertRules AlertRule[]
+
+  @@index([name])
+}

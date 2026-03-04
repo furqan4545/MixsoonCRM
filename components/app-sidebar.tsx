@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  AlertTriangle,
   CheckSquare,
   ChevronsUpDown,
   GitBranch,
@@ -46,6 +47,7 @@ const workspaceItems = [
   { title: "AI Runs", href: "/ai-filter", icon: Sparkles },
   { title: "Inbox", href: "/email", icon: Inbox },
   { title: "Approvals", href: "/approvals", icon: CheckSquare },
+  { title: "Alerts", href: "/alerts", icon: AlertTriangle },
 ];
 
 
@@ -94,6 +96,32 @@ function useApprovalCount(canSee: boolean) {
   return count;
 }
 
+function useAlertCount(canSee: boolean) {
+  const [count, setCount] = useState(0);
+
+  const fetchCount = useCallback(async () => {
+    if (!canSee) return;
+    try {
+      const res = await fetch("/api/alerts/active-count");
+      if (res.ok) {
+        const data = await res.json();
+        setCount(data.count ?? 0);
+      }
+    } catch {
+      // silent
+    }
+  }, [canSee]);
+
+  useEffect(() => {
+    fetchCount();
+    if (!canSee) return;
+    const id = setInterval(fetchCount, 30_000);
+    return () => clearInterval(id);
+  }, [fetchCount, canSee]);
+
+  return count;
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
   const { isMobile } = useSidebar();
@@ -102,6 +130,8 @@ export function AppSidebar() {
   const showUserManagement = hasPermission(permissions, "users", "write");
   const canSeeApprovals = canSeeNavItem("/approvals", permissions);
   const pendingApprovalCount = useApprovalCount(canSeeApprovals);
+  const canSeeAlerts = canSeeNavItem("/alerts", permissions);
+  const activeAlertCount = useAlertCount(canSeeAlerts);
 
   return (
     <Sidebar collapsible="icon">
@@ -149,6 +179,15 @@ export function AppSidebar() {
                             className="ml-auto h-5 min-w-5 rounded-full px-1.5 text-[10px] font-semibold"
                           >
                             {pendingApprovalCount}
+                          </Badge>
+                        ) : null}
+                        {item.href === "/alerts" &&
+                        activeAlertCount > 0 ? (
+                          <Badge
+                            variant="destructive"
+                            className="ml-auto h-5 min-w-5 rounded-full px-1.5 text-[10px] font-semibold"
+                          >
+                            {activeAlertCount}
                           </Badge>
                         ) : null}
                       </Link>
