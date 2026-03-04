@@ -102,22 +102,22 @@ function statusBadge(status: string) {
 function feedbackStatusBadge(status: string) {
   const config: Record<string, { label: string; className: string }> = {
     REQUESTED: {
-      label: "피드백 요청",
+      label: "Requested",
       className:
         "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-700",
     },
     CEO_REVIEWED: {
-      label: "대표님 피드백",
+      label: "CEO Reviewed",
       className:
         "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/30 dark:text-purple-200 dark:border-purple-700",
     },
     APPLIED: {
-      label: "반영 완료",
+      label: "Applied",
       className:
         "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-200 dark:border-green-700",
     },
     SPECIAL: {
-      label: "특별 관리",
+      label: "Special",
       className:
         "bg-pink-100 text-pink-800 border-pink-300 dark:bg-pink-900/30 dark:text-pink-200 dark:border-pink-700",
     },
@@ -342,20 +342,20 @@ export default function ApprovalsPage() {
               <thead>
                 <tr className="border-b bg-muted/40">
                   <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Username</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">담당자 (PIC)</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">PIC</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Country</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Platform</th>
                   <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Followers</th>
-                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">번들 당 영상 갯수</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">통화 단위</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">$/Video (VAT)</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">총 가격 (Local)</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">총 가격 ($)</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap max-w-[200px]">담당자 피드백</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">프로필 링크</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap max-w-[200px]">주업님 Feedback</th>
-                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">피드백 진행 사항</th>
-                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">계약현황</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">Videos/Bundle</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Currency</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">$/Video</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Total (Local)</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Total (USD)</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap max-w-[200px]">PIC Notes</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Profile</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap max-w-[200px]">CEO Feedback</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">Feedback Status</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">Contract</th>
                   <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">Status</th>
                   <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap w-[1%]" />
                 </tr>

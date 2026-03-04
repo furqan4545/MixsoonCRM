@@ -40,10 +40,10 @@ function formatCurrency(amount: number, currency: string) {
 }
 
 const FEEDBACK_STATUS_OPTIONS = [
-  { value: "REQUESTED", label: "피드백 요청" },
-  { value: "CEO_REVIEWED", label: "대표님 피드백" },
-  { value: "APPLIED", label: "반영 완료" },
-  { value: "SPECIAL", label: "특별 관리" },
+  { value: "REQUESTED", label: "Requested" },
+  { value: "CEO_REVIEWED", label: "CEO Reviewed" },
+  { value: "APPLIED", label: "Applied" },
+  { value: "SPECIAL", label: "Special" },
 ];
 
 const CONTRACT_STATUS_OPTIONS = [
@@ -351,11 +351,11 @@ export function ReviewApprovalDialog({
             </div>
           )}
 
-          {/* ── PIC Feedback (read-only) ── */}
+          {/* ── PIC Notes (read-only) ── */}
           {approval.picFeedback && (
             <div>
               <p className="text-xs font-semibold text-muted-foreground mb-1">
-                담당자 피드백 (PIC Feedback)
+                PIC Notes
               </p>
               <p className="text-sm whitespace-pre-wrap rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3">
                 {approval.picFeedback}
@@ -372,7 +372,7 @@ export function ReviewApprovalDialog({
             {/* CEO Feedback textarea */}
             <div>
               <Label className="text-xs font-semibold">
-                대표님 Feedback (CEO Feedback)
+                CEO Feedback
               </Label>
               {isAdmin ? (
                 <Textarea
@@ -393,7 +393,7 @@ export function ReviewApprovalDialog({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs font-semibold">
-                  피드백 진행 사항 (Feedback Status)
+                  Feedback Status
                 </Label>
                 {isAdmin ? (
                   <select
@@ -415,7 +415,7 @@ export function ReviewApprovalDialog({
               </div>
               <div>
                 <Label className="text-xs font-semibold">
-                  계약현황 (Contract Status)
+                  Contract Status
                 </Label>
                 {isAdmin ? (
                   <select
@@ -624,19 +624,19 @@ function StatusBadge({ status }: { status: string }) {
 function FeedbackBadge({ status }: { status: string }) {
   const config: Record<string, { label: string; className: string }> = {
     REQUESTED: {
-      label: "피드백 요청",
+      label: "Requested",
       className: "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-200",
     },
     CEO_REVIEWED: {
-      label: "대표님 피드백",
+      label: "CEO Reviewed",
       className: "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/30 dark:text-purple-200",
     },
     APPLIED: {
-      label: "반영 완료",
+      label: "Applied",
       className: "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-200",
     },
     SPECIAL: {
-      label: "특별 관리",
+      label: "Special",
       className: "bg-pink-100 text-pink-800 border-pink-300 dark:bg-pink-900/30 dark:text-pink-200",
     },
   };

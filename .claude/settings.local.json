@@ -31,7 +31,9 @@
       "Bash(ls -la .env*)",
       "Bash(ls -la /Users/topg/Desktop/typescript/mixsoon/.env*)",
       "Bash(npx prisma db push --schema=.claude/worktrees/clever-matsumoto/prisma/schema.prisma)",
-      "Bash(git add -A)"
+      "Bash(git add -A)",
+      "Bash(git merge claude/clever-matsumoto --ff-only)",
+      "Bash(node -e \":*)"
     ]
   }
 }

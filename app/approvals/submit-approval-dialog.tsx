@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,7 +13,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Globe, Users, TrendingUp, MapPin, ExternalLink } from "lucide-react";
+import {
+  Globe,
+  Users,
+  TrendingUp,
+  MapPin,
+  ExternalLink,
+  Search,
+  X,
+} from "lucide-react";
 
 type InfluencerOption = {
   id: string;
@@ -73,7 +81,6 @@ export function SubmitApprovalDialog({
   const [deliverables, setDeliverables] = useState(
     prefill?.deliverables ?? "",
   );
-  const [notes, setNotes] = useState(prefill?.notes ?? "");
   const [campaignId, setCampaignId] = useState(prefill?.campaignId ?? "");
 
   // New pricing fields
@@ -82,15 +89,45 @@ export function SubmitApprovalDialog({
   const [totalPriceLocal, setTotalPriceLocal] = useState("");
   const [totalPriceUsd, setTotalPriceUsd] = useState("");
   const [profileLink, setProfileLink] = useState("");
-  const [picFeedback, setPicFeedback] = useState("");
+  const [picNotes, setPicNotes] = useState(prefill?.notes ?? "");
 
   const [loading, setLoading] = useState(false);
+
+  // Searchable influencer dropdown state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
 
   // Selected influencer details
   const selectedInfluencer = useMemo(
     () => influencers.find((i) => i.id === influencerId) ?? null,
     [influencers, influencerId],
   );
+
+  // Filtered influencer list for search
+  const filteredInfluencers = useMemo(() => {
+    if (!searchQuery.trim()) return influencers;
+    const q = searchQuery.toLowerCase();
+    return influencers.filter(
+      (inf) =>
+        inf.username.toLowerCase().includes(q) ||
+        (inf.displayName && inf.displayName.toLowerCase().includes(q)) ||
+        (inf.email && inf.email.toLowerCase().includes(q)) ||
+        (inf.country && inf.country.toLowerCase().includes(q)) ||
+        (inf.platform && inf.platform.toLowerCase().includes(q)),
+    );
+  }, [influencers, searchQuery]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Reset form when dialog opens or prefill changes
   useEffect(() => {
@@ -99,14 +136,15 @@ export function SubmitApprovalDialog({
       setRate(prefill?.rate?.toString() ?? "");
       setCurrency(prefill?.currency ?? "USD");
       setDeliverables(prefill?.deliverables ?? "");
-      setNotes(prefill?.notes ?? "");
       setCampaignId(prefill?.campaignId ?? "");
       setVideosPerBundle("");
       setRatePerVideo("");
       setTotalPriceLocal("");
       setTotalPriceUsd("");
       setProfileLink("");
-      setPicFeedback("");
+      setPicNotes(prefill?.notes ?? "");
+      setSearchQuery("");
+      setShowDropdown(false);
     }
   }, [open, prefill]);
 
@@ -118,17 +156,17 @@ export function SubmitApprovalDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedInfluencer]);
 
-  // Load influencers (NEGOTIATING stage) and campaigns when dialog opens
+  // Load ALL influencers and campaigns when dialog opens
   useEffect(() => {
     if (!open) return;
     setLoadingOptions(true);
     Promise.all([
-      fetch("/api/influencers?pipelineStage=NEGOTIATING&limit=500&minimal=true")
+      fetch("/api/influencers?limit=1000&minimal=true")
         .then((r) => (r.ok ? r.json() : { influencers: [] }))
         .then((d) => d.influencers ?? []),
       fetch("/api/marketing-campaigns")
-        .then((r) => (r.ok ? r.json() : { campaigns: [] }))
-        .then((d) => d.campaigns ?? []),
+        .then((r) => (r.ok ? r.json() : []))
+        .then((d) => (Array.isArray(d) ? d : d.campaigns ?? [])),
     ])
       .then(([inf, camp]) => {
         setInfluencers(inf);
@@ -136,6 +174,22 @@ export function SubmitApprovalDialog({
       })
       .finally(() => setLoadingOptions(false));
   }, [open]);
+
+  const selectInfluencer = (inf: InfluencerOption) => {
+    setInfluencerId(inf.id);
+    setSearchQuery("");
+    setShowDropdown(false);
+    // Auto-fill profile link
+    if (inf.profileUrl) {
+      setProfileLink(inf.profileUrl);
+    }
+  };
+
+  const clearInfluencer = () => {
+    setInfluencerId("");
+    setProfileLink("");
+    setSearchQuery("");
+  };
 
   const handleSubmit = async () => {
     if (!influencerId) {
@@ -161,14 +215,14 @@ export function SubmitApprovalDialog({
           rate: parseFloat(rate),
           currency: currency.trim() || "USD",
           deliverables: deliverables.trim(),
-          notes: notes.trim() || null,
+          notes: null,
           campaignId: campaignId || null,
           videosPerBundle: videosPerBundle ? parseInt(videosPerBundle) : null,
           ratePerVideo: ratePerVideo ? parseFloat(ratePerVideo) : null,
           totalPriceLocal: totalPriceLocal ? parseFloat(totalPriceLocal) : null,
           totalPriceUsd: totalPriceUsd ? parseFloat(totalPriceUsd) : null,
           profileLink: profileLink.trim() || null,
-          picFeedback: picFeedback.trim() || null,
+          picFeedback: picNotes.trim() || null,
         }),
       });
 
@@ -195,33 +249,128 @@ export function SubmitApprovalDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* Influencer select */}
+          {/* Searchable Influencer Select */}
           <div>
-            <Label htmlFor="approval-influencer" className="text-xs font-semibold">
-              Influencer *
-            </Label>
-            <select
-              id="approval-influencer"
-              value={influencerId}
-              onChange={(e) => setInfluencerId(e.target.value)}
-              disabled={loadingOptions || !!prefill?.influencerId}
-              className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-            >
-              <option value="">
-                {loadingOptions ? "Loading..." : "Select influencer (Negotiating stage)"}
-              </option>
-              {influencers.map((inf) => (
-                <option key={inf.id} value={inf.id}>
-                  @{inf.username}
-                  {inf.displayName ? ` — ${inf.displayName}` : ""}
-                  {inf.platform ? ` · ${inf.platform}` : ""}
-                  {inf.country ? ` · ${inf.country}` : ""}
-                </option>
-              ))}
-            </select>
+            <Label className="text-xs font-semibold">Influencer *</Label>
+
+            {/* Selected influencer chip OR search input */}
+            {selectedInfluencer && !prefill?.influencerId ? (
+              <div className="mt-1 flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5">
+                {selectedInfluencer.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={selectedInfluencer.avatarUrl}
+                    alt=""
+                    className="h-6 w-6 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-pink-500 text-[10px] font-bold text-white">
+                    {selectedInfluencer.username.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <span className="flex-1 text-sm font-medium">
+                  @{selectedInfluencer.username}
+                  {selectedInfluencer.displayName
+                    ? ` — ${selectedInfluencer.displayName}`
+                    : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={clearInfluencer}
+                  className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : prefill?.influencerId && selectedInfluencer ? (
+              <div className="mt-1 flex items-center gap-2 rounded-md border border-input bg-muted/50 px-3 py-1.5 opacity-70">
+                <span className="text-sm">
+                  @{selectedInfluencer.username}
+                </span>
+              </div>
+            ) : (
+              <div ref={searchRef} className="relative mt-1">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder={
+                      loadingOptions
+                        ? "Loading influencers..."
+                        : "Search by username, name, country..."
+                    }
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setShowDropdown(true);
+                    }}
+                    onFocus={() => setShowDropdown(true)}
+                    disabled={loadingOptions}
+                    className="pl-8"
+                  />
+                </div>
+
+                {/* Dropdown list */}
+                {showDropdown && !loadingOptions && (
+                  <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-md border bg-popover shadow-lg">
+                    {filteredInfluencers.length === 0 ? (
+                      <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                        {searchQuery
+                          ? "No influencers found"
+                          : "No influencers available"}
+                      </div>
+                    ) : (
+                      filteredInfluencers.slice(0, 50).map((inf) => (
+                        <button
+                          key={inf.id}
+                          type="button"
+                          onClick={() => selectInfluencer(inf)}
+                          className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-accent transition-colors"
+                        >
+                          {inf.avatarUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={inf.avatarUrl}
+                              alt=""
+                              className="h-7 w-7 rounded-full object-cover shrink-0"
+                            />
+                          ) : (
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-pink-500 text-[10px] font-bold text-white shrink-0">
+                              {inf.username.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium truncate">
+                              @{inf.username}
+                              {inf.displayName
+                                ? ` — ${inf.displayName}`
+                                : ""}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              {inf.platform && <span>{inf.platform}</span>}
+                              {inf.country && <span>{inf.country}</span>}
+                              {inf.followers != null && (
+                                <span>
+                                  {formatFollowers(inf.followers)} followers
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                    {filteredInfluencers.length > 50 && (
+                      <div className="px-3 py-2 text-center text-xs text-muted-foreground border-t">
+                        Showing 50 of {filteredInfluencers.length} results —
+                        type to narrow down
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* ── Influencer Detail Card (shows when selected) ── */}
+          {/* Influencer Detail Card (shows when selected) */}
           {selectedInfluencer && (
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="flex items-center gap-3">
@@ -274,7 +423,9 @@ export function SubmitApprovalDialog({
                       </span>
                     )}
                     {selectedInfluencer.email && (
-                      <span className="truncate">{selectedInfluencer.email}</span>
+                      <span className="truncate">
+                        {selectedInfluencer.email}
+                      </span>
                     )}
                     {selectedInfluencer.profileUrl && (
                       <a
@@ -311,8 +462,11 @@ export function SubmitApprovalDialog({
               />
             </div>
             <div>
-              <Label htmlFor="approval-currency" className="text-xs font-semibold">
-                통화 단위 (Currency)
+              <Label
+                htmlFor="approval-currency"
+                className="text-xs font-semibold"
+              >
+                Currency
               </Label>
               <Input
                 id="approval-currency"
@@ -327,8 +481,11 @@ export function SubmitApprovalDialog({
           {/* Pricing details row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="approval-videos" className="text-xs font-semibold">
-                번들 당 영상 갯수 (Videos/Bundle)
+              <Label
+                htmlFor="approval-videos"
+                className="text-xs font-semibold"
+              >
+                Videos per Bundle
               </Label>
               <Input
                 id="approval-videos"
@@ -342,7 +499,7 @@ export function SubmitApprovalDialog({
             </div>
             <div>
               <Label htmlFor="approval-rpv" className="text-xs font-semibold">
-                $/Video (VAT 포함)
+                $ per Video (VAT incl.)
               </Label>
               <Input
                 id="approval-rpv"
@@ -360,8 +517,11 @@ export function SubmitApprovalDialog({
           {/* Total prices row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="approval-local" className="text-xs font-semibold">
-                인플루언서 제시 총 가격 (Local)
+              <Label
+                htmlFor="approval-local"
+                className="text-xs font-semibold"
+              >
+                Total Price (Local Currency)
               </Label>
               <Input
                 id="approval-local"
@@ -376,7 +536,7 @@ export function SubmitApprovalDialog({
             </div>
             <div>
               <Label htmlFor="approval-usd" className="text-xs font-semibold">
-                인플루언서 제시 총 가격 ($)
+                Total Price (USD)
               </Label>
               <Input
                 id="approval-usd"
@@ -393,8 +553,11 @@ export function SubmitApprovalDialog({
 
           {/* Profile Link */}
           <div>
-            <Label htmlFor="approval-profile" className="text-xs font-semibold">
-              프로필 링크 (Profile Link)
+            <Label
+              htmlFor="approval-profile"
+              className="text-xs font-semibold"
+            >
+              Profile Link
             </Label>
             <Input
               id="approval-profile"
@@ -408,7 +571,10 @@ export function SubmitApprovalDialog({
 
           {/* Deliverables */}
           <div>
-            <Label htmlFor="approval-deliverables" className="text-xs font-semibold">
+            <Label
+              htmlFor="approval-deliverables"
+              className="text-xs font-semibold"
+            >
               Deliverables *
             </Label>
             <Textarea
@@ -421,38 +587,29 @@ export function SubmitApprovalDialog({
             />
           </div>
 
-          {/* PIC Feedback */}
-          <div>
-            <Label htmlFor="approval-pic-feedback" className="text-xs font-semibold">
-              담당자 피드백 (PIC Feedback)
-            </Label>
-            <Textarea
-              id="approval-pic-feedback"
-              placeholder="Recommendation for CEO review..."
-              value={picFeedback}
-              onChange={(e) => setPicFeedback(e.target.value)}
-              rows={3}
-              className="mt-1 resize-none"
-            />
-          </div>
-
-          {/* Notes + Campaign */}
+          {/* PIC Notes + Campaign */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="approval-notes" className="text-xs font-semibold">
-                Notes
+              <Label
+                htmlFor="approval-pic-notes"
+                className="text-xs font-semibold"
+              >
+                PIC Notes
               </Label>
               <Textarea
-                id="approval-notes"
-                placeholder="Any additional context..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
+                id="approval-pic-notes"
+                placeholder="Notes & recommendations for CEO review..."
+                value={picNotes}
+                onChange={(e) => setPicNotes(e.target.value)}
+                rows={3}
                 className="mt-1 resize-none"
               />
             </div>
             <div>
-              <Label htmlFor="approval-campaign" className="text-xs font-semibold">
+              <Label
+                htmlFor="approval-campaign"
+                className="text-xs font-semibold"
+              >
                 Campaign (optional)
               </Label>
               <select
@@ -483,7 +640,9 @@ export function SubmitApprovalDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={loading || !influencerId || !rate || !deliverables.trim()}
+            disabled={
+              loading || !influencerId || !rate || !deliverables.trim()
+            }
           >
             {loading ? "Submitting..." : "Submit for Approval"}
           </Button>
