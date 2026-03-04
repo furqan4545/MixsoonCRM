@@ -62,7 +62,11 @@ export async function GET(request: NextRequest) {
           profileUrl: true,
         },
       });
-      return NextResponse.json({ influencers });
+      const serialized = influencers.map((inf) => ({
+        ...inf,
+        avatarProxied: fixThumbnailUrl(inf.avatarUrl),
+      }));
+      return NextResponse.json({ influencers: serialized });
     }
 
     // Full mode with pagination for the dashboard

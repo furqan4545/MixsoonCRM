@@ -3,6 +3,11 @@ import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
 import { createNotification } from "@/app/lib/notifications";
 
+function fixThumbnailUrl(url: string | null): string | null {
+  if (!url) return null;
+  return `/api/thumbnail?url=${encodeURIComponent(url)}`;
+}
+
 // POST /api/approvals — PIC submits an approval request
 export async function POST(request: NextRequest) {
   let user;
@@ -170,7 +175,16 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ approvals, pendingCount });
+    // Add proxied avatar URLs so browser can display TikTok avatars
+    const serialized = approvals.map((a) => ({
+      ...a,
+      influencer: {
+        ...a.influencer,
+        avatarProxied: fixThumbnailUrl(a.influencer.avatarUrl),
+      },
+    }));
+
+    return NextResponse.json({ approvals: serialized, pendingCount });
   } catch (error) {
     console.error("[GET /api/approvals]", error);
     return NextResponse.json(

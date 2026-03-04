@@ -25,6 +25,7 @@ export interface ApprovalRow {
     username: string;
     displayName: string | null;
     avatarUrl: string | null;
+    avatarProxied: string | null;
     rate: number | null;
     followers: number | null;
     platform: string | null;
@@ -370,10 +371,10 @@ export default function ApprovalsPage() {
                     {/* Username (sticky) */}
                     <td className="sticky left-0 z-10 bg-card px-3 py-2.5 font-medium whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        {row.influencer.avatarUrl ? (
+                        {row.influencer.avatarProxied ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={row.influencer.avatarUrl}
+                            src={row.influencer.avatarProxied}
                             alt=""
                             className="h-6 w-6 rounded-full object-cover"
                           />

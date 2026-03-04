@@ -190,10 +190,10 @@ export function ReviewApprovalDialog({
             <div className="flex items-start gap-4">
               {/* Avatar */}
               <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-pink-500 text-xl font-bold text-white">
-                {inf.avatarUrl ? (
+                {inf.avatarProxied ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={inf.avatarUrl}
+                    src={inf.avatarProxied}
                     alt={inf.username}
                     className="h-14 w-14 rounded-full object-cover"
                   />

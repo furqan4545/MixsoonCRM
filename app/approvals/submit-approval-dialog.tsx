@@ -28,6 +28,7 @@ type InfluencerOption = {
   username: string;
   displayName: string | null;
   avatarUrl: string | null;
+  avatarProxied: string | null;
   email: string | null;
   followers: number | null;
   platform: string | null;
@@ -269,10 +270,10 @@ export function SubmitApprovalDialog({
             {/* Selected influencer chip OR search input */}
             {selectedInfluencer && !prefill?.influencerId ? (
               <div className="mt-1 flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5">
-                {selectedInfluencer.avatarUrl ? (
+                {selectedInfluencer.avatarProxied ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={selectedInfluencer.avatarUrl}
+                    src={selectedInfluencer.avatarProxied}
                     alt=""
                     className="h-6 w-6 rounded-full object-cover"
                   />
@@ -339,10 +340,10 @@ export function SubmitApprovalDialog({
                           onClick={() => selectInfluencer(inf)}
                           className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-accent transition-colors"
                         >
-                          {inf.avatarUrl ? (
+                          {inf.avatarProxied ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
-                              src={inf.avatarUrl}
+                              src={inf.avatarProxied}
                               alt=""
                               className="h-7 w-7 rounded-full object-cover shrink-0"
                             />
@@ -387,10 +388,10 @@ export function SubmitApprovalDialog({
           {selectedInfluencer && (
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="flex items-center gap-3">
-                {selectedInfluencer.avatarUrl ? (
+                {selectedInfluencer.avatarProxied ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={selectedInfluencer.avatarUrl}
+                    src={selectedInfluencer.avatarProxied}
                     alt=""
                     className="h-10 w-10 rounded-full object-cover"
                   />
