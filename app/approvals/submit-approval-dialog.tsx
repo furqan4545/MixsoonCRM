@@ -601,46 +601,46 @@ export function SubmitApprovalDialog({
             />
           </div>
 
-          {/* PIC Notes + Campaign */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label
-                htmlFor="approval-pic-notes"
-                className="text-xs font-semibold"
-              >
-                PIC Notes
-              </Label>
-              <Textarea
-                id="approval-pic-notes"
-                placeholder="Notes & recommendations for CEO review..."
-                value={picNotes}
-                onChange={(e) => setPicNotes(e.target.value)}
-                rows={3}
-                className="mt-1 resize-none"
-              />
-            </div>
-            <div>
-              <Label
-                htmlFor="approval-campaign"
-                className="text-xs font-semibold"
-              >
-                Campaign (optional)
-              </Label>
-              <select
-                id="approval-campaign"
-                value={campaignId}
-                onChange={(e) => setCampaignId(e.target.value)}
-                disabled={loadingOptions}
-                className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-              >
-                <option value="">None</option>
-                {campaigns.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          {/* Campaign */}
+          <div>
+            <Label
+              htmlFor="approval-campaign"
+              className="text-xs font-semibold"
+            >
+              Campaign (optional)
+            </Label>
+            <select
+              id="approval-campaign"
+              value={campaignId}
+              onChange={(e) => setCampaignId(e.target.value)}
+              disabled={loadingOptions}
+              className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+            >
+              <option value="">None</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* PIC Notes */}
+          <div>
+            <Label
+              htmlFor="approval-pic-notes"
+              className="text-xs font-semibold"
+            >
+              PIC Notes
+            </Label>
+            <Textarea
+              id="approval-pic-notes"
+              placeholder="Notes & recommendations for CEO review..."
+              value={picNotes}
+              onChange={(e) => setPicNotes(e.target.value)}
+              rows={3}
+              className="mt-1 resize-none"
+            />
           </div>
         </div>
 
