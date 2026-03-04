@@ -1,15 +1,17 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   Search,
   SlidersHorizontal,
   Plus,
   ChevronRight,
+  ChevronDown,
   Trash2,
   ArrowRightLeft,
   Sparkles,
+  Check,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -118,14 +120,6 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-const STAGE_CONFIG: Record<string, { label: string; color: string }> = {
-  PROSPECT: { label: "Prospect", color: "text-muted-foreground" },
-  OUTREACH: { label: "Outreach", color: "text-orange-600" },
-  NEGOTIATING: { label: "Negotiating", color: "text-red-600" },
-  CONTRACTED: { label: "Contracted", color: "text-emerald-600" },
-  COMPLETED: { label: "Completed", color: "text-emerald-700" },
-};
-
 type QueueFilter = "ALL" | "APPROVED" | "OKISH" | "REJECTED" | "UNSCORED";
 
 const QUEUE_TABS: {
@@ -204,6 +198,92 @@ function QueueBadge({ bucket }: { bucket: string | null }) {
     >
       {label[bucket] ?? bucket}
     </span>
+  );
+}
+
+const STAGE_OPTIONS = [
+  { key: "PROSPECT", label: "Prospect", badgeColor: "bg-gray-100 text-gray-700 border-gray-200" },
+  { key: "OUTREACH", label: "Outreach", badgeColor: "bg-orange-100 text-orange-700 border-orange-200" },
+  { key: "NEGOTIATING", label: "Negotiating", badgeColor: "bg-amber-100 text-amber-700 border-amber-200" },
+  { key: "CONTRACTED", label: "Contracted", badgeColor: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  { key: "COMPLETED", label: "Completed", badgeColor: "bg-blue-100 text-blue-700 border-blue-200" },
+] as const;
+
+function StageCell({
+  influencerId,
+  currentStage,
+  onUpdated,
+}: {
+  influencerId: string;
+  currentStage: string;
+  onUpdated: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const current = STAGE_OPTIONS.find((s) => s.key === currentStage) ?? STAGE_OPTIONS[0];
+
+  const handleSelect = async (stageKey: string) => {
+    setOpen(false);
+    if (stageKey === currentStage) return;
+    try {
+      const res = await fetch(`/api/influencers/${influencerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pipelineStage: stageKey }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast.success("Stage updated");
+      onUpdated();
+    } catch {
+      toast.error("Failed to update stage");
+    }
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(!open);
+        }}
+        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors hover:opacity-80 ${current.badgeColor}`}
+      >
+        {current.label}
+        <ChevronDown className="h-3 w-3" />
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-full z-50 mt-1 w-36 rounded-lg border bg-card shadow-lg py-1"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {STAGE_OPTIONS.map((stage) => (
+            <button
+              key={stage.key}
+              onClick={() => handleSelect(stage.key)}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors"
+            >
+              <span
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${stage.badgeColor}`}
+              >
+                {stage.label}
+              </span>
+              {stage.key === currentStage && (
+                <Check className="ml-auto h-3 w-3 text-emerald-600" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -658,8 +738,6 @@ export function InfluencersDashboard({ influencers }: Props) {
                 </thead>
                 <tbody>
                   {filtered.map((inf) => {
-                    const stage =
-                      STAGE_CONFIG[inf.pipelineStage] ?? STAGE_CONFIG.PROSPECT;
                     const isChecked = selectedRows.has(inf.id);
                     return (
                       <tr
@@ -715,11 +793,11 @@ export function InfluencersDashboard({ influencers }: Props) {
                           </td>
                         )}
                         <td className="px-4 py-3">
-                          <span
-                            className={`text-sm font-medium ${stage.color}`}
-                          >
-                            {stage.label}
-                          </span>
+                          <StageCell
+                            influencerId={inf.id}
+                            currentStage={inf.pipelineStage}
+                            onUpdated={() => router.refresh()}
+                          />
                         </td>
                         <td className="px-2 py-3">
                           <ChevronRight className="h-4 w-4 text-muted-foreground" />

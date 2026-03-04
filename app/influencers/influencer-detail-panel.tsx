@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Edit2,
   Mail,
-  Bell,
   Globe,
   Plus,
   X,
@@ -15,6 +14,12 @@ import {
   Calendar,
   ExternalLink,
   Megaphone,
+  ChevronDown,
+  ChevronRight,
+  Send,
+  Inbox,
+  Loader2,
+  Check,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -60,11 +65,11 @@ function getAvatarColor(name: string): string {
 }
 
 const PIPELINE_STAGES = [
-  { key: "PROSPECT", label: "Prospect" },
-  { key: "OUTREACH", label: "Outreach" },
-  { key: "NEGOTIATING", label: "Negotiating" },
-  { key: "CONTRACTED", label: "Contracted" },
-  { key: "COMPLETED", label: "Completed" },
+  { key: "PROSPECT", label: "Prospect", color: "bg-gray-100 text-gray-700 border-gray-200" },
+  { key: "OUTREACH", label: "Outreach", color: "bg-orange-100 text-orange-700 border-orange-200" },
+  { key: "NEGOTIATING", label: "Negotiating", color: "bg-amber-100 text-amber-700 border-amber-200" },
+  { key: "CONTRACTED", label: "Contracted", color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  { key: "COMPLETED", label: "Completed", color: "bg-blue-100 text-blue-700 border-blue-200" },
 ] as const;
 
 function getActivityDotColor(type: string): string {
@@ -101,6 +106,311 @@ function timeAgo(dateStr: string): string {
   return `${diffMonths} month${diffMonths > 1 ? "s" : ""} ago`;
 }
 
+function formatEmailDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return "Yesterday";
+  }
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+/* ── Stage dropdown ── */
+function StageDropdown({
+  currentStage,
+  onSelect,
+  saving,
+}: {
+  currentStage: string;
+  onSelect: (stage: string) => void;
+  saving: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const current = PIPELINE_STAGES.find((s) => s.key === currentStage) ?? PIPELINE_STAGES[0];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        disabled={saving}
+        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors hover:opacity-80 ${current.color}`}
+      >
+        {current.label}
+        <ChevronDown className="h-3 w-3" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-40 rounded-lg border bg-card shadow-lg py-1">
+          {PIPELINE_STAGES.map((stage) => (
+            <button
+              key={stage.key}
+              onClick={() => {
+                if (stage.key !== currentStage) onSelect(stage.key);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors"
+            >
+              <span
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${stage.color}`}
+              >
+                {stage.label}
+              </span>
+              {stage.key === currentStage && (
+                <Check className="ml-auto h-3 w-3 text-emerald-600" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Email item type ── */
+interface EmailItem {
+  id: string;
+  from: string;
+  to: string[];
+  subject: string;
+  preview: string;
+  bodyHtml: string | null;
+  bodyText: string | null;
+  folder: string;
+  isRead: boolean;
+  date: string;
+  threadId: string | null;
+  isSent: boolean;
+}
+
+/* ── Conversations tab content (lazy loaded) ── */
+function ConversationsTab({ influencerId, email }: { influencerId: string; email: string | null }) {
+  const [emails, setEmails] = useState<EmailItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const fetchedRef = useRef(false);
+
+  const fetchEmails = useCallback(
+    async (p: number) => {
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `/api/influencers/${influencerId}/emails?page=${p}&pageSize=15`
+        );
+        if (!res.ok) throw new Error("Failed to load");
+        const data = await res.json();
+        setEmails(data.items);
+        setTotalPages(data.totalPages);
+        setTotal(data.total);
+        setPage(data.page);
+      } catch {
+        toast.error("Failed to load emails");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [influencerId]
+  );
+
+  useEffect(() => {
+    if (!fetchedRef.current) {
+      fetchedRef.current = true;
+      fetchEmails(1);
+    }
+  }, [fetchEmails]);
+
+  if (loading && emails.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!loading && emails.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+          <Mail className="h-5 w-5 text-muted-foreground" />
+        </div>
+        <p className="text-sm text-muted-foreground">No conversations yet.</p>
+        {email && (
+          <Button asChild variant="outline" size="sm" className="mt-3">
+            <a
+              href={`/email/compose?to=${encodeURIComponent(email)}&influencerId=${influencerId}`}
+            >
+              <Mail className="mr-2 h-3.5 w-3.5" />
+              Send Email
+            </a>
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs text-muted-foreground">
+          {total} email{total !== 1 ? "s" : ""}
+        </p>
+        {email && (
+          <Button asChild variant="outline" size="sm" className="h-7 text-xs gap-1.5">
+            <a
+              href={`/email/compose?to=${encodeURIComponent(email)}&influencerId=${influencerId}`}
+            >
+              <Send className="h-3 w-3" />
+              Compose
+            </a>
+          </Button>
+        )}
+      </div>
+
+      {/* Email list */}
+      <div className="space-y-1.5">
+        {emails.map((em) => {
+          const isExpanded = expandedId === em.id;
+          return (
+            <div
+              key={em.id}
+              className="rounded-lg border bg-background overflow-hidden transition-shadow hover:shadow-sm"
+            >
+              {/* Collapsed row */}
+              <button
+                onClick={() => setExpandedId(isExpanded ? null : em.id)}
+                className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left"
+              >
+                {/* Direction icon */}
+                <div
+                  className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+                    em.isSent
+                      ? "bg-blue-100 text-blue-600"
+                      : "bg-emerald-100 text-emerald-600"
+                  }`}
+                >
+                  {em.isSent ? (
+                    <Send className="h-3 w-3" />
+                  ) : (
+                    <Inbox className="h-3 w-3" />
+                  )}
+                </div>
+                {/* Content */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-xs font-semibold">
+                      {em.subject || "(no subject)"}
+                    </p>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      {formatEmailDate(em.date)}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {em.isSent ? `To: ${em.to.join(", ")}` : `From: ${em.from}`}
+                  </p>
+                  {!isExpanded && (
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground/70">
+                      {em.preview}
+                    </p>
+                  )}
+                </div>
+                {/* Expand chevron */}
+                <ChevronRight
+                  className={`mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${
+                    isExpanded ? "rotate-90" : ""
+                  }`}
+                />
+              </button>
+
+              {/* Expanded body */}
+              {isExpanded && (
+                <div className="border-t px-3 py-3">
+                  <div className="mb-2 flex items-center gap-3 text-[10px] text-muted-foreground">
+                    <span>From: {em.from}</span>
+                    <span>To: {em.to.join(", ")}</span>
+                  </div>
+                  {em.bodyHtml ? (
+                    <div
+                      className="prose prose-sm max-w-none text-xs [&_*]:!text-xs [&_p]:my-1 [&_br]:leading-tight overflow-hidden"
+                      dangerouslySetInnerHTML={{ __html: em.bodyHtml }}
+                    />
+                  ) : (
+                    <p className="whitespace-pre-wrap text-xs text-foreground/80">
+                      {em.bodyText || "No content"}
+                    </p>
+                  )}
+                  {/* Reply link */}
+                  {email && (
+                    <div className="mt-3 pt-2 border-t">
+                      <Button asChild variant="ghost" size="sm" className="h-7 text-xs gap-1.5">
+                        <a
+                          href={`/email/compose?to=${encodeURIComponent(
+                            em.isSent ? em.to[0] : em.from
+                          )}&influencerId=${influencerId}&subject=${encodeURIComponent(
+                            em.subject.startsWith("Re:") ? em.subject : `Re: ${em.subject}`
+                          )}`}
+                        >
+                          <Mail className="h-3 w-3" />
+                          Reply
+                        </a>
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-3">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            disabled={page <= 1 || loading}
+            onClick={() => fetchEmails(page - 1)}
+          >
+            Previous
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            disabled={page >= totalPages || loading}
+            onClick={() => fetchEmails(page + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Main panel ── */
 interface Props {
   influencer: InfluencerRow;
   onClose: () => void;
@@ -113,8 +423,10 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
   const [newTag, setNewTag] = useState("");
   const [showTagInput, setShowTagInput] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [currentStage, setCurrentStage] = useState(influencer.pipelineStage);
+  const [activeTab, setActiveTab] = useState("overview");
 
-  const stageIndex = PIPELINE_STAGES.findIndex((s) => s.key === influencer.pipelineStage);
+  const stageIndex = PIPELINE_STAGES.findIndex((s) => s.key === currentStage);
 
   const totalViews = influencer.videos.reduce((sum, v) => sum + (v.views ?? 0), 0);
   const totalBookmarks = influencer.videos.reduce((sum, v) => sum + (v.bookmarks ?? 0), 0);
@@ -139,6 +451,14 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
       }
     },
     [influencer.id, router]
+  );
+
+  const handleStageChange = useCallback(
+    (stage: string) => {
+      setCurrentStage(stage);
+      saveField("pipelineStage", stage);
+    },
+    [saveField]
   );
 
   const handleAddTag = () => {
@@ -194,7 +514,6 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
       {/* Profile header */}
       <div className="px-6 pt-6 pb-4">
         <div className="flex items-start gap-4">
-          {/* Avatar — real pic from cloud/proxy, fallback to initials */}
           {influencer.avatarProxied ? (
             <ThumbnailImage
               src={influencer.avatarProxied}
@@ -225,9 +544,11 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
               {influencer.platform ? ` · ${influencer.platform}` : ""}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <Badge variant="outline" className="text-xs">
-                {PIPELINE_STAGES.find((s) => s.key === influencer.pipelineStage)?.label ?? "Prospect"}
-              </Badge>
+              <StageDropdown
+                currentStage={currentStage}
+                onSelect={handleStageChange}
+                saving={saving}
+              />
               {influencer.country && (
                 <Badge variant="outline" className="text-xs gap-1">
                   <Globe className="h-3 w-3" />
@@ -272,7 +593,7 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="overview" className="px-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="px-6">
         <TabsList className="w-full justify-start border-b bg-transparent p-0 h-auto rounded-none">
           <TabsTrigger
             value="overview"
@@ -451,7 +772,7 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
                 {PIPELINE_STAGES.map((stage, i) => (
                   <button
                     key={stage.key}
-                    onClick={() => saveField("pipelineStage", stage.key)}
+                    onClick={() => handleStageChange(stage.key)}
                     className={`text-[10px] transition-colors hover:text-foreground ${
                       i <= stageIndex
                         ? "font-semibold text-foreground"
@@ -540,7 +861,7 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
           </section>
         </TabsContent>
 
-        {/* Videos tab — restored from original detail page */}
+        {/* Videos tab */}
         <TabsContent value="videos" className="mt-0 pt-5 pb-8">
           {influencer.videos.length === 0 ? (
             <div className="rounded-xl border bg-background px-6 py-12 text-center text-sm text-muted-foreground">
@@ -553,7 +874,6 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
                   key={video.id}
                   className="group overflow-hidden rounded-xl border bg-background transition-shadow hover:shadow-md"
                 >
-                  {/* Thumbnail */}
                   <div className="relative aspect-9/16 overflow-hidden bg-muted">
                     {video.thumbnailProxied ? (
                       <ThumbnailImage
@@ -567,8 +887,6 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
                       </div>
                     )}
                   </div>
-
-                  {/* Video Info */}
                   <div className="p-2.5">
                     <p className="truncate text-xs font-medium leading-tight">
                       {video.title ?? "Untitled"}
@@ -600,23 +918,14 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
           )}
         </TabsContent>
 
-        {/* Conversations tab */}
+        {/* Conversations tab — lazy loaded */}
         <TabsContent value="conversations" className="mt-0 pt-5 pb-8">
-          <div className="text-center py-8">
-            <p className="text-sm text-muted-foreground">
-              {influencer.conversationCount > 0
-                ? `${influencer.conversationCount} conversation${influencer.conversationCount > 1 ? "s" : ""}`
-                : "No conversations yet."}
-            </p>
-            {influencer.email && (
-              <Button asChild variant="outline" size="sm" className="mt-3">
-                <a href={`/email/compose?to=${encodeURIComponent(influencer.email)}&influencerId=${influencer.id}`}>
-                  <Mail className="mr-2 h-3.5 w-3.5" />
-                  Send Email
-                </a>
-              </Button>
-            )}
-          </div>
+          {activeTab === "conversations" && (
+            <ConversationsTab
+              influencerId={influencer.id}
+              email={influencer.email}
+            />
+          )}
         </TabsContent>
 
         {/* Notes tab */}
