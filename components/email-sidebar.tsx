@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  Clock,
   FileEdit,
   Inbox,
   PenSquare,
@@ -22,6 +23,12 @@ const AUTO_SYNC_INTERVAL_MS = 60_000; // Auto-sync every 60 seconds
 const folders = [
   { title: "Inbox", href: "/email/inbox", icon: Inbox, countKey: "INBOX" },
   { title: "Sent", href: "/email/sent", icon: Send, countKey: "SENT" },
+  {
+    title: "Pending",
+    href: "/email/pending",
+    icon: Clock,
+    countKey: "PENDING_RESPONSE",
+  },
   {
     title: "Drafts",
     href: "/email/drafts",

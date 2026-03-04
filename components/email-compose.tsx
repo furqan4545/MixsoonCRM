@@ -6,7 +6,10 @@ import { TextSelection } from "@tiptap/pm/state";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
+  Bell,
+  BellOff,
   Bold,
+  ChevronDown,
   Film,
   Italic,
   Paperclip,
@@ -28,6 +31,7 @@ import { signatureToHtml } from "@/app/lib/email-signature";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 interface Props {
   defaultTo?: string;
@@ -83,6 +87,9 @@ export function EmailCompose({
   const [showCc, setShowCc] = useState(false);
   const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [alertDays, setAlertDays] = useState(0);
+  const [showAlertDropdown, setShowAlertDropdown] = useState(false);
+  const alertDropdownRef = useRef<HTMLDivElement>(null);
 
   // Influencer picker state
   const [linkedInfluencer, setLinkedInfluencer] = useState<LinkedInfluencer | null>(null);
@@ -210,6 +217,12 @@ export function EmailCompose({
         !influencerDropdownRef.current.contains(e.target as Node)
       ) {
         setShowInfluencerDropdown(false);
+      }
+      if (
+        alertDropdownRef.current &&
+        !alertDropdownRef.current.contains(e.target as Node)
+      ) {
+        setShowAlertDropdown(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -380,6 +393,7 @@ export function EmailCompose({
       formData.append("bodyText", bodyText);
       if (linkedInfluencer) formData.append("influencerId", linkedInfluencer.id);
       if (inReplyTo) formData.append("inReplyTo", inReplyTo);
+      if (alertDays > 0) formData.append("alertDays", String(alertDays));
       attachments.forEach((item) =>
         formData.append("attachments", item.file, item.file.name),
       );
@@ -535,6 +549,62 @@ export function EmailCompose({
             <Save className="mr-1 h-4 w-4" />
             {savingDraft ? "Saving..." : "Save Draft"}
           </Button>
+          {/* Alert dropdown */}
+          <div ref={alertDropdownRef} className="relative">
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "gap-1",
+                alertDays > 0
+                  ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                  : "",
+              )}
+              onClick={() => setShowAlertDropdown((prev) => !prev)}
+              title="Follow-up alert"
+            >
+              {alertDays > 0 ? (
+                <Bell className="h-4 w-4" />
+              ) : (
+                <BellOff className="h-4 w-4" />
+              )}
+              {alertDays > 0 ? `${alertDays}d` : "Alert"}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+            {showAlertDropdown && (
+              <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-md border bg-popover shadow-lg">
+                <p className="border-b px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                  Follow-up alert
+                </p>
+                {[
+                  { label: "No Alert", value: 0 },
+                  { label: "3 days", value: 3 },
+                  { label: "5 days", value: 5 },
+                  { label: "7 days", value: 7 },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => {
+                      setAlertDays(opt.value);
+                      setShowAlertDropdown(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent",
+                      alertDays === opt.value && "bg-accent font-medium",
+                    )}
+                  >
+                    {opt.value > 0 ? (
+                      <Bell className="h-3.5 w-3.5 text-amber-500" />
+                    ) : (
+                      <BellOff className="h-3.5 w-3.5 text-muted-foreground" />
+                    )}
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <Button size="sm" onClick={handleSend} disabled={sending}>
             <Send className="mr-1 h-4 w-4" />
             {sending ? "Sending..." : "Send"}

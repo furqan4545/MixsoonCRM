@@ -36,6 +36,7 @@ export async function POST(req: Request) {
   let bodyText = "";
   let influencerId = "";
   let inReplyTo = "";
+  let alertDays = 0;
   let uploadAttachmentFiles: File[] = [];
 
   if (contentType.includes("multipart/form-data")) {
@@ -53,6 +54,7 @@ export async function POST(req: Request) {
     bodyText = String(form.get("bodyText") ?? "");
     influencerId = String(form.get("influencerId") ?? "");
     inReplyTo = String(form.get("inReplyTo") ?? "");
+    alertDays = Number(form.get("alertDays") ?? "0");
     uploadAttachmentFiles = form
       .getAll("attachments")
       .filter((v): v is File => v instanceof File);
@@ -69,6 +71,7 @@ export async function POST(req: Request) {
     bodyText = String(body.bodyText ?? "");
     influencerId = String(body.influencerId ?? "");
     inReplyTo = String(body.inReplyTo ?? "");
+    alertDays = Number(body.alertDays ?? 0);
   }
 
   if (to.length === 0) {
@@ -224,6 +227,29 @@ export async function POST(req: Request) {
         threadId: threadIdValue,
       },
     });
+
+    // Create EmailAlert if follow-up alert requested
+    if (alertDays > 0 && email.sentAt) {
+      try {
+        const alertRule = await prisma.alertRule.findFirst({
+          where: { type: "EMAIL_NO_REPLY_INFLUENCER" },
+          select: { templateId: true },
+        });
+        const triggerAt = new Date(email.sentAt);
+        triggerAt.setDate(triggerAt.getDate() + alertDays);
+        await prisma.emailAlert.create({
+          data: {
+            emailMessageId: email.id,
+            influencerId: influencerId || undefined,
+            thresholdDays: alertDays,
+            templateId: alertRule?.templateId ?? undefined,
+            triggerAt,
+          },
+        });
+      } catch (alertErr) {
+        console.error("[email-send] Failed to create email alert:", alertErr);
+      }
+    }
 
     // Auto-save recipient email to influencer profile if they don't have one
     if (influencerId && to[0]) {
