@@ -211,13 +211,6 @@ function ActiveAlertsTab() {
 
   useEffect(() => {
     fetchAlerts();
-    // Auto-check on page load if last check was > 4h ago
-    const lastCheck = localStorage.getItem("alerts_last_check");
-    const fourHours = 4 * 60 * 60 * 1000;
-    if (!lastCheck || Date.now() - Number(lastCheck) > fourHours) {
-      localStorage.setItem("alerts_last_check", String(Date.now()));
-      fetch("/api/alerts/check", { method: "POST" }).then(() => fetchAlerts());
-    }
   }, [fetchAlerts]);
 
   const filtered = useMemo(

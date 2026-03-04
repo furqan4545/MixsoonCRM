@@ -112,6 +112,19 @@ function useAlertCount(canSee: boolean) {
     }
   }, [canSee]);
 
+  // Run alert checker in background every 4 hours (fires on any page load)
+  useEffect(() => {
+    if (!canSee) return;
+    const FOUR_HOURS = 4 * 60 * 60 * 1000;
+    const lastCheck = localStorage.getItem("alerts_last_check");
+    if (!lastCheck || Date.now() - Number(lastCheck) > FOUR_HOURS) {
+      localStorage.setItem("alerts_last_check", String(Date.now()));
+      fetch("/api/alerts/check", { method: "POST" })
+        .then(() => fetchCount())
+        .catch(() => {});
+    }
+  }, [canSee, fetchCount]);
+
   useEffect(() => {
     fetchCount();
     if (!canSee) return;
