@@ -63,11 +63,20 @@ export async function GET(_req: NextRequest, { params }: Params) {
     });
   }
 
+  // Fetch email alerts for all messages in the thread
+  const allMessageIds = [email.id, ...threadMessages.map((m) => m.id)];
+  const emailAlerts = await prisma.emailAlert.findMany({
+    where: { emailMessageId: { in: allMessageIds } },
+    include: { template: { select: { id: true, name: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+
   return NextResponse.json({
     ...email,
     isRead: true,
     attachments,
     threadMessages,
+    emailAlerts,
   });
 }
 

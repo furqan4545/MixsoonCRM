@@ -41,6 +41,7 @@ model Influencer {
   importId String?
   aiEvaluations InfluencerAiEvaluation[]
   emailMessages EmailMessage[]
+  emailAlerts   EmailAlert[]
   activityLogs  ActivityLog[]
   campaignAssignments CampaignInfluencer[]
   approvalRequests    ApprovalRequest[]
@@ -333,6 +334,8 @@ model EmailMessage {
 
   threadId String?
 
+  emailAlerts EmailAlert[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -530,7 +533,49 @@ model EmailTemplate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  alertRules AlertRule[]
+  alertRules  AlertRule[]
+  emailAlerts EmailAlert[]
 
   @@index([name])
+}
+
+// ── Per-Email Follow-up Alerts ─────────────────────────────
+
+enum EmailAlertStatus {
+  WAITING
+  TRIGGERED
+  RESOLVED
+  CANCELLED
+}
+
+model EmailAlert {
+  id              String           @id @default(cuid())
+
+  emailMessageId  String
+  emailMessage    EmailMessage     @relation(fields: [emailMessageId], references: [id], onDelete: Cascade)
+
+  influencerId    String?
+  influencer      Influencer?      @relation(fields: [influencerId], references: [id], onDelete: SetNull)
+
+  thresholdDays   Int
+
+  templateId      String?
+  template        EmailTemplate?   @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  status          EmailAlertStatus @default(WAITING)
+
+  triggerAt        DateTime
+  triggeredAt      DateTime?
+  resolvedAt       DateTime?
+  cancelledAt      DateTime?
+  followUpEmailId  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([triggerAt])
+  @@index([emailMessageId])
+  @@index([influencerId])
+  @@index([status, triggerAt])
 }

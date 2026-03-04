@@ -23,5 +23,37 @@ export async function GET() {
     counts[row.folder] = row._count.id;
   }
 
+  // Count pending responses: INBOX emails from influencers where we haven't replied
+  try {
+    const inboxEmails = await prisma.emailMessage.findMany({
+      where: {
+        accountId: account.id,
+        folder: "INBOX",
+        influencerId: { not: null },
+      },
+      orderBy: { receivedAt: "desc" },
+      distinct: ["influencerId"],
+      select: { influencerId: true, receivedAt: true },
+    });
+
+    let pendingCount = 0;
+    for (const email of inboxEmails) {
+      if (!email.influencerId || !email.receivedAt) continue;
+      const ourReply = await prisma.emailMessage.findFirst({
+        where: {
+          accountId: account.id,
+          influencerId: email.influencerId,
+          folder: "SENT",
+          sentAt: { gt: email.receivedAt },
+        },
+        select: { id: true },
+      });
+      if (!ourReply) pendingCount++;
+    }
+    counts.PENDING_RESPONSE = pendingCount;
+  } catch {
+    // Non-critical, don't fail the whole counts request
+  }
+
   return NextResponse.json(counts);
 }

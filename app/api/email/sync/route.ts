@@ -1,5 +1,6 @@
 import type { EmailFolder } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { processEmailAlerts } from "@/app/lib/alert-checker";
 import {
   type FetchedEmail,
   fetchEmailsFromImap,
@@ -229,6 +230,15 @@ export async function POST() {
       data: { lastSyncAt: new Date() },
     });
 
+    // After POP3 sync, process email alerts
+    if (totalSynced > 0) {
+      try {
+        await processEmailAlerts();
+      } catch (err) {
+        console.error("[email-sync] processEmailAlerts failed:", err);
+      }
+    }
+
     return NextResponse.json({ synced: totalSynced, protocol: "POP3" });
   }
 
@@ -382,6 +392,16 @@ export async function POST() {
     where: { id: account.id },
     data: { lastSyncAt: new Date() },
   });
+
+  // After syncing new messages, process email alerts
+  // (auto-resolve alerts if influencer replied)
+  if (totalSynced > 0) {
+    try {
+      await processEmailAlerts();
+    } catch (err) {
+      console.error("[email-sync] processEmailAlerts failed:", err);
+    }
+  }
 
   return NextResponse.json({ synced: totalSynced });
 }
