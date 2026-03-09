@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Clock,
   Inbox,
+  Loader2,
   Reply,
   Send as SendIcon,
   Star,
@@ -87,9 +88,11 @@ interface Props {
 function AlertBadge({
   alert,
   onRemove,
+  removing,
 }: {
   alert: EmailAlertInfo;
   onRemove?: () => void;
+  removing?: boolean;
 }) {
   const daysLeft = Math.max(
     0,
@@ -101,20 +104,29 @@ function AlertBadge({
   if (alert.status === "WAITING") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
-        <Clock className="h-3 w-3" />
-        Follow-up in {daysLeft}d
-        {onRemove && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            className="ml-0.5 rounded-full p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800"
-            title="Remove alert"
-          >
-            <X className="h-2.5 w-2.5" />
-          </button>
+        {removing ? (
+          <>
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Removing...
+          </>
+        ) : (
+          <>
+            <Clock className="h-3 w-3" />
+            Follow-up in {daysLeft}d
+            {onRemove && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove();
+                }}
+                className="ml-0.5 rounded-full p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800"
+                title="Remove alert"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            )}
+          </>
         )}
       </span>
     );
@@ -181,7 +193,7 @@ function AddAlertDropdown({
       });
       if (res.ok) {
         toast.success(`Alert set for ${days} days`);
-        onAdded();
+        await onAdded();
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error((data as { error?: string }).error || "Failed to add alert");
@@ -202,9 +214,18 @@ function AddAlertDropdown({
         disabled={adding}
         className="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/40 px-2 py-0.5 text-[10px] text-muted-foreground hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700 dark:hover:bg-amber-950/30"
       >
-        <Bell className="h-3 w-3" />
-        {adding ? "..." : "+ Alert"}
-        <ChevronDown className="h-2.5 w-2.5" />
+        {adding ? (
+          <>
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Setting up...
+          </>
+        ) : (
+          <>
+            <Bell className="h-3 w-3" />
+            + Alert
+            <ChevronDown className="h-2.5 w-2.5" />
+          </>
+        )}
       </button>
       {open && (
         <div className="absolute left-0 top-full z-50 mt-1 w-32 rounded-md border bg-popover shadow-lg">
@@ -240,6 +261,7 @@ function MessageBubble({
   pendingEmailId?: string | null;
   onAlertChange: () => void;
 }) {
+  const [removingAlert, setRemovingAlert] = useState(false);
   const date = msg.sentAt ?? msg.receivedAt ?? msg.createdAt;
   const isSent =
     msg.folder === "SENT" ||
@@ -254,18 +276,21 @@ function MessageBubble({
   const displayAlert = activeAlert || resolvedAlert;
 
   const handleRemoveAlert = async () => {
+    setRemovingAlert(true);
     try {
       const res = await fetch(`/api/email/${msg.id}/alert`, {
         method: "DELETE",
       });
       if (res.ok) {
         toast.success("Alert removed");
-        onAlertChange();
+        await onAlertChange();
       } else {
         toast.error("Failed to remove alert");
       }
     } catch {
       toast.error("Failed to remove alert");
+    } finally {
+      setRemovingAlert(false);
     }
   };
 
@@ -319,6 +344,7 @@ function MessageBubble({
               {displayAlert ? (
                 <AlertBadge
                   alert={displayAlert}
+                  removing={removingAlert}
                   onRemove={
                     displayAlert.status === "WAITING"
                       ? handleRemoveAlert
@@ -366,6 +392,7 @@ export function EmailDetail({ emailId }: Props) {
   const [replyBody, setReplyBody] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
   const [clearingPending, setClearingPending] = useState(false);
+  const [removingSingleAlert, setRemovingSingleAlert] = useState(false);
   const replyBoxRef = useRef<HTMLTextAreaElement | null>(null);
   const hasFetched = useRef(false);
 
@@ -669,9 +696,11 @@ export function EmailDetail({ emailId }: Props) {
                             <AlertBadge
                               key={alert.id}
                               alert={alert}
+                              removing={removingSingleAlert}
                               onRemove={
                                 alert.status === "WAITING"
                                   ? async () => {
+                                      setRemovingSingleAlert(true);
                                       try {
                                         const res = await fetch(
                                           `/api/email/${email.id}/alert`,
@@ -679,10 +708,14 @@ export function EmailDetail({ emailId }: Props) {
                                         );
                                         if (res.ok) {
                                           toast.success("Alert removed");
-                                          fetchEmail();
+                                          await fetchEmail();
+                                        } else {
+                                          toast.error("Failed to remove alert");
                                         }
                                       } catch {
                                         toast.error("Failed to remove alert");
+                                      } finally {
+                                        setRemovingSingleAlert(false);
                                       }
                                     }
                                   : undefined

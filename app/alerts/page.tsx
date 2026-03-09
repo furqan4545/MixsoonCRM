@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   AlertTriangle,
   Bell,
@@ -374,10 +375,17 @@ function AlertRulesTab() {
         }),
       });
       if (res.ok) {
+        // Reload rules from server to confirm what was actually saved
+        const freshRes = await fetch("/api/alerts/rules");
+        if (freshRes.ok) setRules(await freshRes.json());
         setDirty(false);
+        toast.success("Alert rules saved");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error((data as { error?: string }).error || "Failed to save rules");
       }
     } catch {
-      // silent
+      toast.error("Failed to save rules");
     } finally {
       setSaving(false);
     }
