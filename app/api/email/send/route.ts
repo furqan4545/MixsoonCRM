@@ -251,6 +251,62 @@ export async function POST(req: Request) {
       }
     }
 
+    // Resolve "we haven't replied" alerts once we send a response.
+    if (email.sentAt) {
+      try {
+        const pendingReplyRule = await prisma.alertRule.findFirst({
+          where: { type: "EMAIL_NO_REPLY_US" },
+          select: { id: true },
+        });
+
+        if (pendingReplyRule) {
+          let resolvedIds: string[] = [];
+
+          if (influencerId) {
+            const pendingInboxMessages = await prisma.emailMessage.findMany({
+              where: {
+                accountId: account.id,
+                influencerId,
+                folder: "INBOX",
+                receivedAt: { lt: email.sentAt },
+              },
+              select: { id: true },
+            });
+            resolvedIds = pendingInboxMessages.map((message) => message.id);
+          } else if (inReplyTo) {
+            const repliedMessage = await prisma.emailMessage.findFirst({
+              where: {
+                accountId: account.id,
+                messageId: inReplyTo,
+                folder: "INBOX",
+              },
+              select: { id: true },
+            });
+            resolvedIds = repliedMessage ? [repliedMessage.id] : [];
+          }
+
+          if (resolvedIds.length > 0) {
+            await prisma.alertEvent.updateMany({
+              where: {
+                ruleId: pendingReplyRule.id,
+                emailId: { in: resolvedIds },
+                status: "ACTIVE",
+              },
+              data: {
+                status: "RESOLVED",
+                resolvedAt: email.sentAt,
+              },
+            });
+          }
+        }
+      } catch (pendingReplyErr) {
+        console.error(
+          "[email-send] Failed to resolve pending reply alerts:",
+          pendingReplyErr,
+        );
+      }
+    }
+
     // Auto-save recipient email to influencer profile if they don't have one
     if (influencerId && to[0]) {
       try {

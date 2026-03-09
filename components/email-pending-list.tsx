@@ -51,18 +51,11 @@ export function PendingResponseList() {
   useEmailRefresh(fetchPending);
 
   const handleReply = (item: PendingItem) => {
-    const params = new URLSearchParams({
-      to: item.from,
-      subject: item.subject.startsWith("Re:")
-        ? item.subject
-        : `Re: ${item.subject}`,
-      influencerId: item.influencer.id,
-    });
-    router.push(`/email/compose?${params}`);
+    router.push(`/email/${item.id}`);
   };
 
   const handleView = (item: PendingItem) => {
-    router.push(`/email/inbox/${item.id}`);
+    router.push(`/email/${item.id}`);
   };
 
   if (loading) {

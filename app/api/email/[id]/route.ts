@@ -20,6 +20,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     where: { id, account: { userId: user.id } },
     include: {
       influencer: { select: { id: true, username: true, avatarUrl: true } },
+      account: { select: { emailAddress: true } },
     },
   });
 
@@ -71,12 +72,21 @@ export async function GET(_req: NextRequest, { params }: Params) {
     orderBy: { createdAt: "desc" },
   });
 
+  const pendingResponse = await getPendingResponseForThread(
+    email.accountId,
+    [email, ...threadMessages],
+  );
+
+  const { account: _account, ...emailWithoutAccount } = email;
+
   return NextResponse.json({
-    ...email,
+    ...emailWithoutAccount,
     isRead: true,
+    accountEmail: email.account.emailAddress,
     attachments,
     threadMessages,
     emailAlerts,
+    pendingResponse,
   });
 }
 
@@ -133,4 +143,76 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   }
 
   return NextResponse.json({ ok: true });
+}
+
+async function getPendingResponseForThread(
+  accountId: string,
+  messages: Array<{
+    id: string;
+    from: string;
+    subject: string;
+    folder: string;
+    messageId: string | null;
+    receivedAt: Date | null;
+    influencerId: string | null;
+  }>,
+) {
+  const inboxCandidates = messages
+    .filter(
+      (message) =>
+        message.folder === "INBOX" &&
+        message.receivedAt &&
+        message.influencerId,
+    )
+    .sort(
+      (a, b) =>
+        (b.receivedAt?.getTime() ?? 0) - (a.receivedAt?.getTime() ?? 0),
+    );
+
+  if (inboxCandidates.length === 0) return null;
+
+  const clearedPendingEvents = await prisma.alertEvent.findMany({
+    where: {
+      rule: { type: "EMAIL_NO_REPLY_US" },
+      status: { in: ["DISMISSED", "RESOLVED"] },
+      emailId: { in: inboxCandidates.map((message) => message.id) },
+    },
+    select: { emailId: true },
+  });
+
+  const clearedIds = new Set(
+    clearedPendingEvents
+      .map((event) => event.emailId)
+      .filter((emailId): emailId is string => Boolean(emailId)),
+  );
+
+  for (const message of inboxCandidates) {
+    if (!message.receivedAt || !message.influencerId) continue;
+    if (clearedIds.has(message.id)) continue;
+
+    const ourReply = await prisma.emailMessage.findFirst({
+      where: {
+        accountId,
+        influencerId: message.influencerId,
+        folder: "SENT",
+        sentAt: { gt: message.receivedAt },
+      },
+      select: { id: true },
+    });
+
+    if (ourReply) continue;
+
+    return {
+      emailMessageId: message.id,
+      from: message.from,
+      subject: message.subject,
+      messageId: message.messageId,
+      influencerId: message.influencerId,
+      daysSince: Math.floor(
+        (Date.now() - message.receivedAt.getTime()) / 86_400_000,
+      ),
+    };
+  }
+
+  return null;
 }

@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock,
+  Inbox,
   Reply,
   Send as SendIcon,
   Star,
@@ -18,10 +19,12 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "@/app/lib/date-utils";
+import { emitEmailRefresh } from "@/app/lib/email-events";
 import { plainTextToLinkedHtml } from "@/app/lib/email-rich-text";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 interface EmailAlertInfo {
@@ -55,6 +58,7 @@ interface ThreadMessage {
 
 interface EmailData extends ThreadMessage {
   isStarred: boolean;
+  accountEmail?: string;
   attachments?: Array<{
     id: string;
     filename: string;
@@ -66,6 +70,14 @@ interface EmailData extends ThreadMessage {
   }>;
   threadMessages?: ThreadMessage[];
   emailAlerts?: EmailAlertInfo[];
+  pendingResponse?: {
+    emailMessageId: string;
+    from: string;
+    subject: string;
+    messageId: string | null;
+    influencerId: string | null;
+    daysSince: number;
+  } | null;
 }
 
 interface Props {
@@ -218,12 +230,14 @@ function MessageBubble({
   isCurrentEmail,
   accountEmail,
   alerts,
+  pendingEmailId,
   onAlertChange,
 }: {
   msg: ThreadMessage;
   isCurrentEmail: boolean;
   accountEmail?: string;
   alerts: EmailAlertInfo[];
+  pendingEmailId?: string | null;
   onAlertChange: () => void;
 }) {
   const date = msg.sentAt ?? msg.receivedAt ?? msg.createdAt;
@@ -282,6 +296,11 @@ function MessageBubble({
               <Badge variant="secondary" className="text-[10px] shrink-0">
                 @{msg.influencer.username}
               </Badge>
+            )}
+            {!isSent && pendingEmailId === msg.id && (
+              <span className="inline-flex shrink-0 items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                Pending reply
+              </span>
             )}
           </div>
           <p className="text-muted-foreground">
@@ -344,13 +363,19 @@ export function EmailDetail({ emailId }: Props) {
   const router = useRouter();
   const [email, setEmail] = useState<EmailData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [replyBody, setReplyBody] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
+  const [clearingPending, setClearingPending] = useState(false);
+  const replyBoxRef = useRef<HTMLTextAreaElement | null>(null);
+  const hasFetched = useRef(false);
 
   const fetchEmail = useCallback(async () => {
-    setLoading(true);
+    if (!hasFetched.current) setLoading(true);
     try {
       const res = await fetch(`/api/email/${emailId}`);
       if (res.ok) {
         setEmail(await res.json());
+        hasFetched.current = true;
       } else {
         toast.error("Email not found");
         router.push("/email/inbox");
@@ -384,18 +409,26 @@ export function EmailDetail({ emailId }: Props) {
     router.back();
   };
 
-  const handleSpam = async () => {
+  const handleSpamToggle = async () => {
+    const isSpam = email?.folder === "SPAM";
+    const newFolder = isSpam ? "INBOX" : "SPAM";
     await fetch(`/api/email/${emailId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ folder: "SPAM" }),
+      body: JSON.stringify({ folder: newFolder }),
     });
-    toast.success("Marked as spam");
+    toast.success(isSpam ? "Moved to inbox" : "Marked as spam");
+    emitEmailRefresh();
     router.back();
   };
 
   const handleReply = () => {
     if (!email) return;
+    if (email.pendingResponse) {
+      replyBoxRef.current?.focus();
+      replyBoxRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     const params = new URLSearchParams({
       to: email.from,
       subject: email.subject.startsWith("Re:")
@@ -422,9 +455,20 @@ export function EmailDetail({ emailId }: Props) {
 
   const date = email.sentAt ?? email.receivedAt ?? email.createdAt;
   const emailAlerts = email.emailAlerts ?? [];
+  const pendingResponse = email.pendingResponse ?? null;
+  const pendingReplySubject = pendingResponse
+    ? pendingResponse.subject.startsWith("Re:")
+      ? pendingResponse.subject
+      : `Re: ${pendingResponse.subject}`
+    : "";
 
   // Build thread: combine thread messages + current email, sorted chronologically
-  const threadMessages = email.threadMessages ?? [];
+  // When viewing from SPAM or TRASH, only show messages in the same folder
+  const rawThreadMessages = email.threadMessages ?? [];
+  const isSpecialFolder = email.folder === "SPAM" || email.folder === "TRASH";
+  const threadMessages = isSpecialFolder
+    ? rawThreadMessages.filter((m) => m.folder === email.folder)
+    : rawThreadMessages;
   const allMessages: ThreadMessage[] = [...threadMessages, email].sort(
     (a, b) => {
       const dateA = new Date(
@@ -437,6 +481,68 @@ export function EmailDetail({ emailId }: Props) {
     },
   );
   const hasThread = threadMessages.length > 0;
+
+  const handleClearPending = async () => {
+    if (!pendingResponse) return;
+    setClearingPending(true);
+    try {
+      const res = await fetch(`/api/email/${pendingResponse.emailMessageId}/pending`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "Failed to clear pending reply");
+      }
+      toast.success("Pending reply cleared");
+      await fetchEmail();
+      emitEmailRefresh();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to clear pending reply",
+      );
+    } finally {
+      setClearingPending(false);
+    }
+  };
+
+  const handleInlineReply = async () => {
+    if (!pendingResponse) return;
+    const trimmedBody = replyBody.trim();
+    if (!trimmedBody) {
+      toast.error("Write a reply first");
+      return;
+    }
+
+    setSendingReply(true);
+    try {
+      const res = await fetch("/api/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: [pendingResponse.from],
+          subject: pendingReplySubject,
+          bodyText: trimmedBody,
+          bodyHtml: textToHtml(trimmedBody),
+          influencerId: pendingResponse.influencerId ?? "",
+          inReplyTo: pendingResponse.messageId ?? "",
+        }),
+      });
+
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "Failed to send reply");
+      }
+
+      setReplyBody("");
+      toast.success("Reply sent");
+      await fetchEmail();
+      emitEmailRefresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to send reply");
+    } finally {
+      setSendingReply(false);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -453,8 +559,17 @@ export function EmailDetail({ emailId }: Props) {
             className={`h-4 w-4 ${email.isStarred ? "fill-yellow-400 text-yellow-400" : ""}`}
           />
         </Button>
-        <Button variant="ghost" size="icon" onClick={handleSpam} title="Spam">
-          <AlertTriangle className="h-4 w-4" />
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleSpamToggle}
+          title={email.folder === "SPAM" ? "Not spam – move to inbox" : "Mark as spam"}
+        >
+          {email.folder === "SPAM" ? (
+            <Inbox className="h-4 w-4" />
+          ) : (
+            <AlertTriangle className="h-4 w-4" />
+          )}
         </Button>
         <Button
           variant="ghost"
@@ -481,6 +596,11 @@ export function EmailDetail({ emailId }: Props) {
                   @{email.influencer.username}
                 </Badge>
               )}
+              {pendingResponse && (
+                <Badge className="text-xs bg-amber-100 text-amber-800 hover:bg-amber-100 dark:bg-amber-900/50 dark:text-amber-200">
+                  Pending reply
+                </Badge>
+              )}
               {hasThread && (
                 <Badge variant="outline" className="text-xs text-muted-foreground">
                   {allMessages.length} messages in thread
@@ -497,7 +617,9 @@ export function EmailDetail({ emailId }: Props) {
                   key={msg.id}
                   msg={msg}
                   isCurrentEmail={msg.id === email.id}
+                  accountEmail={email.accountEmail}
                   alerts={emailAlerts}
+                  pendingEmailId={pendingResponse?.emailMessageId}
                   onAlertChange={fetchEmail}
                 />
               ))}
@@ -521,8 +643,15 @@ export function EmailDetail({ emailId }: Props) {
                       {email.cc.join(", ")}
                     </p>
                   )}
+                  {pendingResponse?.emailMessageId === email.id && (
+                    <div className="pt-1">
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                        Pending reply
+                      </span>
+                    </div>
+                  )}
                   {/* Alert badge for single sent email view */}
-                  {email.folder === "SENT" && (
+                  {(email.folder === "SENT" || (email.accountEmail && email.from.toLowerCase() === email.accountEmail.toLowerCase())) && (
                     <div className="flex items-center gap-1.5 pt-1">
                       {emailAlerts.filter(
                         (a) =>
@@ -630,8 +759,94 @@ export function EmailDetail({ emailId }: Props) {
               </div>
             </>
           )}
+
+          {pendingResponse && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900 dark:bg-amber-950/20">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-amber-600" />
+                    <p className="text-sm font-medium">Pending reply</p>
+                    <Badge variant="outline" className="text-[10px]">
+                      {pendingResponse.daysSince}d waiting
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    This thread is still waiting for your reply. Sending a reply
+                    removes it from `Pending` automatically.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClearPending}
+                  disabled={clearingPending}
+                >
+                  {clearingPending ? "Clearing..." : "Clear pending"}
+                </Button>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Reply to {pendingResponse.from}
+                </p>
+                <Textarea
+                  ref={replyBoxRef}
+                  rows={6}
+                  value={replyBody}
+                  onChange={(event) => setReplyBody(event.target.value)}
+                  placeholder="Write your reply here..."
+                  className="bg-background"
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    Subject: {pendingReplySubject}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const params = new URLSearchParams({
+                          to: pendingResponse.from,
+                          subject: pendingReplySubject,
+                          inReplyTo: pendingResponse.messageId ?? "",
+                        });
+                        if (pendingResponse.influencerId) {
+                          params.set("influencerId", pendingResponse.influencerId);
+                        }
+                        router.push(`/email/compose?${params}`);
+                      }}
+                    >
+                      Open full composer
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleInlineReply}
+                      disabled={sendingReply || !replyBody.trim()}
+                    >
+                      {sendingReply ? "Sending..." : "Send reply"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </ScrollArea>
     </div>
   );
+}
+
+function textToHtml(text: string) {
+  return escapeHtml(text).replace(/\n/g, "<br />");
+}
+
+function escapeHtml(text: string) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }

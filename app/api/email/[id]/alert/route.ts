@@ -46,13 +46,23 @@ export async function POST(
   const { id } = await params;
 
   const email = await prisma.emailMessage.findFirst({
-    where: { id, account: { userId: user.id }, folder: "SENT" },
-    select: { id: true, sentAt: true, influencerId: true },
+    where: { id, account: { userId: user.id } },
+    include: { account: { select: { emailAddress: true } } },
   });
   if (!email)
     return NextResponse.json(
-      { error: "Sent email not found" },
+      { error: "Email not found" },
       { status: 404 },
+    );
+
+  // Verify this is an email sent by us (by folder or by from-address match)
+  const isSentByUs =
+    email.folder === "SENT" ||
+    email.from.toLowerCase() === email.account.emailAddress.toLowerCase();
+  if (!isSentByUs)
+    return NextResponse.json(
+      { error: "Can only attach alerts to emails you sent" },
+      { status: 400 },
     );
   if (!email.sentAt)
     return NextResponse.json(

@@ -1,6 +1,7 @@
 "use client";
 
-import { Mail, MailOpen, Star, Trash2 } from "lucide-react";
+import { Inbox, Mail, MailOpen, Star, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { formatDistanceToNow } from "@/app/lib/date-utils";
@@ -107,6 +108,20 @@ export function EmailList({ folder, title }: Props) {
     } catch {}
   };
 
+  const handleMoveToInbox = async (emailId: string) => {
+    try {
+      const res = await fetch(`/api/email/${emailId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folder: "INBOX" }),
+      });
+      if (!res.ok) return;
+      toast.success("Moved to inbox");
+      emitEmailRefresh();
+      fetchEmails();
+    } catch {}
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-4 py-3">
@@ -205,18 +220,34 @@ export function EmailList({ folder, title }: Props) {
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {getDate(email)}
                   </span>
-                  <button
-                    type="button"
-                    className="opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleDelete(email.id);
-                    }}
-                    aria-label="Delete email"
-                    title="Delete"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {folder === "SPAM" && (
+                      <button
+                        type="button"
+                        className="opacity-0 transition-opacity hover:text-primary group-hover:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleMoveToInbox(email.id);
+                        }}
+                        aria-label="Not spam – move to inbox"
+                        title="Not spam – move to inbox"
+                      >
+                        <Inbox className="h-4 w-4" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDelete(email.id);
+                      }}
+                      aria-label="Delete email"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

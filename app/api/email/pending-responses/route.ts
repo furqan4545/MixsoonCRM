@@ -19,6 +19,20 @@ export async function GET() {
   if (!account) return NextResponse.json({ items: [], count: 0 });
 
   try {
+    const clearedEvents = await prisma.alertEvent.findMany({
+      where: {
+        rule: { type: "EMAIL_NO_REPLY_US" },
+        status: { in: ["DISMISSED", "RESOLVED"] },
+        emailId: { not: null },
+      },
+      select: { emailId: true },
+    });
+    const clearedIds = new Set(
+      clearedEvents
+        .map((event) => event.emailId)
+        .filter((emailId): emailId is string => Boolean(emailId)),
+    );
+
     // Find latest INBOX email per influencer where we haven't replied
     const inboxEmails = await prisma.emailMessage.findMany({
       where: {
@@ -57,6 +71,7 @@ export async function GET() {
 
     for (const email of inboxEmails) {
       if (!email.influencerId || !email.receivedAt) continue;
+      if (clearedIds.has(email.id)) continue;
 
       // Check if we sent any email to this influencer after the inbox date
       const ourReply = await prisma.emailMessage.findFirst({
