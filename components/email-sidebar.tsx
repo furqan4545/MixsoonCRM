@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Clock,
   FileEdit,
+  FileText,
   Inbox,
   PenSquare,
   RefreshCw,
@@ -36,6 +37,7 @@ const folders = [
     countKey: "DRAFTS",
   },
   { title: "Signature", href: "/email/signature", icon: PenSquare },
+  { title: "Templates", href: "/email/templates", icon: FileText },
   { title: "Spam", href: "/email/spam", icon: AlertTriangle, countKey: "SPAM" },
   { title: "Trash", href: "/email/trash", icon: Trash2, countKey: "TRASH" },
 ] as const;
