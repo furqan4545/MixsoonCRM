@@ -45,6 +45,7 @@ export default async function ComposePage({
     <EmailCompose
       defaultTo={firstParam(params.to)}
       defaultSubject={firstParam(params.subject)}
+      defaultBody={firstParam(params.body)}
       influencerId={firstParam(params.influencerId)}
       inReplyTo={firstParam(params.inReplyTo)}
       accountSignature={accountSignature}

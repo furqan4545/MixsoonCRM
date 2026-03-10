@@ -416,14 +416,13 @@ function ConversationsTab({ influencerId, email }: { influencerId: string; email
 }
 
 /* ── Onboarding tab ── */
-function OnboardingTab({ influencerId, email }: { influencerId: string; email: string | null }) {
+function OnboardingTab({ influencerId, influencerName, email }: { influencerId: string; influencerName: string; email: string | null }) {
+  const router = useRouter();
   const [linkUrl, setLinkUrl] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [emailing, setEmailing] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
 
-  const generateLink = async () => {
+  const generateLink = async (): Promise<string | null> => {
     setGenerating(true);
     try {
       const res = await fetch("/api/onboarding/generate-link", {
@@ -434,9 +433,10 @@ function OnboardingTab({ influencerId, email }: { influencerId: string; email: s
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setLinkUrl(data.url);
-      toast.success("Onboarding link generated");
+      return data.url as string;
     } catch {
       toast.error("Failed to generate link");
+      return null;
     } finally {
       setGenerating(false);
     }
@@ -450,25 +450,25 @@ function OnboardingTab({ influencerId, email }: { influencerId: string; email: s
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const emailLink = async () => {
-    setEmailing(true);
-    try {
-      const res = await fetch("/api/onboarding/send-link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ influencerId }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed");
-      }
-      setEmailSent(true);
-      toast.success(`Onboarding link emailed to ${email}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to send email");
-    } finally {
-      setEmailing(false);
+  const openComposer = async () => {
+    if (!email) {
+      toast.error("No email address. Add an email to this influencer first.");
+      return;
     }
+    // Generate a fresh link, then open composer
+    const url = await generateLink();
+    if (!url) return;
+
+    const subject = "[MIXSOON] Complete Your Onboarding";
+    const body = `Hi ${influencerName},\n\nWe're excited to work with you! Please complete your onboarding by clicking the link below:\n\n${url}\n\nYou'll be asked to provide your bank account details and shipping address. No account creation needed.\n\nThis link expires in 30 days. If you have any questions, feel free to reply to this email.\n\nBest,\nMIXSOON Team`;
+
+    const params = new URLSearchParams({
+      to: email,
+      subject,
+      body,
+      influencerId,
+    });
+    router.push(`/email/compose?${params.toString()}`);
   };
 
   return (
@@ -479,32 +479,27 @@ function OnboardingTab({ influencerId, email }: { influencerId: string; email: s
           Send a magic link to this influencer. They can fill out their bank details and shipping address without creating an account.
         </p>
 
-        {/* Email directly */}
-        {email && (
-          <div className="mb-3">
-            <Button
-              onClick={emailLink}
-              disabled={emailing || emailSent}
-              size="sm"
-              className="w-full"
-            >
-              {emailing ? (
-                <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-              ) : emailSent ? (
-                <Check className="mr-2 h-3 w-3" />
-              ) : (
-                <Mail className="mr-2 h-3 w-3" />
-              )}
-              {emailSent ? `Sent to ${email}` : `Email Onboarding Link to ${email}`}
-            </Button>
-          </div>
-        )}
-
-        {!email && (
-          <p className="text-xs text-amber-600 mb-3">
-            ⚠ No email address found. Add an email to send the link directly, or copy the link below.
-          </p>
-        )}
+        {/* Email via composer */}
+        <div className="mb-3">
+          <Button
+            onClick={openComposer}
+            disabled={generating}
+            size="sm"
+            className="w-full"
+          >
+            {generating ? (
+              <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+            ) : (
+              <Mail className="mr-2 h-3 w-3" />
+            )}
+            {email ? `Email Onboarding Link to ${email}` : "Email Onboarding Link"}
+          </Button>
+          {!email && (
+            <p className="text-xs text-amber-600 mt-2">
+              No email address found. Add an email to this influencer first.
+            </p>
+          )}
+        </div>
 
         {/* Or copy link */}
         <div className="border-t pt-3">
@@ -517,12 +512,12 @@ function OnboardingTab({ influencerId, email }: { influencerId: string; email: s
                   {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                 </Button>
               </div>
-              <Button variant="outline" size="sm" onClick={generateLink} disabled={generating} className="text-xs">
+              <Button variant="outline" size="sm" onClick={() => generateLink()} disabled={generating} className="text-xs">
                 Regenerate Link
               </Button>
             </div>
           ) : (
-            <Button variant="outline" onClick={generateLink} disabled={generating} size="sm" className="text-xs">
+            <Button variant="outline" onClick={() => generateLink()} disabled={generating} size="sm" className="text-xs">
               {generating ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <LinkIcon className="mr-2 h-3 w-3" />}
               Generate Link
             </Button>
@@ -559,13 +554,16 @@ interface CampaignOption {
 
 function ContractsTab({
   influencerId,
+  influencerName,
   email,
   campaignAssignments,
 }: {
   influencerId: string;
+  influencerName: string;
   email: string | null;
   campaignAssignments: { campaignId: string; campaignName: string }[];
 }) {
+  const router = useRouter();
   const [contracts, setContracts] = useState<ContractItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [sendingId, setSendingId] = useState<string | null>(null);
@@ -653,26 +651,36 @@ function ContractsTab({
     }
   };
 
-  const sendForSignature = async (contractId: string) => {
+  const sendForSignature = async (contractId: string, templateName: string) => {
     if (!email) {
       toast.error("Influencer has no email. Add an email first.");
       return;
     }
     setSendingId(contractId);
     try {
-      const res = await fetch(`/api/contracts/${contractId}/send`, {
+      // Generate a signing magic link
+      const res = await fetch("/api/onboarding/generate-link", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ influencerId, type: "CONTRACT", contractId }),
       });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed");
-      }
-      toast.success(`Contract sent to ${email}`);
-      // Refresh to show updated status
-      fetchedRef.current = false;
-      fetchContracts();
+      if (!res.ok) throw new Error("Failed to generate signing link");
+      const data = await res.json();
+      const signingUrl = data.url as string;
+
+      const contractLabel = templateName || "Collaboration Agreement";
+      const subject = `[MIXSOON] Contract for Signature — ${contractLabel}`;
+      const body = `Hi ${influencerName},\n\nWe've prepared a "${contractLabel}" for your review and signature.\n\nPlease click the link below to review the contract details and sign it electronically:\n\n${signingUrl}\n\nThis link expires in 30 days. If you have any questions, feel free to reply to this email.\n\nBest,\nMIXSOON Team`;
+
+      const params = new URLSearchParams({
+        to: email,
+        subject,
+        body,
+        influencerId,
+      });
+      router.push(`/email/compose?${params.toString()}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to send");
+      toast.error(err instanceof Error ? err.message : "Failed to generate signing link");
     } finally {
       setSendingId(null);
     }
@@ -838,7 +846,7 @@ function ContractsTab({
                   variant="outline"
                   size="sm"
                   className="h-7 text-xs"
-                  onClick={() => sendForSignature(c.id)}
+                  onClick={() => sendForSignature(c.id, c.template?.name || "Contract")}
                   disabled={sendingId === c.id}
                 >
                   {sendingId === c.id ? (
@@ -1424,7 +1432,7 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
         {/* Onboarding tab */}
         <TabsContent value="onboarding" className="mt-0 pt-5 pb-8">
           {activeTab === "onboarding" && (
-            <OnboardingTab influencerId={influencer.id} email={influencer.email} />
+            <OnboardingTab influencerId={influencer.id} influencerName={influencer.displayName ?? influencer.username} email={influencer.email} />
           )}
         </TabsContent>
 
@@ -1433,6 +1441,7 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
           {activeTab === "contracts" && (
             <ContractsTab
               influencerId={influencer.id}
+              influencerName={influencer.displayName ?? influencer.username}
               email={influencer.email}
               campaignAssignments={influencer.campaignAssignments}
             />

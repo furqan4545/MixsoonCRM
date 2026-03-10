@@ -50,9 +50,7 @@ export async function POST(request: Request) {
     }
 
     // Get email account
-    const emailAccount = await prisma.emailAccount.findFirst({
-      where: { isActive: true },
-    });
+    const emailAccount = await prisma.emailAccount.findFirst();
 
     if (!emailAccount) {
       return NextResponse.json(
@@ -138,7 +136,7 @@ export async function POST(request: Request) {
         bodyText: `Hi ${influencerName}, please complete your onboarding: ${onboardingUrl}`,
         folder: "SENT",
         isRead: true,
-        date: new Date(),
+        sentAt: new Date(),
         influencerId,
       },
     });

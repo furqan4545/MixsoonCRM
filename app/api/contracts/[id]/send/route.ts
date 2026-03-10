@@ -51,9 +51,7 @@ export async function POST(
     }
 
     // Get the first email account for sending
-    const emailAccount = await prisma.emailAccount.findFirst({
-      where: { isActive: true },
-    });
+    const emailAccount = await prisma.emailAccount.findFirst();
 
     if (!emailAccount) {
       return NextResponse.json(
@@ -138,7 +136,7 @@ export async function POST(
         bodyText: `Hi ${influencerName}, please review and sign your contract: ${signingUrl}`,
         folder: "SENT",
         isRead: true,
-        date: new Date(),
+        sentAt: new Date(),
         influencerId: contract.influencerId,
       },
     });
