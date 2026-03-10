@@ -57,7 +57,8 @@
       "Bash(mkdir -p /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/app/api/contracts/[id]/sign)",
       "Bash(npm install html-pdf-node)",
       "Bash(npm uninstall html-pdf-node)",
-      "Bash(npm install puppeteer)"
+      "Bash(npm install puppeteer)",
+      "Bash(ls -la /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/app/api/contracts/*/)"
     ]
   }
 }

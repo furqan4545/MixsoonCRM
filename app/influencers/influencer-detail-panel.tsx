@@ -416,10 +416,12 @@ function ConversationsTab({ influencerId, email }: { influencerId: string; email
 }
 
 /* ── Onboarding tab ── */
-function OnboardingTab({ influencerId }: { influencerId: string }) {
+function OnboardingTab({ influencerId, email }: { influencerId: string; email: string | null }) {
   const [linkUrl, setLinkUrl] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [emailing, setEmailing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
 
   const generateLink = async () => {
     setGenerating(true);
@@ -448,33 +450,84 @@ function OnboardingTab({ influencerId }: { influencerId: string }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const emailLink = async () => {
+    setEmailing(true);
+    try {
+      const res = await fetch("/api/onboarding/send-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ influencerId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed");
+      }
+      setEmailSent(true);
+      toast.success(`Onboarding link emailed to ${email}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send email");
+    } finally {
+      setEmailing(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border p-4">
         <h3 className="text-sm font-semibold mb-2">Onboarding Link</h3>
         <p className="text-xs text-muted-foreground mb-3">
-          Generate a magic link to send to this influencer. They can fill out their bank details and shipping address without creating an account.
+          Send a magic link to this influencer. They can fill out their bank details and shipping address without creating an account.
         </p>
-        {linkUrl ? (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 rounded-md border bg-muted/50 p-2">
-              <code className="flex-1 truncate text-xs">{linkUrl}</code>
-              <Button variant="ghost" size="sm" onClick={copyLink} className="h-7 shrink-0">
-                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={generateLink} disabled={generating}>
-                Generate New Link
-              </Button>
-            </div>
+
+        {/* Email directly */}
+        {email && (
+          <div className="mb-3">
+            <Button
+              onClick={emailLink}
+              disabled={emailing || emailSent}
+              size="sm"
+              className="w-full"
+            >
+              {emailing ? (
+                <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+              ) : emailSent ? (
+                <Check className="mr-2 h-3 w-3" />
+              ) : (
+                <Mail className="mr-2 h-3 w-3" />
+              )}
+              {emailSent ? `Sent to ${email}` : `Email Onboarding Link to ${email}`}
+            </Button>
           </div>
-        ) : (
-          <Button onClick={generateLink} disabled={generating} size="sm">
-            {generating ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <LinkIcon className="mr-2 h-3 w-3" />}
-            Generate Onboarding Link
-          </Button>
         )}
+
+        {!email && (
+          <p className="text-xs text-amber-600 mb-3">
+            ⚠ No email address found. Add an email to send the link directly, or copy the link below.
+          </p>
+        )}
+
+        {/* Or copy link */}
+        <div className="border-t pt-3">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Or copy link manually</p>
+          {linkUrl ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 rounded-md border bg-muted/50 p-2">
+                <code className="flex-1 truncate text-xs">{linkUrl}</code>
+                <Button variant="ghost" size="sm" onClick={copyLink} className="h-7 shrink-0">
+                  {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                </Button>
+              </div>
+              <Button variant="outline" size="sm" onClick={generateLink} disabled={generating} className="text-xs">
+                Regenerate Link
+              </Button>
+            </div>
+          ) : (
+            <Button variant="outline" onClick={generateLink} disabled={generating} size="sm" className="text-xs">
+              {generating ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <LinkIcon className="mr-2 h-3 w-3" />}
+              Generate Link
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -494,11 +547,40 @@ interface ContractItem {
   template: { id: string; name: string } | null;
 }
 
-function ContractsTab({ influencerId, email }: { influencerId: string; email: string | null }) {
+interface TemplateOption {
+  id: string;
+  name: string;
+}
+
+interface CampaignOption {
+  id: string;
+  name: string;
+}
+
+function ContractsTab({
+  influencerId,
+  email,
+  campaignAssignments,
+}: {
+  influencerId: string;
+  email: string | null;
+  campaignAssignments: { campaignId: string; campaignName: string }[];
+}) {
   const [contracts, setContracts] = useState<ContractItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sendingLink, setSendingLink] = useState<string | null>(null);
+  const [sendingId, setSendingId] = useState<string | null>(null);
   const fetchedRef = useRef(false);
+
+  // Create contract form state
+  const [showCreate, setShowCreate] = useState(false);
+  const [templates, setTemplates] = useState<TemplateOption[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [selectedCampaign, setSelectedCampaign] = useState("");
+  const [contractRate, setContractRate] = useState("");
+  const [contractCurrency, setContractCurrency] = useState("USD");
+  const [contractDeliverables, setContractDeliverables] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const fetchContracts = useCallback(async () => {
     try {
@@ -518,25 +600,81 @@ function ContractsTab({ influencerId, email }: { influencerId: string; email: st
     }
   }, [fetchContracts]);
 
-  const sendForSignature = async (contractId: string) => {
-    setSendingLink(contractId);
+  const openCreateForm = async () => {
+    setShowCreate(true);
+    if (templates.length === 0) {
+      setTemplatesLoading(true);
+      try {
+        const res = await fetch("/api/contracts/templates");
+        if (res.ok) {
+          const data = await res.json();
+          setTemplates(data.templates);
+        }
+      } catch {}
+      setTemplatesLoading(false);
+    }
+  };
+
+  const createContract = async () => {
+    if (!selectedTemplate) {
+      toast.error("Select a template");
+      return;
+    }
+    setCreating(true);
     try {
-      const res = await fetch("/api/onboarding/generate-link", {
+      const res = await fetch("/api/contracts/from-template", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ influencerId, type: "CONTRACT" }),
+        body: JSON.stringify({
+          templateId: selectedTemplate,
+          influencerId,
+          campaignId: selectedCampaign || undefined,
+          rate: contractRate || undefined,
+          currency: contractCurrency,
+          deliverables: contractDeliverables || undefined,
+        }),
       });
-      if (!res.ok) throw new Error("Failed");
-      const data = await res.json();
-
-      // Update token with contractId
-      // The link is ready, copy to clipboard
-      await navigator.clipboard.writeText(data.url);
-      toast.success("Signing link copied to clipboard");
-    } catch {
-      toast.error("Failed to generate signing link");
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed");
+      }
+      toast.success("Contract created");
+      setShowCreate(false);
+      setSelectedTemplate("");
+      setSelectedCampaign("");
+      setContractRate("");
+      setContractDeliverables("");
+      fetchedRef.current = false;
+      fetchContracts();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create contract");
     } finally {
-      setSendingLink(null);
+      setCreating(false);
+    }
+  };
+
+  const sendForSignature = async (contractId: string) => {
+    if (!email) {
+      toast.error("Influencer has no email. Add an email first.");
+      return;
+    }
+    setSendingId(contractId);
+    try {
+      const res = await fetch(`/api/contracts/${contractId}/send`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed");
+      }
+      toast.success(`Contract sent to ${email}`);
+      // Refresh to show updated status
+      fetchedRef.current = false;
+      fetchContracts();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send");
+    } finally {
+      setSendingId(null);
     }
   };
 
@@ -556,71 +694,183 @@ function ContractsTab({ influencerId, email }: { influencerId: string; email: st
     );
   }
 
-  if (contracts.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-          <FileText className="h-5 w-5 text-muted-foreground" />
-        </div>
-        <p className="text-sm text-muted-foreground">No contracts yet.</p>
-        <Button asChild variant="outline" size="sm" className="mt-3">
-          <Link href="/admin/contracts">
-            <Plus className="mr-2 h-3.5 w-3.5" />
-            Create Template
-          </Link>
-        </Button>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-2">
-      {contracts.map((c) => (
-        <div key={c.id} className="rounded-lg border p-3 space-y-2">
+    <div className="space-y-3">
+      {/* Create Contract form */}
+      {showCreate ? (
+        <div className="rounded-lg border p-4 space-y-3 bg-muted/30">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">
-                {c.template?.name || "Contract"}
+            <h3 className="text-sm font-semibold">New Contract</h3>
+            <button onClick={() => setShowCreate(false)} className="text-muted-foreground hover:text-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Template picker */}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Template *</label>
+            {templatesLoading ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                <Loader2 className="h-3 w-3 animate-spin" /> Loading templates...
+              </div>
+            ) : templates.length === 0 ? (
+              <div className="text-xs text-muted-foreground py-2">
+                No templates found.{" "}
+                <Link href="/admin/contracts" className="text-foreground underline">Create one first</Link>
+              </div>
+            ) : (
+              <select
+                value={selectedTemplate}
+                onChange={(e) => setSelectedTemplate(e.target.value)}
+                className="w-full rounded-md border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">Select a template...</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Campaign (optional) */}
+          {campaignAssignments.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Campaign (optional)</label>
+              <select
+                value={selectedCampaign}
+                onChange={(e) => setSelectedCampaign(e.target.value)}
+                className="w-full rounded-md border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">None</option>
+                {campaignAssignments.map((ca) => (
+                  <option key={ca.campaignId} value={ca.campaignId}>{ca.campaignName}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Rate + Currency */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Rate</label>
+              <input
+                type="number"
+                value={contractRate}
+                onChange={(e) => setContractRate(e.target.value)}
+                placeholder="e.g., 500"
+                className="w-full rounded-md border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Currency</label>
+              <select
+                value={contractCurrency}
+                onChange={(e) => setContractCurrency(e.target.value)}
+                className="w-full rounded-md border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="USD">USD</option>
+                <option value="KRW">KRW</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Deliverables */}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Deliverables</label>
+            <textarea
+              value={contractDeliverables}
+              onChange={(e) => setContractDeliverables(e.target.value)}
+              placeholder="e.g., 2 TikTok posts, 1 Instagram story"
+              rows={2}
+              className="w-full rounded-md border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <Button onClick={createContract} disabled={creating || !selectedTemplate} size="sm" className="text-xs">
+              {creating ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />}
+              Create Draft
+            </Button>
+            <Button variant="outline" onClick={() => setShowCreate(false)} size="sm" className="text-xs">
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button onClick={openCreateForm} variant="outline" size="sm" className="w-full text-xs">
+          <Plus className="mr-1 h-3 w-3" />
+          Create Contract from Template
+        </Button>
+      )}
+
+      {/* Contract list */}
+      {contracts.length === 0 && !showCreate ? (
+        <div className="text-center py-6">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+            <FileText className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <p className="text-sm text-muted-foreground">No contracts yet.</p>
+        </div>
+      ) : (
+        contracts.map((c) => (
+          <div key={c.id} className="rounded-lg border p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">
+                  {c.template?.name || "Contract"}
+                </span>
+              </div>
+              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusColors[c.status] || ""}`}>
+                {c.status}
               </span>
             </div>
-            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusColors[c.status] || ""}`}>
-              {c.status}
-            </span>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              {c.rate && <span>{c.currency} {c.rate.toLocaleString()}</span>}
+              {c.campaign && <span>{c.campaign.name}</span>}
+              <span>{new Date(c.createdAt).toLocaleDateString()}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {c.status === "DRAFT" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => sendForSignature(c.id)}
+                  disabled={sendingId === c.id}
+                >
+                  {sendingId === c.id ? (
+                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  ) : (
+                    <Mail className="mr-1 h-3 w-3" />
+                  )}
+                  {email ? "Email for Signature" : "Send for Signature"}
+                </Button>
+              )}
+              {c.status === "SENT" && (
+                <span className="text-xs text-blue-600 flex items-center gap-1">
+                  <Mail className="h-3 w-3" />
+                  Awaiting signature
+                </span>
+              )}
+              {c.signedPdfUrl && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs">
+                  <Download className="mr-1 h-3 w-3" />
+                  Download PDF
+                </Button>
+              )}
+              {c.signedAt && (
+                <span className="text-xs text-emerald-600 flex items-center gap-1">
+                  <ClipboardCheck className="h-3 w-3" />
+                  Signed {new Date(c.signedAt).toLocaleDateString()}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            {c.rate && <span>{c.currency} {c.rate.toLocaleString()}</span>}
-            {c.campaign && <span>{c.campaign.name}</span>}
-            <span>{new Date(c.createdAt).toLocaleDateString()}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            {c.status === "DRAFT" && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => sendForSignature(c.id)}
-                disabled={sendingLink === c.id}
-              >
-                {sendingLink === c.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Send className="mr-1 h-3 w-3" />}
-                Send for Signature
-              </Button>
-            )}
-            {c.signedPdfUrl && (
-              <Button variant="ghost" size="sm" className="h-7 text-xs">
-                <Download className="mr-1 h-3 w-3" />
-                Download PDF
-              </Button>
-            )}
-            {c.signedAt && (
-              <span className="text-xs text-emerald-600 flex items-center gap-1">
-                <ClipboardCheck className="h-3 w-3" />
-                Signed {new Date(c.signedAt).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-        </div>
-      ))}
+        ))
+      )}
     </div>
   );
 }
@@ -1174,7 +1424,7 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
         {/* Onboarding tab */}
         <TabsContent value="onboarding" className="mt-0 pt-5 pb-8">
           {activeTab === "onboarding" && (
-            <OnboardingTab influencerId={influencer.id} />
+            <OnboardingTab influencerId={influencer.id} email={influencer.email} />
           )}
         </TabsContent>
 
@@ -1184,6 +1434,7 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
             <ContractsTab
               influencerId={influencer.id}
               email={influencer.email}
+              campaignAssignments={influencer.campaignAssignments}
             />
           )}
         </TabsContent>
