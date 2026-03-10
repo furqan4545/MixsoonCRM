@@ -387,10 +387,14 @@ export function EmailList({ folder, title }: Props) {
                   !email.isRead && "bg-accent/30",
                 )}
               >
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => handleEmailClick(email.id)}
-                  className="flex w-full items-start gap-3 px-4 py-3 pr-20 text-left"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") handleEmailClick(email.id);
+                  }}
+                  className="flex w-full cursor-pointer items-start gap-3 px-4 py-3 pr-20 text-left"
                 >
                   <div className="mt-0.5 shrink-0">
                     {email.isRead ? (
@@ -438,7 +442,7 @@ export function EmailList({ folder, title }: Props) {
                   {email.isStarred && (
                     <Star className="mt-0.5 h-4 w-4 shrink-0 fill-yellow-400 text-yellow-400" />
                   )}
-                </button>
+                </div>
 
                 <div className="absolute right-4 top-3 flex flex-col items-end gap-1">
                   <span className="shrink-0 text-xs text-muted-foreground">
