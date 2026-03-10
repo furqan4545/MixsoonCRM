@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
     Math.max(1, Number(url.searchParams.get("pageSize") ?? "30")),
   );
   const search = url.searchParams.get("q") ?? "";
+  const influencerId = url.searchParams.get("influencerId") ?? "";
 
   const where: Record<string, unknown> = {
     accountId: account.id,
@@ -37,6 +38,10 @@ export async function GET(req: NextRequest) {
       : folder === "DRAFTS"
         ? [{ updatedAt: "desc" as const }, { createdAt: "desc" as const }]
         : [{ receivedAt: "desc" as const }, { createdAt: "desc" as const }];
+
+  if (influencerId) {
+    where.influencerId = influencerId;
+  }
 
   if (search) {
     where.OR = [

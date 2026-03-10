@@ -1,9 +1,9 @@
 "use client";
 
-import { Inbox, Mail, MailOpen, Star, Trash2 } from "lucide-react";
+import { Inbox, Mail, MailOpen, Star, Trash2, User, X } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatDistanceToNow } from "@/app/lib/date-utils";
 import { emitEmailRefresh, useEmailRefresh } from "@/app/lib/email-events";
 import { Button } from "@/components/ui/button";
@@ -26,10 +26,17 @@ interface EmailItem {
   influencer: { id: string; username: string } | null;
 }
 
+interface InfluencerOption {
+  id: string;
+  username: string;
+}
+
 interface Props {
   folder: string;
   title: string;
 }
+
+const STORAGE_KEY_PREFIX = "email-list-state:";
 
 export function EmailList({ folder, title }: Props) {
   const router = useRouter();
@@ -40,6 +47,71 @@ export function EmailList({ folder, title }: Props) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
+  // Influencer filter
+  const [influencerFilter, setInfluencerFilter] = useState<InfluencerOption | null>(null);
+  const [influencerSearch, setInfluencerSearch] = useState("");
+  const [influencerOptions, setInfluencerOptions] = useState<InfluencerOption[]>([]);
+  const [showInfluencerDropdown, setShowInfluencerDropdown] = useState(false);
+  const influencerDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Scroll and selection restoration
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const restoredRef = useRef(false);
+
+  const storageKey = `${STORAGE_KEY_PREFIX}${folder}`;
+
+  // Restore state from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(storageKey);
+      if (saved) {
+        const state = JSON.parse(saved);
+        if (state.page) setPage(state.page);
+        if (state.search) setSearch(state.search);
+        if (state.influencerFilter) setInfluencerFilter(state.influencerFilter);
+        restoredRef.current = true;
+      }
+    } catch {}
+  }, [storageKey]);
+
+  // Save state to sessionStorage whenever it changes
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          page,
+          search,
+          influencerFilter,
+        }),
+      );
+    } catch {}
+  }, [storageKey, page, search, influencerFilter]);
+
+  // Restore scroll position after emails load
+  useEffect(() => {
+    if (!loading && emails.length > 0 && restoredRef.current) {
+      try {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved) {
+          const state = JSON.parse(saved);
+          if (state.scrollTop && scrollRef.current) {
+            // Find the scroll viewport inside ScrollArea
+            const viewport = scrollRef.current.querySelector(
+              "[data-slot=scroll-area-viewport]",
+            );
+            if (viewport) {
+              requestAnimationFrame(() => {
+                viewport.scrollTop = state.scrollTop;
+              });
+            }
+          }
+        }
+      } catch {}
+      restoredRef.current = false;
+    }
+  }, [loading, emails.length, storageKey]);
+
   const fetchEmails = useCallback(async () => {
     setLoading(true);
     try {
@@ -49,6 +121,7 @@ export function EmailList({ folder, title }: Props) {
         pageSize: "30",
       });
       if (search) params.set("q", search);
+      if (influencerFilter) params.set("influencerId", influencerFilter.id);
 
       const res = await fetch(`/api/email?${params}`, { cache: "no-store" });
       if (res.ok) {
@@ -61,13 +134,58 @@ export function EmailList({ folder, title }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [folder, page, search]);
+  }, [folder, page, search, influencerFilter]);
 
   useEffect(() => {
     fetchEmails();
   }, [fetchEmails]);
 
   useEmailRefresh(fetchEmails);
+
+  // Fetch influencer suggestions for the dropdown
+  useEffect(() => {
+    if (!influencerSearch.trim()) {
+      setInfluencerOptions([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/influencers?search=${encodeURIComponent(influencerSearch.trim())}&minimal=true&limit=10`,
+          { signal: controller.signal, cache: "no-store" },
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const items = (data.influencers ?? []) as Array<{
+            id: string;
+            username: string;
+          }>;
+          setInfluencerOptions(
+            items.map((i) => ({ id: i.id, username: i.username })),
+          );
+        }
+      } catch {}
+    }, 250);
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [influencerSearch]);
+
+  // Close influencer dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        influencerDropdownRef.current &&
+        !influencerDropdownRef.current.contains(e.target as Node)
+      ) {
+        setShowInfluencerDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,36 +240,120 @@ export function EmailList({ folder, title }: Props) {
     } catch {}
   };
 
+  const handleEmailClick = (emailId: string) => {
+    // Save scroll position before navigating
+    try {
+      const viewport = scrollRef.current?.querySelector(
+        "[data-slot=scroll-area-viewport]",
+      );
+      const current = sessionStorage.getItem(storageKey);
+      const state = current ? JSON.parse(current) : {};
+      state.scrollTop = viewport?.scrollTop ?? 0;
+      state.selectedEmailId = emailId;
+      sessionStorage.setItem(storageKey, JSON.stringify(state));
+    } catch {}
+    router.push(`/email/${emailId}`);
+  };
+
+  const selectInfluencer = (option: InfluencerOption) => {
+    setInfluencerFilter(option);
+    setInfluencerSearch("");
+    setShowInfluencerDropdown(false);
+    setPage(1);
+  };
+
+  const clearInfluencerFilter = () => {
+    setInfluencerFilter(null);
+    setInfluencerSearch("");
+    setPage(1);
+  };
+
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div>
-          <h2 className="text-lg font-semibold">{title}</h2>
-          <p className="text-xs text-muted-foreground">{total} messages</p>
+      <div className="flex flex-col gap-2 border-b px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">{title}</h2>
+            <p className="text-xs text-muted-foreground">{total} messages</p>
+          </div>
+          <div className="flex gap-2">
+            {folder === "TRASH" && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteAllTrash}
+                disabled={loading || total === 0}
+              >
+                Delete All
+              </Button>
+            )}
+            <form onSubmit={handleSearch} className="flex gap-2">
+              <Input
+                placeholder="Search emails..."
+                className="h-8 w-56"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </form>
+          </div>
         </div>
-        <div className="flex gap-2">
-          {folder === "TRASH" && (
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleDeleteAllTrash}
-              disabled={loading || total === 0}
-            >
-              Delete All
-            </Button>
+
+        {/* Influencer filter */}
+        <div className="flex items-center gap-2">
+          {influencerFilter ? (
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
+              <User className="h-3 w-3" />
+              @{influencerFilter.username}
+              <button
+                type="button"
+                onClick={clearInfluencerFilter}
+                className="ml-0.5 rounded-full p-0.5 hover:bg-blue-200 dark:hover:bg-blue-800"
+                title="Clear filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : (
+            <div ref={influencerDropdownRef} className="relative">
+              <div className="flex items-center gap-1.5">
+                <User className="h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Filter by influencer..."
+                  className="h-7 w-52 text-xs"
+                  value={influencerSearch}
+                  onChange={(e) => {
+                    setInfluencerSearch(e.target.value);
+                    setShowInfluencerDropdown(true);
+                  }}
+                  onFocus={() => {
+                    if (influencerSearch.trim()) setShowInfluencerDropdown(true);
+                  }}
+                />
+              </div>
+              {showInfluencerDropdown && influencerOptions.length > 0 && (
+                <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-md border bg-popover shadow-lg">
+                  {influencerOptions.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => selectInfluencer(option)}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+                    >
+                      <User className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="truncate">@{option.username}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
-          <form onSubmit={handleSearch} className="flex gap-2">
-            <Input
-              placeholder="Search emails..."
-              className="h-8 w-56"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </form>
         </div>
       </div>
 
-      <ScrollArea className="*:data-[slot=scroll-area-viewport]:overscroll-contain min-h-0 flex-1">
+      <ScrollArea
+        ref={scrollRef}
+        className="*:data-[slot=scroll-area-viewport]:overscroll-contain min-h-0 flex-1"
+      >
         {loading && emails.length === 0 ? (
           <div className="flex items-center justify-center py-20 text-muted-foreground">
             Loading...
@@ -159,7 +361,21 @@ export function EmailList({ folder, title }: Props) {
         ) : emails.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
             <Mail className="mb-3 h-10 w-10" />
-            <p>No emails in {title.toLowerCase()}</p>
+            <p>
+              {influencerFilter
+                ? `No emails with @${influencerFilter.username}`
+                : `No emails in ${title.toLowerCase()}`}
+            </p>
+            {influencerFilter && (
+              <Button
+                variant="link"
+                size="sm"
+                className="mt-2"
+                onClick={clearInfluencerFilter}
+              >
+                Clear filter
+              </Button>
+            )}
           </div>
         ) : (
           <div className="divide-y">
@@ -173,7 +389,7 @@ export function EmailList({ folder, title }: Props) {
               >
                 <button
                   type="button"
-                  onClick={() => router.push(`/email/${email.id}`)}
+                  onClick={() => handleEmailClick(email.id)}
                   className="flex w-full items-start gap-3 px-4 py-3 pr-20 text-left"
                 >
                   <div className="mt-0.5 shrink-0">
@@ -194,9 +410,17 @@ export function EmailList({ folder, title }: Props) {
                         {displayAddress(email)}
                       </span>
                       {email.influencer && (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selectInfluencer(email.influencer!);
+                          }}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-800/60"
+                          title={`Filter by @${email.influencer.username}`}
+                        >
                           @{email.influencer.username}
-                        </span>
+                        </button>
                       )}
                     </div>
                     <p
