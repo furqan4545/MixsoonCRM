@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
-  serverExternalPackages: ["@prisma/client"],
+  serverExternalPackages: ["@prisma/client", "puppeteer"],
   typescript: {
     ignoreBuildErrors: true,
   },

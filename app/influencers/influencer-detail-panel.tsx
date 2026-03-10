@@ -20,6 +20,11 @@ import {
   Inbox,
   Loader2,
   Check,
+  FileText,
+  LinkIcon,
+  ClipboardCheck,
+  Download,
+  Copy,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -410,6 +415,216 @@ function ConversationsTab({ influencerId, email }: { influencerId: string; email
   );
 }
 
+/* ── Onboarding tab ── */
+function OnboardingTab({ influencerId }: { influencerId: string }) {
+  const [linkUrl, setLinkUrl] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const generateLink = async () => {
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/onboarding/generate-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ influencerId }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      setLinkUrl(data.url);
+      toast.success("Onboarding link generated");
+    } catch {
+      toast.error("Failed to generate link");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const copyLink = () => {
+    if (!linkUrl) return;
+    navigator.clipboard.writeText(linkUrl);
+    setCopied(true);
+    toast.success("Link copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border p-4">
+        <h3 className="text-sm font-semibold mb-2">Onboarding Link</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Generate a magic link to send to this influencer. They can fill out their bank details and shipping address without creating an account.
+        </p>
+        {linkUrl ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 rounded-md border bg-muted/50 p-2">
+              <code className="flex-1 truncate text-xs">{linkUrl}</code>
+              <Button variant="ghost" size="sm" onClick={copyLink} className="h-7 shrink-0">
+                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={generateLink} disabled={generating}>
+                Generate New Link
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button onClick={generateLink} disabled={generating} size="sm">
+            {generating ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <LinkIcon className="mr-2 h-3 w-3" />}
+            Generate Onboarding Link
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Contracts tab ── */
+interface ContractItem {
+  id: string;
+  status: string;
+  rate: number | null;
+  currency: string;
+  deliverables: string | null;
+  signedAt: string | null;
+  signedPdfUrl: string | null;
+  createdAt: string;
+  campaign: { id: string; name: string } | null;
+  template: { id: string; name: string } | null;
+}
+
+function ContractsTab({ influencerId, email }: { influencerId: string; email: string | null }) {
+  const [contracts, setContracts] = useState<ContractItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sendingLink, setSendingLink] = useState<string | null>(null);
+  const fetchedRef = useRef(false);
+
+  const fetchContracts = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/contracts?influencerId=${influencerId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setContracts(data.contracts);
+      }
+    } catch {}
+    setLoading(false);
+  }, [influencerId]);
+
+  useEffect(() => {
+    if (!fetchedRef.current) {
+      fetchedRef.current = true;
+      fetchContracts();
+    }
+  }, [fetchContracts]);
+
+  const sendForSignature = async (contractId: string) => {
+    setSendingLink(contractId);
+    try {
+      const res = await fetch("/api/onboarding/generate-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ influencerId, type: "CONTRACT" }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+
+      // Update token with contractId
+      // The link is ready, copy to clipboard
+      await navigator.clipboard.writeText(data.url);
+      toast.success("Signing link copied to clipboard");
+    } catch {
+      toast.error("Failed to generate signing link");
+    } finally {
+      setSendingLink(null);
+    }
+  };
+
+  const statusColors: Record<string, string> = {
+    DRAFT: "bg-gray-100 text-gray-700 border-gray-200",
+    SENT: "bg-blue-100 text-blue-700 border-blue-200",
+    SIGNED: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    ACTIVE: "bg-green-100 text-green-700 border-green-200",
+    COMPLETED: "bg-purple-100 text-purple-700 border-purple-200",
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (contracts.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+          <FileText className="h-5 w-5 text-muted-foreground" />
+        </div>
+        <p className="text-sm text-muted-foreground">No contracts yet.</p>
+        <Button asChild variant="outline" size="sm" className="mt-3">
+          <Link href="/admin/contracts">
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            Create Template
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {contracts.map((c) => (
+        <div key={c.id} className="rounded-lg border p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">
+                {c.template?.name || "Contract"}
+              </span>
+            </div>
+            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusColors[c.status] || ""}`}>
+              {c.status}
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            {c.rate && <span>{c.currency} {c.rate.toLocaleString()}</span>}
+            {c.campaign && <span>{c.campaign.name}</span>}
+            <span>{new Date(c.createdAt).toLocaleDateString()}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {c.status === "DRAFT" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => sendForSignature(c.id)}
+                disabled={sendingLink === c.id}
+              >
+                {sendingLink === c.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Send className="mr-1 h-3 w-3" />}
+                Send for Signature
+              </Button>
+            )}
+            {c.signedPdfUrl && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs">
+                <Download className="mr-1 h-3 w-3" />
+                Download PDF
+              </Button>
+            )}
+            {c.signedAt && (
+              <span className="text-xs text-emerald-600 flex items-center gap-1">
+                <ClipboardCheck className="h-3 w-3" />
+                Signed {new Date(c.signedAt).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── Main panel ── */
 interface Props {
   influencer: InfluencerRow;
@@ -618,6 +833,18 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
             className="rounded-none border-b-2 border-transparent px-4 py-2.5 text-sm data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
           >
             Notes
+          </TabsTrigger>
+          <TabsTrigger
+            value="onboarding"
+            className="rounded-none border-b-2 border-transparent px-4 py-2.5 text-sm data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+          >
+            Onboarding
+          </TabsTrigger>
+          <TabsTrigger
+            value="contracts"
+            className="rounded-none border-b-2 border-transparent px-4 py-2.5 text-sm data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+          >
+            Contracts
           </TabsTrigger>
         </TabsList>
 
@@ -942,6 +1169,23 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
             rows={10}
             className="w-full rounded-lg bg-amber-50/80 border-amber-200/50 border p-4 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
           />
+        </TabsContent>
+
+        {/* Onboarding tab */}
+        <TabsContent value="onboarding" className="mt-0 pt-5 pb-8">
+          {activeTab === "onboarding" && (
+            <OnboardingTab influencerId={influencer.id} />
+          )}
+        </TabsContent>
+
+        {/* Contracts tab */}
+        <TabsContent value="contracts" className="mt-0 pt-5 pb-8">
+          {activeTab === "contracts" && (
+            <ContractsTab
+              influencerId={influencer.id}
+              email={influencer.email}
+            />
+          )}
         </TabsContent>
       </Tabs>
     </div>

@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   CheckSquare,
   ChevronsUpDown,
+  FileText,
   GitBranch,
   Inbox,
   LogOut,
@@ -230,6 +231,18 @@ export function AppSidebar() {
                       <Link href="/admin/roles">
                         <ShieldCheck className="h-4 w-4" />
                         <span>Roles & permissions</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      tooltip="Contract templates"
+                      isActive={pathname.startsWith("/admin/contracts")}
+                    >
+                      <Link href="/admin/contracts">
+                        <FileText className="h-4 w-4" />
+                        <span>Contract templates</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

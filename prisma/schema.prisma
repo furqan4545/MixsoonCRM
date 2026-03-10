@@ -45,6 +45,9 @@ model Influencer {
   activityLogs  ActivityLog[]
   campaignAssignments CampaignInfluencer[]
   approvalRequests    ApprovalRequest[]
+  onboarding          InfluencerOnboarding?
+  onboardingTokens    OnboardingToken[]
+  contracts           Contract[]
 
   @@index([username])
   @@index([importId])
@@ -370,6 +373,7 @@ model MarketingCampaign {
 
   influencers      CampaignInfluencer[]
   approvalRequests ApprovalRequest[]
+  contracts        Contract[]
 
   @@index([status])
   @@index([name])
@@ -578,4 +582,104 @@ model EmailAlert {
   @@index([emailMessageId])
   @@index([influencerId])
   @@index([status, triggerAt])
+}
+
+// ─── ONBOARDING & CONTRACTS ──────────────────────────────
+
+enum TokenType {
+  ONBOARDING
+  CONTRACT
+  CONTENT
+  PAYMENT
+}
+
+model OnboardingToken {
+  id           String    @id @default(cuid())
+  token        String    @unique
+  influencerId String
+  influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  type         TokenType @default(ONBOARDING)
+  contractId   String?   // For CONTRACT type tokens
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([token])
+  @@index([influencerId])
+  @@index([type])
+}
+
+model InfluencerOnboarding {
+  id           String   @id @default(cuid())
+  influencerId String   @unique
+  influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+
+  // Bank details (account number is encrypted)
+  bankName      String
+  accountNumber String   // AES-256 encrypted
+  accountHolder String
+  bankCode      String?
+
+  // Shipping address
+  fullName     String
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  postalCode   String
+  country      String   @default("South Korea")
+
+  submittedAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([influencerId])
+}
+
+model ContractTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  content   String   // HTML with {{placeholders}}
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contracts Contract[]
+
+  @@index([name])
+}
+
+enum ContractDocStatus {
+  DRAFT
+  SENT
+  SIGNED
+  ACTIVE
+  COMPLETED
+}
+
+model Contract {
+  id             String   @id @default(cuid())
+  influencerId   String
+  influencer     Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  campaignId     String?
+  campaign       MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  templateId     String?
+  template       ContractTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  filledContent    String   // HTML after placeholder replacement
+  rate             Float?
+  currency         String   @default("USD")
+  deliverables     String?
+  startDate        DateTime?
+  endDate          DateTime?
+
+  signatureDataUrl String?  // base64 of drawn/uploaded signature
+  signedPdfUrl     String?  // GCS path of signed PDF
+  signedAt         DateTime?
+  status           ContractDocStatus @default(DRAFT)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([influencerId])
+  @@index([campaignId])
+  @@index([status])
 }

@@ -42,7 +42,22 @@
       "Bash(grep -n \"notifyQuiet\\\\|notification\" /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/clever-matsumoto/app/api/imports/[id]/save/route.ts)",
       "Bash(npx tsx -e \":*)",
       "Bash(npx shadcn@latest add switch --yes)",
-      "Bash(npx shadcn@latest add select --yes)"
+      "Bash(npx shadcn@latest add select --yes)",
+      "Bash(pandoc /Users/topg/Downloads/MIXSOON-Build-Instructions.docx -o /tmp/mixsoon-instructions.md)",
+      "Bash(python3 scripts/office/unpack.py /Users/topg/Downloads/MIXSOON-Build-Instructions.docx /tmp/mixsoon-unpacked/)",
+      "Bash(ls -la /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/app/\\\\\\(auth\\\\\\)/)",
+      "Bash(ls -la \"/Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/app/\\(auth\\)/login/\")",
+      "Read(//Users/topg/Desktop/typescript/mixsoon/**)",
+      "Bash(ls -la /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/.env*)",
+      "Bash(npx dotenv -e .env -- npx prisma migrate dev --name add_onboarding_contracts --schema prisma/schema.prisma)",
+      "Bash(ln -sf /Users/topg/Desktop/typescript/mixsoon/.env .env)",
+      "Bash(mkdir -p /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/app/portal/onboard/[token])",
+      "Bash(mkdir -p /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/app/portal/contract/[token])",
+      "Bash(mkdir -p /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/app/api/contracts/templates/[id])",
+      "Bash(mkdir -p /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/app/api/contracts/[id]/sign)",
+      "Bash(npm install html-pdf-node)",
+      "Bash(npm uninstall html-pdf-node)",
+      "Bash(npm install puppeteer)"
     ]
   }
 }

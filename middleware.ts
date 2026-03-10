@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const publicPaths = ["/login", "/register", "/pending-approval"];
+const publicPaths = ["/login", "/register", "/pending-approval", "/portal"];
 
 /** Auth.js v5 session cookie names (dev vs prod) */
 const SESSION_COOKIE_NAMES = [
@@ -23,7 +23,10 @@ export function middleware(req: NextRequest) {
   if (
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/dev") ||
-    pathname.startsWith("/api/debug")
+    pathname.startsWith("/api/debug") ||
+    pathname.startsWith("/api/onboarding/verify") ||
+    pathname.startsWith("/api/onboarding/submit") ||
+    pathname.startsWith("/api/contracts/sign")
   ) {
     return NextResponse.next();
   }
