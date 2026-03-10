@@ -66,6 +66,7 @@ function TemplateEditor({
   const editor = useEditor({
     extensions: [StarterKit, UnderlineExt],
     content: initialContent || "<p>Start writing your contract template here...</p>",
+    immediatelyRender: false,
     editorProps: {
       attributes: {
         class: "prose prose-sm max-w-none min-h-[300px] p-4 focus:outline-none",
