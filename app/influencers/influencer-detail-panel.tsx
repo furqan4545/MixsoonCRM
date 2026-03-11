@@ -21,10 +21,8 @@ import {
   Loader2,
   Check,
   FileText,
-  LinkIcon,
   ClipboardCheck,
   Download,
-  Copy,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -415,119 +413,6 @@ function ConversationsTab({ influencerId, email }: { influencerId: string; email
   );
 }
 
-/* ── Onboarding tab ── */
-function OnboardingTab({ influencerId, influencerName, email }: { influencerId: string; influencerName: string; email: string | null }) {
-  const router = useRouter();
-  const [linkUrl, setLinkUrl] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const generateLink = async (): Promise<string | null> => {
-    setGenerating(true);
-    try {
-      const res = await fetch("/api/onboarding/generate-link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ influencerId }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      const data = await res.json();
-      setLinkUrl(data.url);
-      return data.url as string;
-    } catch {
-      toast.error("Failed to generate link");
-      return null;
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const copyLink = () => {
-    if (!linkUrl) return;
-    navigator.clipboard.writeText(linkUrl);
-    setCopied(true);
-    toast.success("Link copied to clipboard");
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const openComposer = async () => {
-    if (!email) {
-      toast.error("No email address. Add an email to this influencer first.");
-      return;
-    }
-    // Generate a fresh link, then open composer
-    const url = await generateLink();
-    if (!url) return;
-
-    const subject = "[MIXSOON] Complete Your Onboarding";
-    const body = `Hi ${influencerName},\n\nWe're excited to work with you! Please complete your onboarding by clicking the link below:\n\n${url}\n\nYou'll be asked to provide your bank account details and shipping address. No account creation needed.\n\nThis link expires in 30 days. If you have any questions, feel free to reply to this email.\n\nBest,\nMIXSOON Team`;
-
-    const params = new URLSearchParams({
-      to: email,
-      subject,
-      body,
-      influencerId,
-    });
-    router.push(`/email/compose?${params.toString()}`);
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-lg border p-4">
-        <h3 className="text-sm font-semibold mb-2">Onboarding Link</h3>
-        <p className="text-xs text-muted-foreground mb-3">
-          Send a magic link to this influencer. They can fill out their bank details and shipping address without creating an account.
-        </p>
-
-        {/* Email via composer */}
-        <div className="mb-3">
-          <Button
-            onClick={openComposer}
-            disabled={generating}
-            size="sm"
-            className="w-full"
-          >
-            {generating ? (
-              <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-            ) : (
-              <Mail className="mr-2 h-3 w-3" />
-            )}
-            {email ? `Email Onboarding Link to ${email}` : "Email Onboarding Link"}
-          </Button>
-          {!email && (
-            <p className="text-xs text-amber-600 mt-2">
-              No email address found. Add an email to this influencer first.
-            </p>
-          )}
-        </div>
-
-        {/* Or copy link */}
-        <div className="border-t pt-3">
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Or copy link manually</p>
-          {linkUrl ? (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 rounded-md border bg-muted/50 p-2">
-                <code className="flex-1 truncate text-xs">{linkUrl}</code>
-                <Button variant="ghost" size="sm" onClick={copyLink} className="h-7 shrink-0">
-                  {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                </Button>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => generateLink()} disabled={generating} className="text-xs">
-                Regenerate Link
-              </Button>
-            </div>
-          ) : (
-            <Button variant="outline" onClick={() => generateLink()} disabled={generating} size="sm" className="text-xs">
-              {generating ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <LinkIcon className="mr-2 h-3 w-3" />}
-              Generate Link
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ── Contracts tab ── */
 interface ContractItem {
   id: string;
@@ -535,21 +420,14 @@ interface ContractItem {
   rate: number | null;
   currency: string;
   deliverables: string | null;
+  requireBankDetails: boolean;
+  requireShippingAddress: boolean;
   signedAt: string | null;
   signedPdfUrl: string | null;
+  filledContent: string;
   createdAt: string;
   campaign: { id: string; name: string } | null;
   template: { id: string; name: string } | null;
-}
-
-interface TemplateOption {
-  id: string;
-  name: string;
-}
-
-interface CampaignOption {
-  id: string;
-  name: string;
 }
 
 function ContractsTab({
@@ -569,16 +447,16 @@ function ContractsTab({
   const [sendingId, setSendingId] = useState<string | null>(null);
   const fetchedRef = useRef(false);
 
-  // Create contract form state
-  const [showCreate, setShowCreate] = useState(false);
-  const [templates, setTemplates] = useState<TemplateOption[]>([]);
-  const [templatesLoading, setTemplatesLoading] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState("");
+  // Create / Edit contract form state
+  const [showEditor, setShowEditor] = useState(false);
+  const [editingContractId, setEditingContractId] = useState<string | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState("");
   const [contractRate, setContractRate] = useState("");
   const [contractCurrency, setContractCurrency] = useState("USD");
-  const [contractDeliverables, setContractDeliverables] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [requireBank, setRequireBank] = useState(false);
+  const [requireShipping, setRequireShipping] = useState(false);
+  const [editorContent, setEditorContent] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const fetchContracts = useCallback(async () => {
     try {
@@ -598,67 +476,93 @@ function ContractsTab({
     }
   }, [fetchContracts]);
 
-  const openCreateForm = async () => {
-    setShowCreate(true);
-    if (templates.length === 0) {
-      setTemplatesLoading(true);
-      try {
-        const res = await fetch("/api/contracts/templates");
-        if (res.ok) {
-          const data = await res.json();
-          setTemplates(data.templates);
-        }
-      } catch {}
-      setTemplatesLoading(false);
-    }
+  const openNewContract = () => {
+    setEditingContractId(null);
+    setSelectedCampaign("");
+    setContractRate("");
+    setContractCurrency("USD");
+    setRequireBank(false);
+    setRequireShipping(false);
+    setEditorContent("");
+    setShowEditor(true);
   };
 
-  const createContract = async () => {
-    if (!selectedTemplate) {
-      toast.error("Select a template");
+  const openEditContract = (contract: ContractItem) => {
+    setEditingContractId(contract.id);
+    setSelectedCampaign(contract.campaign?.id || "");
+    setContractRate(contract.rate?.toString() || "");
+    setContractCurrency(contract.currency);
+    setRequireBank(contract.requireBankDetails);
+    setRequireShipping(contract.requireShippingAddress);
+    setEditorContent(contract.filledContent);
+    setShowEditor(true);
+  };
+
+  const closeEditor = () => {
+    setShowEditor(false);
+    setEditingContractId(null);
+  };
+
+  const saveContract = async () => {
+    if (!editorContent.trim() || editorContent === "<p></p>") {
+      toast.error("Contract content cannot be empty");
       return;
     }
-    setCreating(true);
+    setSaving(true);
     try {
-      const res = await fetch("/api/contracts/from-template", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          templateId: selectedTemplate,
-          influencerId,
-          campaignId: selectedCampaign || undefined,
-          rate: contractRate || undefined,
-          currency: contractCurrency,
-          deliverables: contractDeliverables || undefined,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed");
+      if (editingContractId) {
+        // Update existing
+        const res = await fetch(`/api/contracts/${editingContractId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filledContent: editorContent,
+            rate: contractRate || null,
+            currency: contractCurrency,
+            requireBankDetails: requireBank,
+            requireShippingAddress: requireShipping,
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to update");
+        toast.success("Contract updated");
+      } else {
+        // Create new
+        const res = await fetch("/api/contracts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            influencerId,
+            campaignId: selectedCampaign || undefined,
+            filledContent: editorContent,
+            rate: contractRate || undefined,
+            currency: contractCurrency,
+            requireBankDetails: requireBank,
+            requireShippingAddress: requireShipping,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Failed to create");
+        }
+        toast.success("Contract draft saved");
       }
-      toast.success("Contract created");
-      setShowCreate(false);
-      setSelectedTemplate("");
-      setSelectedCampaign("");
-      setContractRate("");
-      setContractDeliverables("");
+      closeEditor();
       fetchedRef.current = false;
       fetchContracts();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create contract");
+      toast.error(err instanceof Error ? err.message : "Failed to save");
     } finally {
-      setCreating(false);
+      setSaving(false);
     }
   };
 
-  const sendForSignature = async (contractId: string, templateName: string) => {
+  const sendForSignature = async (contractId: string) => {
     if (!email) {
       toast.error("Influencer has no email. Add an email first.");
       return;
     }
     setSendingId(contractId);
     try {
-      // Generate a signing magic link
       const res = await fetch("/api/onboarding/generate-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -668,9 +572,8 @@ function ContractsTab({
       const data = await res.json();
       const signingUrl = data.url as string;
 
-      const contractLabel = templateName || "Collaboration Agreement";
-      const subject = `[MIXSOON] Contract for Signature — ${contractLabel}`;
-      const body = `Hi ${influencerName},\n\nWe've prepared a "${contractLabel}" for your review and signature.\n\nPlease click the link below to review the contract details and sign it electronically:\n\n${signingUrl}\n\nThis link expires in 30 days. If you have any questions, feel free to reply to this email.\n\nBest,\nMIXSOON Team`;
+      const subject = "[MIXSOON] Contract for Signature";
+      const body = `Hi ${influencerName},\n\nWe've prepared a contract for your review and signature.\n\nPlease click the link below to review the contract details and sign it electronically:\n\n${signingUrl}\n\nThis link expires in 30 days. If you have any questions, feel free to reply to this email.\n\nBest,\nMIXSOON Team`;
 
       const params = new URLSearchParams({
         to: email,
@@ -704,44 +607,20 @@ function ContractsTab({
 
   return (
     <div className="space-y-3">
-      {/* Create Contract form */}
-      {showCreate ? (
-        <div className="rounded-lg border p-4 space-y-3 bg-muted/30">
+      {/* Contract editor (create or edit) */}
+      {showEditor ? (
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">New Contract</h3>
-            <button onClick={() => setShowCreate(false)} className="text-muted-foreground hover:text-foreground">
+            <h3 className="text-sm font-semibold">
+              {editingContractId ? "Edit Contract" : "New Contract"}
+            </h3>
+            <button onClick={closeEditor} className="text-muted-foreground hover:text-foreground">
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          {/* Template picker */}
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Template *</label>
-            {templatesLoading ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
-                <Loader2 className="h-3 w-3 animate-spin" /> Loading templates...
-              </div>
-            ) : templates.length === 0 ? (
-              <div className="text-xs text-muted-foreground py-2">
-                No templates found.{" "}
-                <Link href="/admin/contracts" className="text-foreground underline">Create one first</Link>
-              </div>
-            ) : (
-              <select
-                value={selectedTemplate}
-                onChange={(e) => setSelectedTemplate(e.target.value)}
-                className="w-full rounded-md border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="">Select a template...</option>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {/* Campaign (optional) */}
-          {campaignAssignments.length > 0 && (
+          {/* Campaign (optional) — only for new contracts */}
+          {!editingContractId && campaignAssignments.length > 0 && (
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Campaign (optional)</label>
               <select
@@ -784,37 +663,61 @@ function ContractsTab({
             </div>
           </div>
 
-          {/* Deliverables */}
+          {/* Requirement checkboxes */}
+          <div className="rounded-lg border p-3 space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              Request from influencer when signing:
+            </p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={requireBank}
+                onChange={(e) => setRequireBank(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <span className="text-xs font-medium">Bank Details</span>
+              <span className="text-[10px] text-muted-foreground">(account number, holder name)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={requireShipping}
+                onChange={(e) => setRequireShipping(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <span className="text-xs font-medium">Shipping Address</span>
+              <span className="text-[10px] text-muted-foreground">(for sending products)</span>
+            </label>
+          </div>
+
+          {/* Contract content — rich editor */}
           <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Deliverables</label>
-            <textarea
-              value={contractDeliverables}
-              onChange={(e) => setContractDeliverables(e.target.value)}
-              placeholder="e.g., 2 TikTok posts, 1 Instagram story"
-              rows={2}
-              className="w-full rounded-md border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Contract Content</label>
+            <ContractEditorLazy
+              initialContent={editorContent}
+              onContentChange={setEditorContent}
             />
           </div>
 
           <div className="flex gap-2 pt-1">
-            <Button onClick={createContract} disabled={creating || !selectedTemplate} size="sm" className="text-xs">
-              {creating ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />}
-              Create Draft
+            <Button onClick={saveContract} disabled={saving} size="sm" className="text-xs">
+              {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Check className="mr-1 h-3 w-3" />}
+              {editingContractId ? "Update Draft" : "Save Draft"}
             </Button>
-            <Button variant="outline" onClick={() => setShowCreate(false)} size="sm" className="text-xs">
+            <Button variant="outline" onClick={closeEditor} size="sm" className="text-xs">
               Cancel
             </Button>
           </div>
         </div>
       ) : (
-        <Button onClick={openCreateForm} variant="outline" size="sm" className="w-full text-xs">
+        <Button onClick={openNewContract} variant="outline" size="sm" className="w-full text-xs">
           <Plus className="mr-1 h-3 w-3" />
-          Create Contract from Template
+          New Contract
         </Button>
       )}
 
       {/* Contract list */}
-      {contracts.length === 0 && !showCreate ? (
+      {contracts.length === 0 && !showEditor ? (
         <div className="text-center py-6">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
             <FileText className="h-5 w-5 text-muted-foreground" />
@@ -840,22 +743,48 @@ function ContractsTab({
               {c.campaign && <span>{c.campaign.name}</span>}
               <span>{new Date(c.createdAt).toLocaleDateString()}</span>
             </div>
+            {/* Requirement badges */}
+            {(c.requireBankDetails || c.requireShippingAddress) && (
+              <div className="flex items-center gap-1.5">
+                {c.requireBankDetails && (
+                  <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                    Bank Details
+                  </span>
+                )}
+                {c.requireShippingAddress && (
+                  <span className="inline-flex items-center rounded-full bg-violet-50 border border-violet-200 px-2 py-0.5 text-[10px] font-medium text-violet-700">
+                    Shipping
+                  </span>
+                )}
+              </div>
+            )}
             <div className="flex items-center gap-2">
               {c.status === "DRAFT" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => sendForSignature(c.id, c.template?.name || "Contract")}
-                  disabled={sendingId === c.id}
-                >
-                  {sendingId === c.id ? (
-                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                  ) : (
-                    <Mail className="mr-1 h-3 w-3" />
-                  )}
-                  {email ? "Email for Signature" : "Send for Signature"}
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => openEditContract(c)}
+                  >
+                    <Edit2 className="mr-1 h-3 w-3" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => sendForSignature(c.id)}
+                    disabled={sendingId === c.id}
+                  >
+                    {sendingId === c.id ? (
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    ) : (
+                      <Mail className="mr-1 h-3 w-3" />
+                    )}
+                    {email ? "Email for Signature" : "Send for Signature"}
+                  </Button>
+                </>
               )}
               {c.status === "SENT" && (
                 <span className="text-xs text-blue-600 flex items-center gap-1">
@@ -864,10 +793,12 @@ function ContractsTab({
                 </span>
               )}
               {c.signedPdfUrl && (
-                <Button variant="ghost" size="sm" className="h-7 text-xs">
-                  <Download className="mr-1 h-3 w-3" />
-                  Download PDF
-                </Button>
+                <a href={c.signedPdfUrl} target="_blank" rel="noopener noreferrer">
+                  <Button variant="ghost" size="sm" className="h-7 text-xs">
+                    <Download className="mr-1 h-3 w-3" />
+                    Download PDF
+                  </Button>
+                </a>
               )}
               {c.signedAt && (
                 <span className="text-xs text-emerald-600 flex items-center gap-1">
@@ -882,6 +813,20 @@ function ContractsTab({
     </div>
   );
 }
+
+/* ── Lazy-loaded ContractEditor wrapper ── */
+import dynamic from "next/dynamic";
+const ContractEditorLazy = dynamic(
+  () => import("@/components/contract-editor").then((m) => m.ContractEditor),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center py-8 rounded-md border border-dashed">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    ),
+  },
+);
 
 /* ── Main panel ── */
 interface Props {
@@ -1091,12 +1036,6 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
             className="shrink-0 rounded-none border-b-2 border-transparent px-3 py-2.5 text-xs data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
           >
             Notes
-          </TabsTrigger>
-          <TabsTrigger
-            value="onboarding"
-            className="shrink-0 rounded-none border-b-2 border-transparent px-3 py-2.5 text-xs data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-          >
-            Onboarding
           </TabsTrigger>
           <TabsTrigger
             value="contracts"
@@ -1427,13 +1366,6 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
             rows={10}
             className="w-full rounded-lg bg-amber-50/80 border-amber-200/50 border p-4 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
           />
-        </TabsContent>
-
-        {/* Onboarding tab */}
-        <TabsContent value="onboarding" className="mt-0 pt-5 pb-8">
-          {activeTab === "onboarding" && (
-            <OnboardingTab influencerId={influencer.id} influencerName={influencer.displayName ?? influencer.username} email={influencer.email} />
-          )}
         </TabsContent>
 
         {/* Contracts tab */}

@@ -64,6 +64,8 @@ export async function POST(request: Request) {
       deliverables,
       startDate,
       endDate,
+      requireBankDetails = false,
+      requireShippingAddress = false,
     } = body;
 
     if (!influencerId || !filledContent) {
@@ -84,6 +86,8 @@ export async function POST(request: Request) {
         deliverables: deliverables || null,
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
+        requireBankDetails: !!requireBankDetails,
+        requireShippingAddress: !!requireShippingAddress,
         status: "DRAFT",
       },
     });

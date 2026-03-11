@@ -62,6 +62,8 @@ export async function PATCH(
     if (body.deliverables !== undefined) updateData.deliverables = body.deliverables;
     if (body.startDate !== undefined) updateData.startDate = body.startDate ? new Date(body.startDate) : null;
     if (body.endDate !== undefined) updateData.endDate = body.endDate ? new Date(body.endDate) : null;
+    if (body.requireBankDetails !== undefined) updateData.requireBankDetails = !!body.requireBankDetails;
+    if (body.requireShippingAddress !== undefined) updateData.requireShippingAddress = !!body.requireShippingAddress;
 
     const contract = await prisma.contract.update({
       where: { id },

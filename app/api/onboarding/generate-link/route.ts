@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     });
 
     const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const portalPath = type === "CONTRACT" ? "contract" : "onboard";
+    const portalPath = type === "CONTRACT" ? "sign" : "onboard";
     const url = `${baseUrl}/portal/${portalPath}/${token}`;
 
     return NextResponse.json({ token, url });
