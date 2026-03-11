@@ -671,6 +671,9 @@ model Contract {
   startDate        DateTime?
   endDate          DateTime?
 
+  requireBankDetails     Boolean @default(false)
+  requireShippingAddress Boolean @default(false)
+
   signatureDataUrl String?  // base64 of drawn/uploaded signature
   signedPdfUrl     String?  // GCS path of signed PDF
   signedAt         DateTime?
