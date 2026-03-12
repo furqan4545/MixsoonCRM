@@ -602,6 +602,7 @@ model OnboardingToken {
   contractId   String?   // For CONTRACT type tokens
   expiresAt    DateTime
   usedAt       DateTime?
+  openedAt     DateTime?  // When the influencer first opened the link
   createdAt    DateTime  @default(now())
 
   @@index([token])

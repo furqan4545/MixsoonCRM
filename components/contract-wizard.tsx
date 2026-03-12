@@ -105,6 +105,15 @@ export function ContractWizard({
 
   const storageKey = `contract_wizard_${token}`;
 
+  // Track that the influencer opened the contract (fire-and-forget)
+  useEffect(() => {
+    fetch("/api/portal/track-open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    }).catch(() => {}); // Silently ignore errors
+  }, [token]);
+
   // Restore from localStorage on mount
   useEffect(() => {
     try {

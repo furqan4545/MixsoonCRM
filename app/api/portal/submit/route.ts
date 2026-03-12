@@ -4,6 +4,7 @@ import { encrypt } from "@/app/lib/crypto";
 import { generateContractPdf, downloadPdfFromGcs } from "@/app/lib/pdf";
 import { signPdfWithFields } from "@/app/lib/pdf-sign";
 import { uploadToGcs } from "@/app/lib/gcs-upload";
+import { getSmtpTransport } from "@/app/lib/email";
 import type { ContractField } from "@/app/lib/contract-fields";
 
 // POST /api/portal/submit — Public (token-based): unified sign + bank + shipping
@@ -225,6 +226,67 @@ export async function POST(request: Request) {
         detail: `${influencerName} signed the contract${bankDetails ? " and submitted bank details" : ""}${shippingAddress ? " and shipping address" : ""}`,
       },
     });
+
+    // 11. Bell notification for admins
+    await prisma.notification.create({
+      data: {
+        type: "contract_signed",
+        status: "success",
+        title: "Contract signed",
+        message: `${influencerName} signed the contract`,
+      },
+    });
+
+    // 12. Email alert to the sending email account
+    try {
+      const emailAccount = await prisma.emailAccount.findFirst();
+      if (emailAccount) {
+        const baseUrl =
+          process.env.NEXTAUTH_URL ||
+          process.env.NEXT_PUBLIC_APP_URL ||
+          "http://localhost:3000";
+        const dashboardUrl = `${baseUrl}/influencers/${tokenRecord.influencerId}`;
+
+        const alertHtml = `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #16a34a; padding: 24px 32px; border-radius: 12px 12px 0 0;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 600;">MIXSOON — Contract Signed ✓</h1>
+            </div>
+            <div style="background: #ffffff; padding: 32px; border: 1px solid #e5e5e5; border-top: none; border-radius: 0 0 12px 12px;">
+              <p style="font-size: 16px; color: #333; margin: 0 0 16px;">
+                <strong>${influencerName}</strong> has signed the contract.
+              </p>
+              <p style="font-size: 14px; color: #555; margin: 0 0 24px; line-height: 1.6;">
+                The signed PDF has been saved. You can view the details in the MIXSOON dashboard.
+              </p>
+              <div style="text-align: center; margin: 32px 0;">
+                <a href="${dashboardUrl}"
+                   style="display: inline-block; background: #16a34a; color: #ffffff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600;">
+                  View in Dashboard
+                </a>
+              </div>
+              <p style="font-size: 12px; color: #999; margin: 24px 0 0;">
+                Signed on ${formattedDate}
+              </p>
+            </div>
+          </div>
+        `;
+
+        const transport = getSmtpTransport(emailAccount);
+        await transport.sendMail({
+          from: emailAccount.displayName
+            ? `"${emailAccount.displayName}" <${emailAccount.emailAddress}>`
+            : emailAccount.emailAddress,
+          to: emailAccount.emailAddress, // Send to the same account that sent the contract
+          subject: `[MIXSOON] ${influencerName} signed the contract`,
+          html: alertHtml,
+        });
+        transport.close();
+      }
+    } catch (emailErr) {
+      // Don't fail the signing flow if email notification fails
+      console.error("[POST /api/portal/submit] Email notification failed:", emailErr);
+    }
 
     return NextResponse.json({ success: true, signedPdfUrl });
   } catch (error) {
