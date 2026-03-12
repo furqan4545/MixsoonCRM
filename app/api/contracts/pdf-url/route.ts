@@ -4,7 +4,7 @@ import { requirePermission } from "@/app/lib/rbac";
 import { getSignedUrl } from "@/app/lib/gcs-upload";
 
 // GET /api/contracts/pdf-url?contractId=xxx
-// Returns a temporary signed GCS URL so the browser can load the PDF via react-pdf.
+// Proxies the PDF bytes through the Next.js server to avoid GCS CORS issues.
 // Supports admin auth OR token-based auth (for portal access).
 export async function GET(request: NextRequest) {
   const contractId = request.nextUrl.searchParams.get("contractId");
@@ -61,5 +61,20 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ url: signedUrl });
+  // Proxy the PDF bytes through our server to avoid CORS issues
+  const pdfRes = await fetch(signedUrl);
+  if (!pdfRes.ok) {
+    return NextResponse.json(
+      { error: "Failed to fetch PDF from storage" },
+      { status: 502 },
+    );
+  }
+
+  const pdfBuffer = await pdfRes.arrayBuffer();
+  return new NextResponse(pdfBuffer, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Cache-Control": "private, max-age=3600",
+    },
+  });
 }

@@ -524,14 +524,8 @@ function ContractsTab({
     if (contract.pdfUrl) {
       setPdfUrl(contract.pdfUrl);
       setFields((contract.fields as ContractField_JSON[]) || []);
-      // Fetch signed URL for rendering
-      try {
-        const res = await fetch(`/api/contracts/pdf-url?contractId=${contract.id}`);
-        if (res.ok) {
-          const data = await res.json();
-          setPdfSignedUrl(data.url);
-        }
-      } catch {}
+      // Use proxy URL for rendering (avoids GCS CORS issues)
+      setPdfSignedUrl(`/api/contracts/pdf-url?contractId=${contract.id}`);
     }
     setShowEditor(true);
   };
@@ -585,12 +579,8 @@ function ContractsTab({
       setPageCount(data.pageCount);
       setFields([]);
 
-      // Get signed URL for rendering
-      const urlRes = await fetch(`/api/contracts/pdf-url?contractId=${cId}`);
-      if (urlRes.ok) {
-        const urlData = await urlRes.json();
-        setPdfSignedUrl(urlData.url);
-      }
+      // Use proxy URL for rendering (avoids GCS CORS issues)
+      setPdfSignedUrl(`/api/contracts/pdf-url?contractId=${cId}`);
 
       toast.success(`PDF uploaded — ${data.pageCount} page${data.pageCount !== 1 ? "s" : ""}`);
     } catch (err) {
