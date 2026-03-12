@@ -347,6 +347,7 @@ export function InfluencersDashboard({ influencers }: Props) {
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("ALL");
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [moving, setMoving] = useState(false);
+  const [panelExpanded, setPanelExpanded] = useState(false);
 
   // Count per queue
   const queueCounts = useMemo(() => {
@@ -832,7 +833,9 @@ export function InfluencersDashboard({ influencers }: Props) {
       {selected && (
         <InfluencerDetailPanel
           influencer={selected}
-          onClose={() => setSelectedId(null)}
+          onClose={() => { setSelectedId(null); setPanelExpanded(false); }}
+          expanded={panelExpanded}
+          onToggleExpand={() => setPanelExpanded((v) => !v)}
         />
       )}
     </div>

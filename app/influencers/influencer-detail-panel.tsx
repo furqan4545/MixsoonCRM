@@ -23,6 +23,8 @@ import {
   FileText,
   ClipboardCheck,
   Download,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -848,9 +850,11 @@ const PdfFieldEditorLazy = dynamic(
 interface Props {
   influencer: InfluencerRow;
   onClose: () => void;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
 }
 
-export function InfluencerDetailPanel({ influencer, onClose }: Props) {
+export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleExpand }: Props) {
   const router = useRouter();
   const [notes, setNotes] = useState(influencer.notes ?? "");
   const [tags, setTags] = useState<string[]>(influencer.tags);
@@ -913,7 +917,7 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
   };
 
   return (
-    <div className="w-[480px] shrink-0 border-l bg-card overflow-y-auto h-full">
+    <div className={`${expanded ? "w-[60vw]" : "w-[480px]"} shrink-0 border-l bg-card overflow-y-auto h-full transition-[width] duration-300 ease-in-out`}>
       {/* Top bar */}
       <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-card px-4 py-3">
         <button
@@ -924,6 +928,17 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
           Back
         </button>
         <div className="flex items-center gap-1">
+          {onToggleExpand && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={onToggleExpand}
+              title={expanded ? "Collapse panel" : "Expand panel"}
+            >
+              {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
+          )}
           <Button variant="ghost" size="sm" className="gap-1.5 text-xs">
             <Edit2 className="h-3.5 w-3.5" />
             Edit
