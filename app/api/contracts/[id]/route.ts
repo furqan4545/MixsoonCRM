@@ -56,14 +56,6 @@ export async function PATCH(
   try {
     const updateData: Record<string, unknown> = {};
     if (body.status !== undefined) updateData.status = body.status;
-    if (body.filledContent !== undefined) updateData.filledContent = body.filledContent;
-    if (body.rate !== undefined) updateData.rate = body.rate ? parseFloat(body.rate) : null;
-    if (body.currency !== undefined) updateData.currency = body.currency;
-    if (body.deliverables !== undefined) updateData.deliverables = body.deliverables;
-    if (body.startDate !== undefined) updateData.startDate = body.startDate ? new Date(body.startDate) : null;
-    if (body.endDate !== undefined) updateData.endDate = body.endDate ? new Date(body.endDate) : null;
-    if (body.requireBankDetails !== undefined) updateData.requireBankDetails = !!body.requireBankDetails;
-    if (body.requireShippingAddress !== undefined) updateData.requireShippingAddress = !!body.requireShippingAddress;
     if (body.pdfUrl !== undefined) updateData.pdfUrl = body.pdfUrl;
     if (body.fields !== undefined) updateData.fields = body.fields;
 

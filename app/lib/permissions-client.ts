@@ -34,5 +34,6 @@ export const NAV_FEATURE_MAP: Record<
   "/notifications": { feature: FEATURES.NOTIFICATIONS, action: "read" },
   "/email": { feature: FEATURES.EMAIL, action: "read" },
   "/approvals": { feature: FEATURES.APPROVALS, action: "read" },
+  "/contracts": { feature: FEATURES.INFLUENCERS, action: "read" },
   "/alerts": { feature: FEATURES.ALERTS, action: "read" },
 };

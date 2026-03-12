@@ -54,19 +54,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const {
-      influencerId,
-      campaignId,
-      templateId,
-      filledContent,
-      rate,
-      currency = "USD",
-      deliverables,
-      startDate,
-      endDate,
-      requireBankDetails = false,
-      requireShippingAddress = false,
-    } = body;
+    const { influencerId, campaignId } = body;
 
     if (!influencerId) {
       return NextResponse.json(
@@ -79,15 +67,6 @@ export async function POST(request: Request) {
       data: {
         influencerId,
         campaignId: campaignId || null,
-        templateId: templateId || null,
-        filledContent: filledContent || null,
-        rate: rate ? parseFloat(rate) : null,
-        currency,
-        deliverables: deliverables || null,
-        startDate: startDate ? new Date(startDate) : null,
-        endDate: endDate ? new Date(endDate) : null,
-        requireBankDetails: !!requireBankDetails,
-        requireShippingAddress: !!requireShippingAddress,
         status: "DRAFT",
       },
     });
@@ -97,7 +76,7 @@ export async function POST(request: Request) {
         influencerId,
         type: "contract",
         title: "Contract created",
-        detail: `Draft contract created${rate ? ` — ${currency} ${rate}` : ""}`,
+        detail: "Draft contract created",
       },
     });
 

@@ -48,6 +48,7 @@ const workspaceItems = [
   { title: "AI Runs", href: "/ai-filter", icon: Sparkles },
   { title: "Inbox", href: "/email", icon: Inbox },
   { title: "Approvals", href: "/approvals", icon: CheckSquare },
+  { title: "Contracts", href: "/contracts", icon: FileText },
   { title: "Alerts", href: "/alerts", icon: AlertTriangle },
 ];
 
@@ -231,18 +232,6 @@ export function AppSidebar() {
                       <Link href="/admin/roles">
                         <ShieldCheck className="h-4 w-4" />
                         <span>Roles & permissions</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      asChild
-                      tooltip="Contract templates"
-                      isActive={pathname.startsWith("/admin/contracts")}
-                    >
-                      <Link href="/admin/contracts">
-                        <FileText className="h-4 w-4" />
-                        <span>Contract templates</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

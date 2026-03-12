@@ -417,18 +417,11 @@ function ConversationsTab({ influencerId, email }: { influencerId: string; email
 interface ContractItem {
   id: string;
   status: string;
-  rate: number | null;
-  currency: string;
-  deliverables: string | null;
-  requireBankDetails: boolean;
-  requireShippingAddress: boolean;
   signedAt: string | null;
   signedPdfUrl: string | null;
-  filledContent: string | null;
   pdfUrl: string | null;
   fields: ContractField_JSON[] | null;
   createdAt: string;
-  campaign: { id: string; name: string } | null;
   template: { id: string; name: string } | null;
 }
 
@@ -446,12 +439,10 @@ function ContractsTab({
   influencerId,
   influencerName,
   email,
-  campaignAssignments,
 }: {
   influencerId: string;
   influencerName: string;
   email: string | null;
-  campaignAssignments: { campaignId: string; campaignName: string }[];
 }) {
   const router = useRouter();
   const [contracts, setContracts] = useState<ContractItem[]>([]);
@@ -462,11 +453,6 @@ function ContractsTab({
   // Editor state
   const [showEditor, setShowEditor] = useState(false);
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
-  const [selectedCampaign, setSelectedCampaign] = useState("");
-  const [contractRate, setContractRate] = useState("");
-  const [contractCurrency, setContractCurrency] = useState("USD");
-  const [requireBank, setRequireBank] = useState(false);
-  const [requireShipping, setRequireShipping] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // PDF mode state
@@ -496,11 +482,6 @@ function ContractsTab({
 
   const resetEditor = () => {
     setEditingContractId(null);
-    setSelectedCampaign("");
-    setContractRate("");
-    setContractCurrency("USD");
-    setRequireBank(false);
-    setRequireShipping(false);
     setPdfUrl(null);
     setPdfSignedUrl(null);
     setPageCount(0);
@@ -515,11 +496,6 @@ function ContractsTab({
   const openEditContract = async (contract: ContractItem) => {
     resetEditor();
     setEditingContractId(contract.id);
-    setSelectedCampaign(contract.campaign?.id || "");
-    setContractRate(contract.rate?.toString() || "");
-    setContractCurrency(contract.currency);
-    setRequireBank(contract.requireBankDetails);
-    setRequireShipping(contract.requireShippingAddress);
 
     if (contract.pdfUrl) {
       setPdfUrl(contract.pdfUrl);
@@ -545,14 +521,7 @@ function ContractsTab({
         const createRes = await fetch("/api/contracts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            influencerId,
-            campaignId: selectedCampaign || undefined,
-            rate: contractRate || undefined,
-            currency: contractCurrency,
-            requireBankDetails: requireBank,
-            requireShippingAddress: requireShipping,
-          }),
+          body: JSON.stringify({ influencerId }),
         });
         if (!createRes.ok) throw new Error("Failed to create contract");
         const createData = await createRes.json();
@@ -600,13 +569,7 @@ function ContractsTab({
       const res = await fetch(`/api/contracts/${editingContractId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fields,
-          rate: contractRate || null,
-          currency: contractCurrency,
-          requireBankDetails: requireBank,
-          requireShippingAddress: requireShipping,
-        }),
+        body: JSON.stringify({ fields }),
       });
       if (!res.ok) throw new Error("Failed to save");
       toast.success("Contract saved");
@@ -680,77 +643,6 @@ function ContractsTab({
             <button onClick={closeEditor} className="text-muted-foreground hover:text-foreground">
               <X className="h-4 w-4" />
             </button>
-          </div>
-
-          {/* Campaign (optional) */}
-          {!editingContractId && campaignAssignments.length > 0 && (
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Campaign (optional)</label>
-              <select
-                value={selectedCampaign}
-                onChange={(e) => setSelectedCampaign(e.target.value)}
-                className="w-full rounded-md border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="">None</option>
-                {campaignAssignments.map((ca) => (
-                  <option key={ca.campaignId} value={ca.campaignId}>{ca.campaignName}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Rate + Currency */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Rate</label>
-              <input
-                type="number"
-                value={contractRate}
-                onChange={(e) => setContractRate(e.target.value)}
-                placeholder="e.g., 500"
-                className="w-full rounded-md border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Currency</label>
-              <select
-                value={contractCurrency}
-                onChange={(e) => setContractCurrency(e.target.value)}
-                className="w-full rounded-md border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="USD">USD</option>
-                <option value="KRW">KRW</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Requirement checkboxes */}
-          <div className="rounded-lg border p-3 space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">
-              Request from influencer when signing:
-            </p>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={requireBank}
-                onChange={(e) => setRequireBank(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300"
-              />
-              <span className="text-xs font-medium">Bank Details</span>
-              <span className="text-[10px] text-muted-foreground">(account number, holder name)</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={requireShipping}
-                onChange={(e) => setRequireShipping(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300"
-              />
-              <span className="text-xs font-medium">Shipping Address</span>
-              <span className="text-[10px] text-muted-foreground">(for sending products)</span>
-            </label>
           </div>
 
           {/* Upload zone OR PDF field editor */}
@@ -864,24 +756,8 @@ function ContractsTab({
               </span>
             </div>
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              {c.rate && <span>{c.currency} {c.rate.toLocaleString()}</span>}
-              {c.campaign && <span>{c.campaign.name}</span>}
               <span>{new Date(c.createdAt).toLocaleDateString()}</span>
             </div>
-            {(c.requireBankDetails || c.requireShippingAddress) && (
-              <div className="flex items-center gap-1.5">
-                {c.requireBankDetails && (
-                  <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-medium text-blue-700">
-                    Bank Details
-                  </span>
-                )}
-                {c.requireShippingAddress && (
-                  <span className="inline-flex items-center rounded-full bg-violet-50 border border-violet-200 px-2 py-0.5 text-[10px] font-medium text-violet-700">
-                    Shipping
-                  </span>
-                )}
-              </div>
-            )}
             <div className="flex items-center gap-2">
               {c.status === "DRAFT" && (
                 <>
@@ -1515,7 +1391,6 @@ export function InfluencerDetailPanel({ influencer, onClose }: Props) {
               influencerId={influencer.id}
               influencerName={influencer.displayName ?? influencer.username}
               email={influencer.email}
-              campaignAssignments={influencer.campaignAssignments}
             />
           )}
         </TabsContent>
