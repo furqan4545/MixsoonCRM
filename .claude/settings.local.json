@@ -58,7 +58,18 @@
       "Bash(npm install html-pdf-node)",
       "Bash(npm uninstall html-pdf-node)",
       "Bash(npm install puppeteer)",
-      "Bash(ls -la /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/app/api/contracts/*/)"
+      "Bash(ls -la /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/app/api/contracts/*/)",
+      "Bash(git add app/influencers/influencer-detail-panel.tsx app/email/compose/page.tsx app/api/contracts/[id]/send/route.ts app/api/onboarding/send-link/route.ts)",
+      "Bash(git merge claude/nifty-agnesi --no-edit)",
+      "Bash(npm install mammoth)",
+      "Bash(ls /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/app/api/contracts/[id]/)",
+      "Bash(ls -la /Users/topg/Desktop/typescript/mixsoon/.claude/worktrees/nifty-agnesi/app/portal/sign/[token]/)",
+      "Bash(npm run build)",
+      "Bash(git add app/api/contracts/[id]/route.ts app/api/contracts/route.ts app/api/contracts/convert-docx/route.ts app/api/onboarding/generate-link/route.ts app/api/portal/submit/route.ts app/influencers/influencer-detail-panel.tsx app/portal/sign/[token]/page.tsx middleware.ts package-lock.json package.json prisma/schema.prisma components/contract-editor.tsx components/contract-wizard.tsx)",
+      "Bash(npm install)",
+      "WebSearch",
+      "Bash(npm install react-pdf pdf-lib libreoffice-convert)",
+      "Bash(npm uninstall mammoth)"
     ]
   }
 }

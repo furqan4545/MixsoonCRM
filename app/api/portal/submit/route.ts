@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { encrypt } from "@/app/lib/crypto";
-import { generateContractPdf } from "@/app/lib/pdf";
+import { generateContractPdf, downloadPdfFromGcs } from "@/app/lib/pdf";
+import { signPdfWithFields } from "@/app/lib/pdf-sign";
 import { uploadToGcs } from "@/app/lib/gcs-upload";
+import type { ContractField } from "@/app/lib/contract-fields";
 
 // POST /api/portal/submit — Public (token-based): unified sign + bank + shipping
 export async function POST(request: Request) {
@@ -102,18 +104,36 @@ export async function POST(request: Request) {
     const signedDate = new Date();
     const influencerName =
       tokenRecord.influencer.displayName || tokenRecord.influencer.username;
-
-    // 5. Generate signed PDF
-    const pdfBuffer = await generateContractPdf({
-      htmlContent: contract.filledContent,
-      signatureDataUrl,
-      influencerName,
-      signedDate: signedDate.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      }),
+    const formattedDate = signedDate.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     });
+
+    // 5. Generate signed PDF — branch on PDF mode vs HTML mode
+    const isPdfMode = !!contract.pdfUrl;
+    let pdfBuffer: Buffer;
+
+    if (isPdfMode && contract.pdfUrl) {
+      // DocuSign-style: download source PDF, overlay signature/text at field coordinates
+      const sourcePdf = await downloadPdfFromGcs(contract.pdfUrl);
+      const fields = (contract.fields as ContractField[]) || [];
+      pdfBuffer = await signPdfWithFields({
+        pdfBuffer: sourcePdf,
+        fields,
+        signatureDataUrl,
+        influencerName,
+        signedDate: formattedDate,
+      });
+    } else {
+      // Legacy HTML mode: render HTML + signature via Puppeteer
+      pdfBuffer = await generateContractPdf({
+        htmlContent: contract.filledContent ?? "",
+        signatureDataUrl,
+        influencerName,
+        signedDate: formattedDate,
+      });
+    }
 
     // 6. Upload PDF to GCS
     const objectPath = `contracts/${tokenRecord.influencerId}/${contract.id}-signed.pdf`;

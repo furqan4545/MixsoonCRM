@@ -664,7 +664,9 @@ model Contract {
   templateId     String?
   template       ContractTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
-  filledContent    String   // HTML after placeholder replacement
+  filledContent    String?  // HTML content (legacy flow)
+  pdfUrl           String?  // GCS URL to source PDF (DocuSign flow)
+  fields           Json?    // Field placements: [{ id, type, page, x, y, width, height }]
   rate             Float?
   currency         String   @default("USD")
   deliverables     String?

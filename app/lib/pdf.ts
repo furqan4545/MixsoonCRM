@@ -1,4 +1,5 @@
 import puppeteer from "puppeteer";
+import { getSignedUrl } from "./gcs-upload";
 
 /**
  * Generate a PDF from HTML content with an optional signature image.
@@ -67,4 +68,18 @@ export async function generateContractPdf(params: {
   } finally {
     await browser.close();
   }
+}
+
+/**
+ * Download a PDF from GCS by its gcs:// URL.
+ * Returns the raw Buffer.
+ */
+export async function downloadPdfFromGcs(gcsUrl: string): Promise<Buffer> {
+  const signedUrl = await getSignedUrl(gcsUrl);
+  if (!signedUrl) throw new Error(`Cannot resolve GCS URL: ${gcsUrl}`);
+
+  const res = await fetch(signedUrl);
+  if (!res.ok) throw new Error(`Failed to download PDF: ${res.status}`);
+  const arrayBuf = await res.arrayBuffer();
+  return Buffer.from(arrayBuf);
 }
