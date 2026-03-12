@@ -27,6 +27,7 @@ export function middleware(req: NextRequest) {
     pathname.startsWith("/api/onboarding/verify") ||
     pathname.startsWith("/api/onboarding/submit") ||
     pathname.startsWith("/api/portal/submit") ||
+    pathname.startsWith("/api/contracts/pdf-url") ||
     /^\/api\/contracts\/[^/]+\/sign$/.test(pathname)
   ) {
     return NextResponse.next();

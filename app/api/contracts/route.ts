@@ -68,9 +68,9 @@ export async function POST(request: Request) {
       requireShippingAddress = false,
     } = body;
 
-    if (!influencerId || !filledContent) {
+    if (!influencerId) {
       return NextResponse.json(
-        { error: "influencerId and filledContent are required" },
+        { error: "influencerId is required" },
         { status: 400 },
       );
     }
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
         influencerId,
         campaignId: campaignId || null,
         templateId: templateId || null,
-        filledContent,
+        filledContent: filledContent || null,
         rate: rate ? parseFloat(rate) : null,
         currency,
         deliverables: deliverables || null,

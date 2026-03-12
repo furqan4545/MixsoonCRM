@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { KOREAN_BANKS } from "@/app/lib/korean-banks";
+import type { ContractField } from "@/app/lib/contract-fields";
 import { SignaturePad } from "@/components/signature-pad";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,11 +17,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+const PdfSignerViewLazy = dynamic(
+  () => import("@/components/pdf-signer-view").then((m) => m.PdfSignerView),
+  { ssr: false, loading: () => <div className="flex items-center justify-center py-12"><Loader2 className="h-5 w-5 animate-spin" /></div> },
+);
+
 /* ── Types ── */
 interface ContractWizardProps {
   token: string;
   contractId: string;
-  htmlContent: string;
+  // HTML mode (backward compat)
+  htmlContent?: string;
+  // PDF mode
+  pdfUrl?: string;
+  fields?: ContractField[];
+  // Shared
   influencerName: string;
   requireBankDetails: boolean;
   requireShippingAddress: boolean;
@@ -75,10 +87,13 @@ export function ContractWizard({
   token,
   contractId,
   htmlContent,
+  pdfUrl,
+  fields: pdfFields,
   influencerName,
   requireBankDetails,
   requireShippingAddress,
 }: ContractWizardProps) {
+  const isPdfMode = !!pdfUrl;
   const steps = buildSteps(requireBankDetails, requireShippingAddress);
   const [currentStep, setCurrentStep] = useState(0);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
@@ -282,19 +297,29 @@ export function ContractWizard({
       {/* Step content */}
       {currentStepKey === "sign" && (
         <div className="space-y-6">
-          {/* Contract content */}
-          <div className="rounded-lg border border-border bg-white p-6 md:p-8">
-            <div
-              className="prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: htmlContent }}
+          {isPdfMode && pdfUrl ? (
+            <PdfSignerViewLazy
+              pdfUrl={pdfUrl}
+              fields={pdfFields || []}
+              influencerName={influencerName}
+              onSignatureChange={setSignatureDataUrl}
             />
-          </div>
-
-          {/* Signature */}
-          <div className="rounded-lg border border-border p-6">
-            <h2 className="mb-4 text-lg font-semibold">Your Signature</h2>
-            <SignaturePad onSignatureChange={setSignatureDataUrl} />
-          </div>
+          ) : (
+            <>
+              {/* HTML contract content (legacy) */}
+              <div className="rounded-lg border border-border bg-white p-6 md:p-8">
+                <div
+                  className="prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: htmlContent || "" }}
+                />
+              </div>
+              {/* Signature */}
+              <div className="rounded-lg border border-border p-6">
+                <h2 className="mb-4 text-lg font-semibold">Your Signature</h2>
+                <SignaturePad onSignatureChange={setSignatureDataUrl} />
+              </div>
+            </>
+          )}
         </div>
       )}
 

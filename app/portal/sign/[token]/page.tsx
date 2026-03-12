@@ -1,4 +1,6 @@
 import { prisma } from "@/app/lib/prisma";
+import { getSignedUrl } from "@/app/lib/gcs-upload";
+import type { ContractField } from "@/app/lib/contract-fields";
 import { ContractWizard } from "@/components/contract-wizard";
 
 export default async function UnifiedSigningPage({
@@ -98,6 +100,19 @@ export default async function UnifiedSigningPage({
   const influencerName =
     record.influencer.displayName || record.influencer.username;
 
+  // Detect contract mode: PDF (DocuSign-style) vs HTML (legacy)
+  const isPdfMode = !!contract.pdfUrl;
+  let pdfSignedUrl: string | undefined;
+  let pdfFields: ContractField[] | undefined;
+
+  if (isPdfMode && contract.pdfUrl) {
+    const url = await getSignedUrl(contract.pdfUrl);
+    if (url) pdfSignedUrl = url;
+    if (contract.fields) {
+      pdfFields = contract.fields as ContractField[];
+    }
+  }
+
   return (
     <div>
       <div className="mb-8">
@@ -113,7 +128,9 @@ export default async function UnifiedSigningPage({
       <ContractWizard
         token={token}
         contractId={contract.id}
-        htmlContent={contract.filledContent}
+        {...(isPdfMode && pdfSignedUrl
+          ? { pdfUrl: pdfSignedUrl, fields: pdfFields }
+          : { htmlContent: contract.filledContent ?? "" })}
         influencerName={influencerName}
         requireBankDetails={contract.requireBankDetails}
         requireShippingAddress={contract.requireShippingAddress}

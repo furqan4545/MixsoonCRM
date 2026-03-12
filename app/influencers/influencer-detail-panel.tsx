@@ -424,11 +424,23 @@ interface ContractItem {
   requireShippingAddress: boolean;
   signedAt: string | null;
   signedPdfUrl: string | null;
-  filledContent: string;
+  filledContent: string | null;
+  pdfUrl: string | null;
+  fields: ContractField_JSON[] | null;
   createdAt: string;
   campaign: { id: string; name: string } | null;
   template: { id: string; name: string } | null;
 }
+
+type ContractField_JSON = {
+  id: string;
+  type: "signature" | "date" | "name";
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 function ContractsTab({
   influencerId,
@@ -447,7 +459,7 @@ function ContractsTab({
   const [sendingId, setSendingId] = useState<string | null>(null);
   const fetchedRef = useRef(false);
 
-  // Create / Edit contract form state
+  // Editor state
   const [showEditor, setShowEditor] = useState(false);
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState("");
@@ -455,8 +467,14 @@ function ContractsTab({
   const [contractCurrency, setContractCurrency] = useState("USD");
   const [requireBank, setRequireBank] = useState(false);
   const [requireShipping, setRequireShipping] = useState(false);
-  const [editorContent, setEditorContent] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // PDF mode state
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfSignedUrl, setPdfSignedUrl] = useState<string | null>(null);
+  const [pageCount, setPageCount] = useState(0);
+  const [fields, setFields] = useState<ContractField_JSON[]>([]);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
 
   const fetchContracts = useCallback(async () => {
     try {
@@ -476,76 +494,132 @@ function ContractsTab({
     }
   }, [fetchContracts]);
 
-  const openNewContract = () => {
+  const resetEditor = () => {
     setEditingContractId(null);
     setSelectedCampaign("");
     setContractRate("");
     setContractCurrency("USD");
     setRequireBank(false);
     setRequireShipping(false);
-    setEditorContent("");
+    setPdfUrl(null);
+    setPdfSignedUrl(null);
+    setPageCount(0);
+    setFields([]);
+  };
+
+  const openNewContract = () => {
+    resetEditor();
     setShowEditor(true);
   };
 
-  const openEditContract = (contract: ContractItem) => {
+  const openEditContract = async (contract: ContractItem) => {
+    resetEditor();
     setEditingContractId(contract.id);
     setSelectedCampaign(contract.campaign?.id || "");
     setContractRate(contract.rate?.toString() || "");
     setContractCurrency(contract.currency);
     setRequireBank(contract.requireBankDetails);
     setRequireShipping(contract.requireShippingAddress);
-    setEditorContent(contract.filledContent);
+
+    if (contract.pdfUrl) {
+      setPdfUrl(contract.pdfUrl);
+      setFields((contract.fields as ContractField_JSON[]) || []);
+      // Fetch signed URL for rendering
+      try {
+        const res = await fetch(`/api/contracts/pdf-url?contractId=${contract.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setPdfSignedUrl(data.url);
+        }
+      } catch {}
+    }
     setShowEditor(true);
   };
 
   const closeEditor = () => {
     setShowEditor(false);
-    setEditingContractId(null);
+    resetEditor();
   };
 
-  const saveContract = async () => {
-    if (!editorContent.trim() || editorContent === "<p></p>") {
-      toast.error("Contract content cannot be empty");
-      return;
-    }
-    setSaving(true);
+  // Upload PDF/DOCX file
+  const handleFileUpload = async (file: File) => {
+    setUploadingPdf(true);
     try {
-      if (editingContractId) {
-        // Update existing
-        const res = await fetch(`/api/contracts/${editingContractId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filledContent: editorContent,
-            rate: contractRate || null,
-            currency: contractCurrency,
-            requireBankDetails: requireBank,
-            requireShippingAddress: requireShipping,
-          }),
-        });
-        if (!res.ok) throw new Error("Failed to update");
-        toast.success("Contract updated");
-      } else {
-        // Create new
-        const res = await fetch("/api/contracts", {
+      // If no contract yet, create one first to get an ID
+      let cId = editingContractId;
+      if (!cId) {
+        const createRes = await fetch("/api/contracts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             influencerId,
             campaignId: selectedCampaign || undefined,
-            filledContent: editorContent,
             rate: contractRate || undefined,
             currency: contractCurrency,
             requireBankDetails: requireBank,
             requireShippingAddress: requireShipping,
           }),
         });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "Failed to create");
-        }
-        toast.success("Contract draft saved");
+        if (!createRes.ok) throw new Error("Failed to create contract");
+        const createData = await createRes.json();
+        cId = createData.contract.id;
+        setEditingContractId(cId);
       }
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("contractId", cId!);
+
+      const res = await fetch("/api/contracts/upload-pdf", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to upload");
+      }
+
+      const data = await res.json();
+      setPdfUrl(data.pdfUrl);
+      setPageCount(data.pageCount);
+      setFields([]);
+
+      // Get signed URL for rendering
+      const urlRes = await fetch(`/api/contracts/pdf-url?contractId=${cId}`);
+      if (urlRes.ok) {
+        const urlData = await urlRes.json();
+        setPdfSignedUrl(urlData.url);
+      }
+
+      toast.success(`PDF uploaded — ${data.pageCount} page${data.pageCount !== 1 ? "s" : ""}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingPdf(false);
+    }
+  };
+
+  const saveContract = async () => {
+    if (!pdfUrl) {
+      toast.error("Please upload a document first");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/contracts/${editingContractId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields,
+          rate: contractRate || null,
+          currency: contractCurrency,
+          requireBankDetails: requireBank,
+          requireShippingAddress: requireShipping,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      toast.success("Contract saved");
       closeEditor();
       fetchedRef.current = false;
       fetchContracts();
@@ -607,19 +681,18 @@ function ContractsTab({
 
   return (
     <div className="space-y-3">
-      {/* Contract editor (create or edit) */}
       {showEditor ? (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">
-              {editingContractId ? "Edit Contract" : "New Contract"}
+              {editingContractId && pdfUrl ? "Edit Contract" : "New Contract"}
             </h3>
             <button onClick={closeEditor} className="text-muted-foreground hover:text-foreground">
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          {/* Campaign (optional) — only for new contracts */}
+          {/* Campaign (optional) */}
           {!editingContractId && campaignAssignments.length > 0 && (
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Campaign (optional)</label>
@@ -690,19 +763,76 @@ function ContractsTab({
             </label>
           </div>
 
-          {/* Contract content — rich editor */}
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Contract Content</label>
-            <ContractEditorLazy
-              initialContent={editorContent}
-              onContentChange={setEditorContent}
-            />
-          </div>
+          {/* Upload zone OR PDF field editor */}
+          {!pdfSignedUrl ? (
+            <div
+              className="rounded-lg border-2 border-dashed p-8 text-center cursor-pointer hover:border-foreground/30 transition-colors"
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const file = e.dataTransfer.files[0];
+                if (file) handleFileUpload(file);
+              }}
+              onClick={() => {
+                const input = document.createElement("input");
+                input.type = "file";
+                input.accept = ".pdf,.docx";
+                input.onchange = () => {
+                  const file = input.files?.[0];
+                  if (file) handleFileUpload(file);
+                };
+                input.click();
+              }}
+            >
+              {uploadingPdf ? (
+                <div className="flex flex-col items-center gap-2">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">Uploading & converting...</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <FileText className="h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm font-medium">Upload Contract Document</p>
+                  <p className="text-xs text-muted-foreground">
+                    Drag & drop a <strong>.docx</strong> or <strong>.pdf</strong> file, or click to browse
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-medium text-muted-foreground">
+                  Place signature, date, and name fields on the document:
+                </label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-muted-foreground"
+                  onClick={() => {
+                    setPdfUrl(null);
+                    setPdfSignedUrl(null);
+                    setFields([]);
+                    setPageCount(0);
+                  }}
+                >
+                  Replace file
+                </Button>
+              </div>
+              <PdfFieldEditorLazy
+                pdfUrl={pdfSignedUrl}
+                pageCount={pageCount}
+                fields={fields}
+                onFieldsChange={setFields}
+              />
+            </div>
+          )}
 
           <div className="flex gap-2 pt-1">
-            <Button onClick={saveContract} disabled={saving} size="sm" className="text-xs">
+            <Button onClick={saveContract} disabled={saving || !pdfUrl} size="sm" className="text-xs">
               {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Check className="mr-1 h-3 w-3" />}
-              {editingContractId ? "Update Draft" : "Save Draft"}
+              Save Draft
             </Button>
             <Button variant="outline" onClick={closeEditor} size="sm" className="text-xs">
               Cancel
@@ -733,6 +863,11 @@ function ContractsTab({
                 <span className="text-sm font-medium">
                   {c.template?.name || "Contract"}
                 </span>
+                {c.pdfUrl && (
+                  <span className="inline-flex items-center rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[9px] font-medium text-blue-600">
+                    PDF
+                  </span>
+                )}
               </div>
               <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusColors[c.status] || ""}`}>
                 {c.status}
@@ -743,7 +878,6 @@ function ContractsTab({
               {c.campaign && <span>{c.campaign.name}</span>}
               <span>{new Date(c.createdAt).toLocaleDateString()}</span>
             </div>
-            {/* Requirement badges */}
             {(c.requireBankDetails || c.requireShippingAddress) && (
               <div className="flex items-center gap-1.5">
                 {c.requireBankDetails && (
@@ -814,10 +948,11 @@ function ContractsTab({
   );
 }
 
-/* ── Lazy-loaded ContractEditor wrapper ── */
+/* ── Lazy-loaded components ── */
 import dynamic from "next/dynamic";
-const ContractEditorLazy = dynamic(
-  () => import("@/components/contract-editor").then((m) => m.ContractEditor),
+
+const PdfFieldEditorLazy = dynamic(
+  () => import("@/components/pdf-field-editor").then((m) => m.PdfFieldEditor),
   {
     ssr: false,
     loading: () => (
