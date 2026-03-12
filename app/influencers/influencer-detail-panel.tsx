@@ -917,12 +917,27 @@ function ContractsTab({
                 </span>
               )}
               {c.signedPdfUrl && (
-                <a href={c.signedPdfUrl} target="_blank" rel="noopener noreferrer">
-                  <Button variant="ghost" size="sm" className="h-7 text-xs">
-                    <Download className="mr-1 h-3 w-3" />
-                    Download PDF
-                  </Button>
-                </a>
+                <>
+                  <a
+                    href={`/api/contracts/pdf-url?contractId=${c.id}&type=signed`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button variant="ghost" size="sm" className="h-7 text-xs">
+                      <Eye className="mr-1 h-3 w-3" />
+                      View Signed
+                    </Button>
+                  </a>
+                  <a
+                    href={`/api/contracts/pdf-url?contractId=${c.id}&type=signed`}
+                    download={`contract-${c.id}-signed.pdf`}
+                  >
+                    <Button variant="ghost" size="sm" className="h-7 text-xs">
+                      <Download className="mr-1 h-3 w-3" />
+                      Download
+                    </Button>
+                  </a>
+                </>
               )}
               {c.signedAt && (
                 <span className="text-xs text-emerald-600 flex items-center gap-1">

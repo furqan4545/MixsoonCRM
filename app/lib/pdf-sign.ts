@@ -2,42 +2,48 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { type ContractField, percentToPdfCoords } from "./contract-fields";
 
 /**
- * Overlay signature images and text onto an existing PDF
+ * Overlay per-field values (signatures, text) onto an existing PDF
  * at the coordinates stored in the contract fields.
+ *
+ * Each field gets its own value from the fieldValues map.
  */
 export async function signPdfWithFields(params: {
   pdfBuffer: Buffer | Uint8Array;
   fields: ContractField[];
-  signatureDataUrl: string; // base64 data URL
-  influencerName: string;
-  signedDate: string; // formatted date string
+  fieldValues: Record<string, string>; // { fieldId: dataUrl | text }
 }): Promise<Buffer> {
-  const { pdfBuffer, fields, signatureDataUrl, influencerName, signedDate } =
-    params;
+  const { pdfBuffer, fields, fieldValues } = params;
 
   const pdfDoc = await PDFDocument.load(pdfBuffer);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-  // Decode signature image from data URL
-  let signatureImage: Awaited<
-    ReturnType<typeof pdfDoc.embedPng | typeof pdfDoc.embedJpg>
-  > | null = null;
+  // Pre-embed all unique signature images
+  const signatureImages = new Map<
+    string,
+    Awaited<ReturnType<typeof pdfDoc.embedPng | typeof pdfDoc.embedJpg>>
+  >();
 
-  if (signatureDataUrl) {
-    const match = signatureDataUrl.match(
-      /^data:image\/(png|jpe?g);base64,(.+)$/,
-    );
+  for (const field of fields) {
+    if (field.type !== "signature") continue;
+    const dataUrl = fieldValues[field.id];
+    if (!dataUrl || signatureImages.has(field.id)) continue;
+
+    const match = dataUrl.match(/^data:image\/(png|jpe?g);base64,(.+)$/);
     if (match) {
       const [, format, b64] = match;
       const imgBytes = Buffer.from(b64, "base64");
-      signatureImage =
+      const img =
         format === "png"
           ? await pdfDoc.embedPng(imgBytes)
           : await pdfDoc.embedJpg(imgBytes);
+      signatureImages.set(field.id, img);
     }
   }
 
   for (const field of fields) {
+    const value = fieldValues[field.id];
+    if (!value) continue;
+
     const pageIndex = field.page - 1; // fields are 1-based
     if (pageIndex < 0 || pageIndex >= pdfDoc.getPageCount()) continue;
 
@@ -47,6 +53,7 @@ export async function signPdfWithFields(params: {
 
     switch (field.type) {
       case "signature": {
+        const signatureImage = signatureImages.get(field.id);
         if (!signatureImage) break;
         // Fit signature within the field bounds while preserving aspect ratio
         const imgDims = signatureImage.scale(1);
@@ -69,21 +76,10 @@ export async function signPdfWithFields(params: {
         break;
       }
 
-      case "date": {
-        const fontSize = Math.min(coords.height * 0.6, 14);
-        page.drawText(signedDate, {
-          x: coords.x + 4,
-          y: coords.y + coords.height * 0.3,
-          size: fontSize,
-          font,
-          color: rgb(0.13, 0.13, 0.13),
-        });
-        break;
-      }
-
+      case "date":
       case "name": {
         const fontSize = Math.min(coords.height * 0.6, 14);
-        page.drawText(influencerName, {
+        page.drawText(value, {
           x: coords.x + 4,
           y: coords.y + coords.height * 0.3,
           size: fontSize,

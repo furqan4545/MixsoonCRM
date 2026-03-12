@@ -97,6 +97,8 @@ export function ContractWizard({
   const steps = buildSteps(requireBankDetails, requireShippingAddress);
   const [currentStep, setCurrentStep] = useState(0);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
+  // PDF mode: per-field values { fieldId: value }
+  const [pdfFieldValues, setPdfFieldValues] = useState<Record<string, string>>({});
   const [bank, setBank] = useState<BankDetails>(defaultBank);
   const [shipping, setShipping] = useState<ShippingAddress>(defaultShipping);
   const [submitting, setSubmitting] = useState(false);
@@ -180,7 +182,13 @@ export function ContractWizard({
 
   // Step validation
   const canProceed = () => {
-    if (currentStepKey === "sign") return !!signatureDataUrl;
+    if (currentStepKey === "sign") {
+      if (isPdfMode && pdfFields?.length) {
+        // All fields must have a non-empty value
+        return pdfFields.every((f) => !!pdfFieldValues[f.id]?.trim());
+      }
+      return !!signatureDataUrl;
+    }
     if (currentStepKey === "bank") {
       return !!(bank.bankName && bank.accountNumber && bank.accountHolder);
     }
@@ -196,7 +204,8 @@ export function ContractWizard({
     try {
       const payload: Record<string, unknown> = {
         token,
-        signatureDataUrl,
+        signatureDataUrl: isPdfMode ? null : signatureDataUrl,
+        fieldValues: isPdfMode ? pdfFieldValues : undefined,
       };
       if (requireBankDetails) {
         payload.bankDetails = {
@@ -311,7 +320,7 @@ export function ContractWizard({
               pdfUrl={pdfUrl}
               fields={pdfFields || []}
               influencerName={influencerName}
-              onSignatureChange={setSignatureDataUrl}
+              onFieldValuesChange={setPdfFieldValues}
             />
           ) : (
             <>

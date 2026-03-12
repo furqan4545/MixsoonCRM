@@ -3,12 +3,15 @@ import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
 import { getSignedUrl } from "@/app/lib/gcs-upload";
 
-// GET /api/contracts/pdf-url?contractId=xxx
+// GET /api/contracts/pdf-url?contractId=xxx&type=source|signed
 // Proxies the PDF bytes through the Next.js server to avoid GCS CORS issues.
+// type=source (default): the original uploaded PDF for rendering in editor/signer
+// type=signed: the final signed PDF for download/viewing
 // Supports admin auth OR token-based auth (for portal access).
 export async function GET(request: NextRequest) {
   const contractId = request.nextUrl.searchParams.get("contractId");
   const token = request.nextUrl.searchParams.get("token");
+  const type = request.nextUrl.searchParams.get("type") || "source";
 
   if (!contractId) {
     return NextResponse.json(
@@ -43,17 +46,19 @@ export async function GET(request: NextRequest) {
 
   const contract = await prisma.contract.findUnique({
     where: { id: contractId },
-    select: { pdfUrl: true },
+    select: { pdfUrl: true, signedPdfUrl: true },
   });
 
-  if (!contract?.pdfUrl) {
+  const gcsUrl = type === "signed" ? contract?.signedPdfUrl : contract?.pdfUrl;
+
+  if (!gcsUrl) {
     return NextResponse.json(
-      { error: "No PDF found for this contract" },
+      { error: `No ${type} PDF found for this contract` },
       { status: 404 },
     );
   }
 
-  const signedUrl = await getSignedUrl(contract.pdfUrl);
+  const signedUrl = await getSignedUrl(gcsUrl);
   if (!signedUrl) {
     return NextResponse.json(
       { error: "Failed to generate signed URL" },
@@ -71,10 +76,15 @@ export async function GET(request: NextRequest) {
   }
 
   const pdfBuffer = await pdfRes.arrayBuffer();
+  const isDownload = type === "signed";
+
   return new NextResponse(pdfBuffer, {
     headers: {
       "Content-Type": "application/pdf",
       "Cache-Control": "private, max-age=3600",
+      ...(isDownload && {
+        "Content-Disposition": `inline; filename="contract-${contractId}-signed.pdf"`,
+      }),
     },
   });
 }

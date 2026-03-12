@@ -1,40 +1,46 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { type ContractField, FIELD_COLORS, FIELD_DEFAULTS } from "@/app/lib/contract-fields";
+import { useCallback, useEffect, useState } from "react";
+import { type ContractField, FIELD_COLORS } from "@/app/lib/contract-fields";
 import { PdfAllPages } from "@/components/pdf-page-viewer";
 import { SignaturePad } from "@/components/signature-pad";
-import { PenLine, Calendar, User, X } from "lucide-react";
+import { PenLine, X } from "lucide-react";
 
 interface PdfSignerViewProps {
   pdfUrl: string;
   fields: ContractField[];
   influencerName: string;
-  onSignatureChange: (dataUrl: string | null) => void;
+  /** Called whenever field values change — parent gets the full map */
+  onFieldValuesChange: (values: Record<string, string>) => void;
 }
 
 export function PdfSignerView({
   pdfUrl,
   fields,
   influencerName,
-  onSignatureChange,
+  onFieldValuesChange,
 }: PdfSignerViewProps) {
-  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
-  const [showSignaturePad, setShowSignaturePad] = useState(false);
+  // Per-field values: { fieldId: value (dataUrl for signatures, text for name/date) }
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [signingFieldId, setSigningFieldId] = useState<string | null>(null);
 
-  const todayStr = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  // Notify parent whenever field values change
+  useEffect(() => {
+    onFieldValuesChange(fieldValues);
+  }, [fieldValues, onFieldValuesChange]);
+
+  const setFieldValue = useCallback((fieldId: string, value: string) => {
+    setFieldValues((prev) => ({ ...prev, [fieldId]: value }));
+  }, []);
 
   const handleSignature = useCallback(
     (dataUrl: string | null) => {
-      setSignatureDataUrl(dataUrl);
-      onSignatureChange(dataUrl);
-      if (dataUrl) setShowSignaturePad(false);
+      if (signingFieldId && dataUrl) {
+        setFieldValue(signingFieldId, dataUrl);
+      }
+      setSigningFieldId(null);
     },
-    [onSignatureChange],
+    [signingFieldId, setFieldValue],
   );
 
   const renderPageOverlay = useCallback(
@@ -44,6 +50,8 @@ export function PdfSignerView({
         <>
           {pageFields.map((field) => {
             const colors = FIELD_COLORS[field.type];
+            const value = fieldValues[field.id] || "";
+
             return (
               <div
                 key={field.id}
@@ -54,24 +62,35 @@ export function PdfSignerView({
                   width: `${field.width}%`,
                   height: `${field.height}%`,
                   border: `2px solid ${colors.border}`,
-                  backgroundColor: colors.bg,
+                  backgroundColor: value ? "rgba(255,255,255,0.95)" : colors.bg,
                   borderRadius: 4,
                   overflow: "hidden",
                 }}
               >
+                {/* ── Signature field ── */}
                 {field.type === "signature" && (
                   <>
-                    {signatureDataUrl ? (
-                      <img
-                        src={signatureDataUrl}
-                        alt="Signature"
-                        className="w-full h-full object-contain p-0.5"
-                      />
+                    {value ? (
+                      <div className="relative w-full h-full group">
+                        <img
+                          src={value}
+                          alt="Signature"
+                          className="w-full h-full object-contain p-0.5"
+                        />
+                        {/* Re-sign button on hover */}
+                        <button
+                          className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                          onClick={() => setSigningFieldId(field.id)}
+                        >
+                          <PenLine className="h-3 w-3 mr-1" />
+                          Re-sign
+                        </button>
+                      </div>
                     ) : (
                       <button
                         className="w-full h-full flex items-center justify-center gap-1 text-[10px] font-medium animate-pulse cursor-pointer hover:bg-blue-50/50 transition-colors"
                         style={{ color: colors.text }}
-                        onClick={() => setShowSignaturePad(true)}
+                        onClick={() => setSigningFieldId(field.id)}
                       >
                         <PenLine className="h-3 w-3" />
                         Click to sign
@@ -80,24 +99,28 @@ export function PdfSignerView({
                   </>
                 )}
 
-                {field.type === "date" && (
-                  <div
-                    className="w-full h-full flex items-center px-1.5 text-[10px] font-medium"
-                    style={{ color: colors.text }}
-                  >
-                    <Calendar className="h-3 w-3 mr-1 shrink-0" />
-                    {todayStr}
-                  </div>
+                {/* ── Name field — editable input ── */}
+                {field.type === "name" && (
+                  <input
+                    type="text"
+                    value={value}
+                    onChange={(e) => setFieldValue(field.id, e.target.value)}
+                    placeholder="Type name here"
+                    className="w-full h-full px-1.5 text-[11px] font-medium bg-transparent outline-none placeholder:text-purple-400/60"
+                    style={{ color: "#1a1a1a" }}
+                  />
                 )}
 
-                {field.type === "name" && (
-                  <div
-                    className="w-full h-full flex items-center px-1.5 text-[10px] font-medium"
-                    style={{ color: colors.text }}
-                  >
-                    <User className="h-3 w-3 mr-1 shrink-0" />
-                    {influencerName}
-                  </div>
+                {/* ── Date field — editable input ── */}
+                {field.type === "date" && (
+                  <input
+                    type="text"
+                    value={value}
+                    onChange={(e) => setFieldValue(field.id, e.target.value)}
+                    placeholder="Type date here"
+                    className="w-full h-full px-1.5 text-[11px] font-medium bg-transparent outline-none placeholder:text-green-400/60"
+                    style={{ color: "#1a1a1a" }}
+                  />
                 )}
               </div>
             );
@@ -105,7 +128,7 @@ export function PdfSignerView({
         </>
       );
     },
-    [fields, signatureDataUrl, todayStr, influencerName],
+    [fields, fieldValues, setFieldValue],
   );
 
   const hasSignatureFields = fields.some((f) => f.type === "signature");
@@ -121,14 +144,14 @@ export function PdfSignerView({
         />
       </div>
 
-      {/* Signature pad modal */}
-      {showSignaturePad && (
+      {/* Signature pad modal — opens for the specific field clicked */}
+      {signingFieldId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-background rounded-lg shadow-xl p-6 w-full max-w-lg mx-4 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Sign Here</h3>
               <button
-                onClick={() => setShowSignaturePad(false)}
+                onClick={() => setSigningFieldId(null)}
                 className="text-muted-foreground hover:text-foreground"
               >
                 <X className="h-5 w-5" />
@@ -139,11 +162,17 @@ export function PdfSignerView({
         </div>
       )}
 
-      {/* Inline signature pad fallback for when there are no signature fields placed */}
+      {/* Inline signature pad fallback when no signature fields placed */}
       {!hasSignatureFields && (
         <div className="rounded-lg border border-border p-6">
           <h2 className="mb-4 text-lg font-semibold">Your Signature</h2>
-          <SignaturePad onSignatureChange={handleSignature} />
+          <SignaturePad
+            onSignatureChange={(dataUrl) => {
+              if (dataUrl) {
+                setFieldValues((prev) => ({ ...prev, __fallback_signature: dataUrl }));
+              }
+            }}
+          />
         </div>
       )}
     </div>

@@ -11,11 +11,12 @@ import type { ContractField } from "@/app/lib/contract-fields";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { token, signatureDataUrl, bankDetails, shippingAddress } = body;
+    const { token, signatureDataUrl, fieldValues, bankDetails, shippingAddress } = body;
 
-    if (!token || !signatureDataUrl) {
+    // PDF mode sends fieldValues; HTML mode sends signatureDataUrl
+    if (!token || (!signatureDataUrl && !fieldValues)) {
       return NextResponse.json(
-        { error: "Token and signature are required" },
+        { error: "Token and signature/field values are required" },
         { status: 400 },
       );
     }
@@ -116,15 +117,14 @@ export async function POST(request: Request) {
     let pdfBuffer: Buffer;
 
     if (isPdfMode && contract.pdfUrl) {
-      // DocuSign-style: download source PDF, overlay signature/text at field coordinates
+      // DocuSign-style: download source PDF, overlay per-field values at stored coordinates
       const sourcePdf = await downloadPdfFromGcs(contract.pdfUrl);
       const fields = (contract.fields as ContractField[]) || [];
+      const fv = (fieldValues as Record<string, string>) || {};
       pdfBuffer = await signPdfWithFields({
         pdfBuffer: sourcePdf,
         fields,
-        signatureDataUrl,
-        influencerName,
-        signedDate: formattedDate,
+        fieldValues: fv,
       });
     } else {
       // Legacy HTML mode: render HTML + signature via Puppeteer
@@ -145,11 +145,16 @@ export async function POST(request: Request) {
     });
 
     // 7. Update contract status
+    // For PDF mode, store the first signature from fieldValues for reference
+    const sigDataUrl = isPdfMode
+      ? Object.values(fieldValues || {}).find((v: string) => v?.startsWith("data:image")) || null
+      : signatureDataUrl;
+
     await prisma.contract.update({
       where: { id: contract.id },
       data: {
         status: "SIGNED",
-        signatureDataUrl,
+        signatureDataUrl: sigDataUrl,
         signedPdfUrl,
         signedAt: signedDate,
       },
