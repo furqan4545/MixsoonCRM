@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
   return new NextResponse(pdfBuffer, {
     headers: {
       "Content-Type": "application/pdf",
-      "Cache-Control": "private, max-age=3600",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
       ...(isDownload && {
         "Content-Disposition": `inline; filename="contract-${contractId}-signed.pdf"`,
       }),

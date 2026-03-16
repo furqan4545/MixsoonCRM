@@ -551,7 +551,8 @@ function ContractsTab({
       setFields([]);
 
       // Use proxy URL for rendering (avoids GCS CORS issues)
-      setPdfSignedUrl(`/api/contracts/pdf-url?contractId=${cId}`);
+      // Cache-bust so react-pdf re-fetches after file replacement
+      setPdfSignedUrl(`/api/contracts/pdf-url?contractId=${cId}&t=${Date.now()}`);
 
       toast.success(`PDF uploaded — ${data.pageCount} page${data.pageCount !== 1 ? "s" : ""}`);
     } catch (err) {

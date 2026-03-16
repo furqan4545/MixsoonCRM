@@ -17,16 +17,16 @@ export async function signPdfWithFields(params: {
   const pdfDoc = await PDFDocument.load(pdfBuffer);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-  // Pre-embed all unique signature images
-  const signatureImages = new Map<
+  // Pre-embed all unique images (signatures and stamps)
+  const embeddedImages = new Map<
     string,
     Awaited<ReturnType<typeof pdfDoc.embedPng | typeof pdfDoc.embedJpg>>
   >();
 
   for (const field of fields) {
-    if (field.type !== "signature") continue;
+    if (field.type !== "signature" && field.type !== "stamp") continue;
     const dataUrl = fieldValues[field.id];
-    if (!dataUrl || signatureImages.has(field.id)) continue;
+    if (!dataUrl || embeddedImages.has(field.id)) continue;
 
     const match = dataUrl.match(/^data:image\/(png|jpe?g);base64,(.+)$/);
     if (match) {
@@ -36,7 +36,7 @@ export async function signPdfWithFields(params: {
         format === "png"
           ? await pdfDoc.embedPng(imgBytes)
           : await pdfDoc.embedJpg(imgBytes);
-      signatureImages.set(field.id, img);
+      embeddedImages.set(field.id, img);
     }
   }
 
@@ -52,11 +52,12 @@ export async function signPdfWithFields(params: {
     const coords = percentToPdfCoords(field, pageWidth, pageHeight);
 
     switch (field.type) {
-      case "signature": {
-        const signatureImage = signatureImages.get(field.id);
-        if (!signatureImage) break;
-        // Fit signature within the field bounds while preserving aspect ratio
-        const imgDims = signatureImage.scale(1);
+      case "signature":
+      case "stamp": {
+        const embeddedImage = embeddedImages.get(field.id);
+        if (!embeddedImage) break;
+        // Fit image within the field bounds while preserving aspect ratio
+        const imgDims = embeddedImage.scale(1);
         const scale = Math.min(
           coords.width / imgDims.width,
           coords.height / imgDims.height,
@@ -67,7 +68,7 @@ export async function signPdfWithFields(params: {
         const offsetX = (coords.width - drawW) / 2;
         const offsetY = (coords.height - drawH) / 2;
 
-        page.drawImage(signatureImage, {
+        page.drawImage(embeddedImage, {
           x: coords.x + offsetX,
           y: coords.y + offsetY,
           width: drawW,

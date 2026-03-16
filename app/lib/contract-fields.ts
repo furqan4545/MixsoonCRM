@@ -4,7 +4,7 @@
 
 export interface ContractField {
   id: string;
-  type: "signature" | "date" | "name";
+  type: "signature" | "date" | "name" | "stamp";
   page: number; // 1-based
   x: number; // % from left (0-100)
   y: number; // % from top (0-100)
@@ -20,6 +20,7 @@ export const FIELD_DEFAULTS: Record<
   signature: { width: 20, height: 5, label: "Signature" },
   date: { width: 15, height: 3, label: "Date" },
   name: { width: 20, height: 3, label: "Name" },
+  stamp: { width: 12, height: 8, label: "Stamp" },
 };
 
 /** Colours for field types (border / bg) */
@@ -34,6 +35,7 @@ export const FIELD_COLORS: Record<
   },
   date: { border: "#10b981", bg: "rgba(16,185,129,0.10)", text: "#059669" },
   name: { border: "#8b5cf6", bg: "rgba(139,92,246,0.10)", text: "#7c3aed" },
+  stamp: { border: "#f59e0b", bg: "rgba(245,158,11,0.10)", text: "#d97706" },
 };
 
 /**

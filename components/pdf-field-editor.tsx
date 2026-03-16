@@ -13,6 +13,7 @@ import {
   PenLine,
   Calendar,
   User,
+  Stamp,
   Trash2,
   GripVertical,
 } from "lucide-react";
@@ -235,6 +236,17 @@ export function PdfFieldEditor({
         >
           <User className="mr-1.5 h-3.5 w-3.5" />
           Name
+        </Button>
+        <Button
+          type="button"
+          variant={placingMode === "stamp" ? "default" : "outline"}
+          size="sm"
+          onClick={() =>
+            setPlacingMode(placingMode === "stamp" ? null : "stamp")
+          }
+        >
+          <Stamp className="mr-1.5 h-3.5 w-3.5" />
+          Stamp
         </Button>
 
         {placingMode && (

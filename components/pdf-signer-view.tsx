@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { type ContractField, FIELD_COLORS } from "@/app/lib/contract-fields";
 import { PdfAllPages } from "@/components/pdf-page-viewer";
 import { SignaturePad } from "@/components/signature-pad";
-import { PenLine, X } from "lucide-react";
+import { ImagePlus, PenLine, RotateCcw, X } from "lucide-react";
 
 interface PdfSignerViewProps {
   pdfUrl: string;
@@ -121,6 +121,70 @@ export function PdfSignerView({
                     className="w-full h-full px-1.5 text-[11px] font-medium bg-transparent outline-none placeholder:text-green-400/60"
                     style={{ color: "#1a1a1a" }}
                   />
+                )}
+
+                {/* ── Stamp field — image upload ── */}
+                {field.type === "stamp" && (
+                  <>
+                    {value ? (
+                      <div className="relative w-full h-full group">
+                        <img
+                          src={value}
+                          alt="Stamp"
+                          className="w-full h-full object-contain p-0.5"
+                        />
+                        {/* Replace stamp button on hover */}
+                        <button
+                          className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                          onClick={() => {
+                            const input = document.createElement("input");
+                            input.type = "file";
+                            input.accept = "image/png,image/jpeg,image/jpg";
+                            input.onchange = (ev) => {
+                              const file = (ev.target as HTMLInputElement).files?.[0];
+                              if (!file) return;
+                              const reader = new FileReader();
+                              reader.onload = () => {
+                                if (typeof reader.result === "string") {
+                                  setFieldValue(field.id, reader.result);
+                                }
+                              };
+                              reader.readAsDataURL(file);
+                            };
+                            input.click();
+                          }}
+                        >
+                          <RotateCcw className="h-3 w-3 mr-1" />
+                          Replace
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        className="w-full h-full flex items-center justify-center gap-1 text-[10px] font-medium animate-pulse cursor-pointer hover:bg-amber-50/50 transition-colors"
+                        style={{ color: colors.text }}
+                        onClick={() => {
+                          const input = document.createElement("input");
+                          input.type = "file";
+                          input.accept = "image/png,image/jpeg,image/jpg";
+                          input.onchange = (ev) => {
+                            const file = (ev.target as HTMLInputElement).files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              if (typeof reader.result === "string") {
+                                setFieldValue(field.id, reader.result);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          };
+                          input.click();
+                        }}
+                      >
+                        <ImagePlus className="h-3 w-3" />
+                        Upload stamp
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             );
