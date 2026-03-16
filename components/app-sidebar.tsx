@@ -48,7 +48,7 @@ const workspaceItems = [
   { title: "AI Runs", href: "/ai-filter", icon: Sparkles },
   { title: "Inbox", href: "/email", icon: Inbox },
   { title: "Approvals", href: "/approvals", icon: CheckSquare },
-  { title: "Contracts", href: "/contracts", icon: FileText },
+  { title: "Documents", href: "/contracts", icon: FileText },
   { title: "Alerts", href: "/alerts", icon: AlertTriangle },
 ];
 

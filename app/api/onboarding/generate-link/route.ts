@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
 
-// POST /api/onboarding/generate-link — Generate a magic link for influencer onboarding
+// POST /api/onboarding/generate-link — Generate a magic link for influencer onboarding/contract/content/payment
 export async function POST(request: Request) {
   try {
     await requirePermission("influencers", "write");
@@ -16,7 +16,12 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { influencerId, type = "ONBOARDING", contractId = null } = body;
+    const {
+      influencerId,
+      type = "ONBOARDING",
+      contractId = null,
+      includePayment = false,
+    } = body;
 
     if (!influencerId) {
       return NextResponse.json(
@@ -40,18 +45,39 @@ export async function POST(request: Request) {
     const token = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
+    // For CONTENT/PAYMENT type, create a ContentSubmission record upfront
+    let contentSubmissionId: string | null = null;
+    if (type === "CONTENT" || type === "PAYMENT") {
+      const submission = await prisma.contentSubmission.create({
+        data: {
+          influencerId,
+          includePayment: type === "PAYMENT" || includePayment,
+          status: "PENDING",
+        },
+      });
+      contentSubmissionId = submission.id;
+    }
+
     await prisma.onboardingToken.create({
       data: {
         token,
         influencerId,
         type,
         contractId: type === "CONTRACT" ? contractId : null,
+        contentSubmissionId,
+        includePayment: type === "PAYMENT" || includePayment,
         expiresAt,
       },
     });
 
     const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const portalPath = type === "CONTRACT" ? "sign" : "onboard";
+    const portalPaths: Record<string, string> = {
+      CONTRACT: "sign",
+      CONTENT: "submit",
+      PAYMENT: "submit",
+      ONBOARDING: "onboard",
+    };
+    const portalPath = portalPaths[type] || "onboard";
     const url = `${baseUrl}/portal/${portalPath}/${token}`;
 
     return NextResponse.json({ token, url });

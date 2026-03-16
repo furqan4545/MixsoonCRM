@@ -48,6 +48,7 @@ model Influencer {
   onboarding          InfluencerOnboarding?
   onboardingTokens    OnboardingToken[]
   contracts           Contract[]
+  contentSubmissions  ContentSubmission[]
 
   @@index([username])
   @@index([importId])
@@ -600,6 +601,8 @@ model OnboardingToken {
   influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
   type         TokenType @default(ONBOARDING)
   contractId   String?   // For CONTRACT type tokens
+  contentSubmissionId String?  // For CONTENT type tokens
+  includePayment Boolean @default(false) // Whether to include payment form with content submission
   expiresAt    DateTime
   usedAt       DateTime?
   openedAt     DateTime?  // When the influencer first opened the link
@@ -688,4 +691,42 @@ model Contract {
   @@index([influencerId])
   @@index([campaignId])
   @@index([status])
+}
+
+// ─── CONTENT SUBMISSIONS ─────────────────────────────────
+
+enum ContentSubmissionStatus {
+  PENDING
+  SUBMITTED
+  VERIFIED
+  COMPLETED
+}
+
+model ContentSubmission {
+  id             String   @id @default(cuid())
+  influencerId   String
+  influencer     Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  campaignId     String?
+
+  videoLinks     Json     @default("[]") // string[] of video URLs
+  notes          String?
+
+  // Payment details (optional — only when payment form is included)
+  includePayment  Boolean @default(false)
+  bankName        String?
+  accountNumber   String?  // AES-256 encrypted
+  accountHolder   String?
+  bankCode        String?
+
+  status         ContentSubmissionStatus @default(PENDING)
+  submittedAt    DateTime?
+  verifiedAt     DateTime?
+  verifiedById   String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([influencerId])
+  @@index([status])
+  @@index([campaignId])
 }

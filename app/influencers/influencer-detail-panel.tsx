@@ -415,7 +415,7 @@ function ConversationsTab({ influencerId, email }: { influencerId: string; email
   );
 }
 
-/* ── Contracts tab ── */
+/* ── Documents tab (contracts + content submissions + payment forms) ── */
 interface ContractItem {
   id: string;
   status: string;
@@ -437,7 +437,22 @@ type ContractField_JSON = {
   height: number;
 };
 
-function ContractsTab({
+interface ContentSubmissionItem {
+  id: string;
+  videoLinks: string[];
+  notes: string | null;
+  includePayment: boolean;
+  bankName: string | null;
+  accountHolder: string | null;
+  status: string;
+  submittedAt: string | null;
+  verifiedAt: string | null;
+  createdAt: string;
+}
+
+type FormType = "contract" | "content" | "content_payment" | "payment";
+
+function DocumentsTab({
   influencerId,
   influencerName,
   email,
@@ -448,11 +463,16 @@ function ContractsTab({
 }) {
   const router = useRouter();
   const [contracts, setContracts] = useState<ContractItem[]>([]);
+  const [submissions, setSubmissions] = useState<ContentSubmissionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [sendingId, setSendingId] = useState<string | null>(null);
+  const [sendingForm, setSendingForm] = useState(false);
   const fetchedRef = useRef(false);
 
-  // Editor state
+  // New document type selector
+  const [showNewMenu, setShowNewMenu] = useState(false);
+
+  // Editor state (contract only)
   const [showEditor, setShowEditor] = useState(false);
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -464,12 +484,22 @@ function ContractsTab({
   const [fields, setFields] = useState<ContractField_JSON[]>([]);
   const [uploadingPdf, setUploadingPdf] = useState(false);
 
-  const fetchContracts = useCallback(async () => {
+  // Verification state
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
+
+  const fetchAll = useCallback(async () => {
     try {
-      const res = await fetch(`/api/contracts?influencerId=${influencerId}`);
-      if (res.ok) {
-        const data = await res.json();
+      const [contractRes, submissionRes] = await Promise.all([
+        fetch(`/api/contracts?influencerId=${influencerId}`),
+        fetch(`/api/content-submissions?influencerId=${influencerId}`),
+      ]);
+      if (contractRes.ok) {
+        const data = await contractRes.json();
         setContracts(data.contracts);
+      }
+      if (submissionRes.ok) {
+        const data = await submissionRes.json();
+        setSubmissions(data.submissions);
       }
     } catch {}
     setLoading(false);
@@ -478,9 +508,9 @@ function ContractsTab({
   useEffect(() => {
     if (!fetchedRef.current) {
       fetchedRef.current = true;
-      fetchContracts();
+      fetchAll();
     }
-  }, [fetchContracts]);
+  }, [fetchAll]);
 
   const resetEditor = () => {
     setEditingContractId(null);
@@ -493,16 +523,15 @@ function ContractsTab({
   const openNewContract = () => {
     resetEditor();
     setShowEditor(true);
+    setShowNewMenu(false);
   };
 
   const openEditContract = async (contract: ContractItem) => {
     resetEditor();
     setEditingContractId(contract.id);
-
     if (contract.pdfUrl) {
       setPdfUrl(contract.pdfUrl);
       setFields((contract.fields as ContractField_JSON[]) || []);
-      // Use proxy URL for rendering (avoids GCS CORS issues)
       setPdfSignedUrl(`/api/contracts/pdf-url?contractId=${contract.id}`);
     }
     setShowEditor(true);
@@ -513,11 +542,9 @@ function ContractsTab({
     resetEditor();
   };
 
-  // Upload PDF/DOCX file
   const handleFileUpload = async (file: File) => {
     setUploadingPdf(true);
     try {
-      // If no contract yet, create one first to get an ID
       let cId = editingContractId;
       if (!cId) {
         const createRes = await fetch("/api/contracts", {
@@ -549,11 +576,7 @@ function ContractsTab({
       setPdfUrl(data.pdfUrl);
       setPageCount(data.pageCount);
       setFields([]);
-
-      // Use proxy URL for rendering (avoids GCS CORS issues)
-      // Cache-bust so react-pdf re-fetches after file replacement
       setPdfSignedUrl(`/api/contracts/pdf-url?contractId=${cId}&t=${Date.now()}`);
-
       toast.success(`PDF uploaded — ${data.pageCount} page${data.pageCount !== 1 ? "s" : ""}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
@@ -578,7 +601,7 @@ function ContractsTab({
       toast.success("Contract saved");
       closeEditor();
       fetchedRef.current = false;
-      fetchContracts();
+      fetchAll();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -603,12 +626,12 @@ function ContractsTab({
       const signingUrl = data.url as string;
 
       const subject = "[MIXSOON] Contract for Signature";
-      const body = `Hi ${influencerName},\n\nWe've prepared a contract for your review and signature.\n\nPlease click the link below to review the contract details and sign it electronically:\n\n${signingUrl}\n\nThis link expires in 30 days. If you have any questions, feel free to reply to this email.\n\nBest,\nMIXSOON Team`;
+      const emailBody = `Hi ${influencerName},\n\nWe've prepared a contract for your review and signature.\n\nPlease click the link below to review the contract details and sign it electronically:\n\n${signingUrl}\n\nThis link expires in 30 days. If you have any questions, feel free to reply to this email.\n\nBest,\nMIXSOON Team`;
 
       const params = new URLSearchParams({
         to: email,
         subject,
-        body,
+        body: emailBody,
         influencerId,
       });
       router.push(`/email/compose?${params.toString()}`);
@@ -619,12 +642,76 @@ function ContractsTab({
     }
   };
 
+  const sendForm = async (formType: FormType) => {
+    if (!email) {
+      toast.error("Influencer has no email. Add an email first.");
+      return;
+    }
+    setSendingForm(true);
+    setShowNewMenu(false);
+    try {
+      const type = formType === "payment" ? "PAYMENT" : "CONTENT";
+      const includePayment = formType === "content_payment" || formType === "payment";
+
+      const res = await fetch("/api/onboarding/generate-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ influencerId, type, includePayment }),
+      });
+      if (!res.ok) throw new Error("Failed to generate form link");
+      const data = await res.json();
+      const formUrl = data.url as string;
+
+      const formLabels: Record<FormType, string> = {
+        contract: "Contract",
+        content: "Content Submission",
+        content_payment: "Content & Payment",
+        payment: "Payment Details",
+      };
+
+      const subject = `[MIXSOON] ${formLabels[formType]} Form`;
+      const emailBody = `Hi ${influencerName},\n\nPlease complete the ${formLabels[formType].toLowerCase()} form using the link below:\n\n${formUrl}\n\nThis link expires in 30 days. If you have any questions, feel free to reply to this email.\n\nBest,\nMIXSOON Team`;
+
+      const params = new URLSearchParams({
+        to: email,
+        subject,
+        body: emailBody,
+        influencerId,
+      });
+      router.push(`/email/compose?${params.toString()}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to generate form link");
+    } finally {
+      setSendingForm(false);
+    }
+  };
+
+  const verifySubmission = async (submissionId: string) => {
+    setVerifyingId(submissionId);
+    try {
+      const res = await fetch(`/api/content-submissions/${submissionId}/verify`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Failed to verify");
+      toast.success("Content verified");
+      fetchedRef.current = false;
+      fetchAll();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to verify");
+    } finally {
+      setVerifyingId(null);
+    }
+  };
+
   const statusColors: Record<string, string> = {
     DRAFT: "bg-gray-100 text-gray-700 border-gray-200",
     SENT: "bg-blue-100 text-blue-700 border-blue-200",
     SIGNED: "bg-emerald-100 text-emerald-700 border-emerald-200",
     ACTIVE: "bg-green-100 text-green-700 border-green-200",
     COMPLETED: "bg-purple-100 text-purple-700 border-purple-200",
+    PENDING: "bg-gray-100 text-gray-700 border-gray-200",
+    SUBMITTED: "bg-amber-100 text-amber-700 border-amber-200",
+    VERIFIED: "bg-emerald-100 text-emerald-700 border-emerald-200",
   };
 
   if (loading) {
@@ -634,6 +721,8 @@ function ContractsTab({
       </div>
     );
   }
+
+  const hasItems = contracts.length > 0 || submissions.length > 0;
 
   return (
     <div className="space-y-3">
@@ -648,7 +737,6 @@ function ContractsTab({
             </button>
           </div>
 
-          {/* Upload zone OR PDF field editor */}
           {!pdfSignedUrl ? (
             <div
               className="rounded-lg border-2 border-dashed p-8 text-center cursor-pointer hover:border-foreground/30 transition-colors"
@@ -725,108 +813,247 @@ function ContractsTab({
           </div>
         </div>
       ) : (
-        <Button onClick={openNewContract} variant="outline" size="sm" className="w-full text-xs">
-          <Plus className="mr-1 h-3 w-3" />
-          New Contract
-        </Button>
+        <div className="relative">
+          <Button
+            onClick={() => setShowNewMenu(!showNewMenu)}
+            variant="outline"
+            size="sm"
+            className="w-full text-xs"
+            disabled={sendingForm}
+          >
+            {sendingForm ? (
+              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+            ) : (
+              <Plus className="mr-1 h-3 w-3" />
+            )}
+            Send Form
+            <ChevronDown className="ml-1 h-3 w-3" />
+          </Button>
+          {showNewMenu && (
+            <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-lg border bg-popover shadow-lg overflow-hidden">
+              <button
+                className="w-full px-3 py-2.5 text-left text-xs hover:bg-accent flex items-center gap-2"
+                onClick={openNewContract}
+              >
+                <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Contract</p>
+                  <p className="text-muted-foreground text-[10px]">Upload PDF/DOCX for e-signature</p>
+                </div>
+              </button>
+              <button
+                className="w-full px-3 py-2.5 text-left text-xs hover:bg-accent flex items-center gap-2 border-t"
+                onClick={() => sendForm("content")}
+              >
+                <ClipboardCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Content Submission</p>
+                  <p className="text-muted-foreground text-[10px]">Influencer submits video links</p>
+                </div>
+              </button>
+              <button
+                className="w-full px-3 py-2.5 text-left text-xs hover:bg-accent flex items-center gap-2 border-t"
+                onClick={() => sendForm("content_payment")}
+              >
+                <ClipboardCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Content + Payment</p>
+                  <p className="text-muted-foreground text-[10px]">Video links & payment details</p>
+                </div>
+              </button>
+              <button
+                className="w-full px-3 py-2.5 text-left text-xs hover:bg-accent flex items-center gap-2 border-t"
+                onClick={() => sendForm("payment")}
+              >
+                <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Payment Form</p>
+                  <p className="text-muted-foreground text-[10px]">Bank details only</p>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
-      {/* Contract list */}
-      {contracts.length === 0 && !showEditor ? (
+      {/* Documents list */}
+      {!hasItems && !showEditor ? (
         <div className="text-center py-6">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
             <FileText className="h-5 w-5 text-muted-foreground" />
           </div>
-          <p className="text-sm text-muted-foreground">No contracts yet.</p>
+          <p className="text-sm text-muted-foreground">No documents yet.</p>
         </div>
       ) : (
-        contracts.map((c) => (
-          <div key={c.id} className="rounded-lg border p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">
-                  {c.template?.name || "Contract"}
+        <>
+          {/* Contracts */}
+          {contracts.map((c) => (
+            <div key={`contract-${c.id}`} className="rounded-lg border p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">
+                    {c.template?.name || "Contract"}
+                  </span>
+                  {c.pdfUrl && (
+                    <span className="inline-flex items-center rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[9px] font-medium text-blue-600">
+                      PDF
+                    </span>
+                  )}
+                </div>
+                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusColors[c.status] || ""}`}>
+                  {c.status}
                 </span>
-                {c.pdfUrl && (
-                  <span className="inline-flex items-center rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[9px] font-medium text-blue-600">
-                    PDF
+              </div>
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span>{new Date(c.createdAt).toLocaleDateString()}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {c.status === "DRAFT" && (
+                  <>
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openEditContract(c)}>
+                      <Edit2 className="mr-1 h-3 w-3" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => sendForSignature(c.id)}
+                      disabled={sendingId === c.id}
+                    >
+                      {sendingId === c.id ? (
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                      ) : (
+                        <Mail className="mr-1 h-3 w-3" />
+                      )}
+                      {email ? "Email for Signature" : "Send for Signature"}
+                    </Button>
+                  </>
+                )}
+                {c.status === "SENT" && (
+                  <span className="text-xs text-blue-600 flex items-center gap-1">
+                    <Mail className="h-3 w-3" />
+                    Awaiting signature
+                  </span>
+                )}
+                {c.signedPdfUrl && (
+                  <>
+                    <a href={`/api/contracts/pdf-url?contractId=${c.id}&type=signed`} target="_blank" rel="noopener noreferrer">
+                      <Button variant="ghost" size="sm" className="h-7 text-xs">
+                        <Eye className="mr-1 h-3 w-3" />
+                        View Signed
+                      </Button>
+                    </a>
+                    <a href={`/api/contracts/pdf-url?contractId=${c.id}&type=signed`} download={`contract-${c.id}-signed.pdf`}>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs">
+                        <Download className="mr-1 h-3 w-3" />
+                        Download
+                      </Button>
+                    </a>
+                  </>
+                )}
+                {c.signedAt && (
+                  <span className="text-xs text-emerald-600 flex items-center gap-1">
+                    <ClipboardCheck className="h-3 w-3" />
+                    Signed {new Date(c.signedAt).toLocaleDateString()}
                   </span>
                 )}
               </div>
-              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusColors[c.status] || ""}`}>
-                {c.status}
-              </span>
             </div>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <span>{new Date(c.createdAt).toLocaleDateString()}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {c.status === "DRAFT" && (
-                <>
+          ))}
+
+          {/* Content Submissions */}
+          {submissions.map((s) => (
+            <div key={`sub-${s.id}`} className="rounded-lg border p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">
+                    {s.videoLinks.length > 0 ? "Content Submission" : "Payment Form"}
+                  </span>
+                  {s.includePayment && s.videoLinks.length > 0 && (
+                    <span className="inline-flex items-center rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-medium text-amber-600">
+                      + Payment
+                    </span>
+                  )}
+                </div>
+                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusColors[s.status] || ""}`}>
+                  {s.status}
+                </span>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span>{new Date(s.createdAt).toLocaleDateString()}</span>
+                {s.submittedAt && (
+                  <span>Submitted {new Date(s.submittedAt).toLocaleDateString()}</span>
+                )}
+              </div>
+
+              {/* Video links */}
+              {s.videoLinks.length > 0 && s.status !== "PENDING" && (
+                <div className="space-y-1">
+                  {s.videoLinks.map((link: string, i: number) => (
+                    <a
+                      key={i}
+                      href={link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-xs text-blue-600 hover:underline truncate"
+                    >
+                      {link}
+                    </a>
+                  ))}
+                </div>
+              )}
+
+              {/* Payment info indicator */}
+              {s.includePayment && s.bankName && (
+                <div className="text-xs text-muted-foreground">
+                  Bank: {s.bankName} ({s.accountHolder})
+                </div>
+              )}
+
+              {/* Notes */}
+              {s.notes && s.status !== "PENDING" && (
+                <div className="text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
+                  {s.notes}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center gap-2">
+                {s.status === "PENDING" && (
+                  <span className="text-xs text-gray-500 flex items-center gap-1">
+                    <Mail className="h-3 w-3" />
+                    Awaiting submission
+                  </span>
+                )}
+                {s.status === "SUBMITTED" && (
                   <Button
                     variant="outline"
                     size="sm"
                     className="h-7 text-xs"
-                    onClick={() => openEditContract(c)}
+                    onClick={() => verifySubmission(s.id)}
+                    disabled={verifyingId === s.id}
                   >
-                    <Edit2 className="mr-1 h-3 w-3" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => sendForSignature(c.id)}
-                    disabled={sendingId === c.id}
-                  >
-                    {sendingId === c.id ? (
+                    {verifyingId === s.id ? (
                       <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                     ) : (
-                      <Mail className="mr-1 h-3 w-3" />
+                      <Check className="mr-1 h-3 w-3" />
                     )}
-                    {email ? "Email for Signature" : "Send for Signature"}
+                    Verify
                   </Button>
-                </>
-              )}
-              {c.status === "SENT" && (
-                <span className="text-xs text-blue-600 flex items-center gap-1">
-                  <Mail className="h-3 w-3" />
-                  Awaiting signature
-                </span>
-              )}
-              {c.signedPdfUrl && (
-                <>
-                  <a
-                    href={`/api/contracts/pdf-url?contractId=${c.id}&type=signed`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button variant="ghost" size="sm" className="h-7 text-xs">
-                      <Eye className="mr-1 h-3 w-3" />
-                      View Signed
-                    </Button>
-                  </a>
-                  <a
-                    href={`/api/contracts/pdf-url?contractId=${c.id}&type=signed`}
-                    download={`contract-${c.id}-signed.pdf`}
-                  >
-                    <Button variant="ghost" size="sm" className="h-7 text-xs">
-                      <Download className="mr-1 h-3 w-3" />
-                      Download
-                    </Button>
-                  </a>
-                </>
-              )}
-              {c.signedAt && (
-                <span className="text-xs text-emerald-600 flex items-center gap-1">
-                  <ClipboardCheck className="h-3 w-3" />
-                  Signed {new Date(c.signedAt).toLocaleDateString()}
-                </span>
-              )}
+                )}
+                {s.verifiedAt && (
+                  <span className="text-xs text-emerald-600 flex items-center gap-1">
+                    <Check className="h-3 w-3" />
+                    Verified {new Date(s.verifiedAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-        ))
+          ))}
+        </>
       )}
     </div>
   );
@@ -1073,7 +1300,7 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
             value="contracts"
             className="shrink-0 rounded-none border-b-2 border-transparent px-3 py-2.5 text-xs data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
           >
-            Contracts
+            Documents
           </TabsTrigger>
         </TabsList>
 
@@ -1403,7 +1630,7 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
         {/* Contracts tab */}
         <TabsContent value="contracts" className="mt-0 pt-5 pb-8">
           {activeTab === "contracts" && (
-            <ContractsTab
+            <DocumentsTab
               influencerId={influencer.id}
               influencerName={influencer.displayName ?? influencer.username}
               email={influencer.email}
