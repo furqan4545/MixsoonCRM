@@ -472,6 +472,12 @@ function DocumentsTab({
   // New document type selector
   const [showNewMenu, setShowNewMenu] = useState(false);
 
+  // Form preview state
+  const [formPreview, setFormPreview] = useState<{
+    type: "content" | "payment";
+    includePayment: boolean;
+  } | null>(null);
+
   // Editor state (contract only)
   const [showEditor, setShowEditor] = useState(false);
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
@@ -642,16 +648,28 @@ function DocumentsTab({
     }
   };
 
-  const sendForm = async (formType: FormType) => {
+  const openFormPreview = (formType: FormType) => {
+    setShowNewMenu(false);
+    if (formType === "content") {
+      setFormPreview({ type: "content", includePayment: false });
+    } else if (formType === "content_payment") {
+      setFormPreview({ type: "content", includePayment: true });
+    } else if (formType === "payment") {
+      setFormPreview({ type: "payment", includePayment: true });
+    }
+  };
+
+  const sendFormFromPreview = async () => {
     if (!email) {
       toast.error("Influencer has no email. Add an email first.");
       return;
     }
+    if (!formPreview) return;
+
     setSendingForm(true);
-    setShowNewMenu(false);
     try {
-      const type = formType === "payment" ? "PAYMENT" : "CONTENT";
-      const includePayment = formType === "content_payment" || formType === "payment";
+      const type = formPreview.type === "payment" ? "PAYMENT" : "CONTENT";
+      const includePayment = formPreview.includePayment;
 
       const res = await fetch("/api/onboarding/generate-link", {
         method: "POST",
@@ -662,15 +680,15 @@ function DocumentsTab({
       const data = await res.json();
       const formUrl = data.url as string;
 
-      const formLabels: Record<FormType, string> = {
-        contract: "Contract",
-        content: "Content Submission",
-        content_payment: "Content & Payment",
-        payment: "Payment Details",
-      };
+      const isContent = formPreview.type === "content";
+      const label = isContent
+        ? includePayment
+          ? "Content & Payment"
+          : "Content Submission"
+        : "Payment Details";
 
-      const subject = `[MIXSOON] ${formLabels[formType]} Form`;
-      const emailBody = `Hi ${influencerName},\n\nPlease complete the ${formLabels[formType].toLowerCase()} form using the link below:\n\n${formUrl}\n\nThis link expires in 30 days. If you have any questions, feel free to reply to this email.\n\nBest,\nMIXSOON Team`;
+      const subject = `[MIXSOON] ${label} Form`;
+      const emailBody = `Hi ${influencerName},\n\nPlease complete the ${label.toLowerCase()} form using the link below:\n\n${formUrl}\n\nThis link expires in 30 days. If you have any questions, feel free to reply to this email.\n\nBest,\nMIXSOON Team`;
 
       const params = new URLSearchParams({
         to: email,
@@ -678,6 +696,7 @@ function DocumentsTab({
         body: emailBody,
         influencerId,
       });
+      setFormPreview(null);
       router.push(`/email/compose?${params.toString()}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to generate form link");
@@ -726,6 +745,7 @@ function DocumentsTab({
 
   return (
     <div className="space-y-3">
+      {/* Contract editor */}
       {showEditor ? (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -812,6 +832,134 @@ function DocumentsTab({
             </Button>
           </div>
         </div>
+      ) : formPreview ? (
+        /* ── Form preview/config panel ── */
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">
+              {formPreview.type === "content" ? "Content Submission Form" : "Payment Form"}
+            </h3>
+            <button onClick={() => setFormPreview(null)} className="text-muted-foreground hover:text-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Preview of what the influencer will see */}
+          <div className="rounded-lg border bg-muted/30 p-4 space-y-4">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Form Preview — What {influencerName} will see:
+            </p>
+
+            {formPreview.type === "content" && (
+              <div className="rounded-lg border bg-background p-4 space-y-3">
+                <div>
+                  <h4 className="text-sm font-semibold">Video Links</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Influencer submits links to posted videos. Can add multiple links.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                      https://www.tiktok.com/@username/video/...
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 opacity-50">
+                    <div className="flex-1 rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                      + Add Another Video Link
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-medium">Notes (Optional)</p>
+                  <div className="mt-1 rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground h-12">
+                    Any additional notes...
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Payment toggle */}
+            {formPreview.type === "content" && (
+              <div className="flex items-center justify-between rounded-lg border bg-background p-3">
+                <div>
+                  <p className="text-sm font-medium">Include Payment Form</p>
+                  <p className="text-xs text-muted-foreground">
+                    Also collect bank details for payment
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    setFormPreview((prev) =>
+                      prev ? { ...prev, includePayment: !prev.includePayment } : prev
+                    )
+                  }
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                    formPreview.includePayment ? "bg-foreground" : "bg-muted-foreground/30"
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
+                      formPreview.includePayment ? "translate-x-4" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
+
+            {/* Payment preview */}
+            {(formPreview.includePayment || formPreview.type === "payment") && (
+              <div className="rounded-lg border bg-background p-4 space-y-3">
+                <div>
+                  <h4 className="text-sm font-semibold">Payment Details</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Bank account information for payment processing
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-xs font-medium mb-1">Bank</p>
+                    <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                      Select your bank (Korean banks dropdown)
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1">Account Number</p>
+                    <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                      Enter your account number
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1">Account Holder Name</p>
+                    <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                      Name as it appears on the account
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Send button */}
+          <div className="flex gap-2 pt-1">
+            <Button
+              onClick={sendFormFromPreview}
+              disabled={sendingForm}
+              size="sm"
+              className="text-xs"
+            >
+              {sendingForm ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <Mail className="mr-1 h-3 w-3" />
+              )}
+              {email ? "Send via Email" : "Generate Link"}
+            </Button>
+            <Button variant="outline" onClick={() => setFormPreview(null)} size="sm" className="text-xs">
+              Cancel
+            </Button>
+          </div>
+        </div>
       ) : (
         <div className="relative">
           <Button
@@ -843,7 +991,7 @@ function DocumentsTab({
               </button>
               <button
                 className="w-full px-3 py-2.5 text-left text-xs hover:bg-accent flex items-center gap-2 border-t"
-                onClick={() => sendForm("content")}
+                onClick={() => openFormPreview("content")}
               >
                 <ClipboardCheck className="h-3.5 w-3.5 text-muted-foreground" />
                 <div>
@@ -853,7 +1001,7 @@ function DocumentsTab({
               </button>
               <button
                 className="w-full px-3 py-2.5 text-left text-xs hover:bg-accent flex items-center gap-2 border-t"
-                onClick={() => sendForm("content_payment")}
+                onClick={() => openFormPreview("content_payment")}
               >
                 <ClipboardCheck className="h-3.5 w-3.5 text-muted-foreground" />
                 <div>
@@ -863,7 +1011,7 @@ function DocumentsTab({
               </button>
               <button
                 className="w-full px-3 py-2.5 text-left text-xs hover:bg-accent flex items-center gap-2 border-t"
-                onClick={() => sendForm("payment")}
+                onClick={() => openFormPreview("payment")}
               >
                 <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
                 <div>
