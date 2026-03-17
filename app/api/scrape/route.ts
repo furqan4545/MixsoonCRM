@@ -4,7 +4,7 @@ import { prisma } from "../../lib/prisma";
 
 const APIFY_API_KEY = process.env.APIFY_API_KEY!;
 const APIFY_ACTOR_ID = "ssOXktOBaQQiYfhc4"; // Video scraper
-const APIFY_PROFILE_ACTOR_ID = "0FXVyOXXEmdGcV88a"; // Profile scraper (has bioLink)
+const APIFY_PROFILE_ACTOR_ID = "BW7peEX6cuzdpgpam"; // xtdata profile scraper (returns bio_url, signature_language, ins_id, etc.)
 const BATCH_SIZE = 100;
 const PROFILE_BATCH_SIZE = 50; // Smaller batches for profile enrichment
 const MAX_INFLUENCER_RETRIES = 5;
@@ -44,26 +44,44 @@ interface ApifyItem {
   video?: ApifyVideo;
 }
 
-/** Profile scraper returns a flat object per user (not nested under channel) */
+/** xtdata profile scraper returns TikTok's raw internal API format */
 interface ApifyProfileResult {
-  name?: string;
-  username?: string;
-  id?: string;
-  bio?: string;
-  signature?: string;
-  bioLink?: string | { link?: string; url?: string; risk?: number };
-  link?: string;
-  externalLink?: string;
-  website?: string;
-  profileUrl?: string;
-  url?: string;
-  followers?: number;
-  following?: number;
-  hearts?: number;
-  videos?: number;
-  verified?: boolean;
-  avatar?: string;
-  profilePicture?: string;
+  // Identity
+  unique_id?: string;       // username (e.g. "charlidamelio")
+  nickname?: string;        // display name
+  uid?: string;             // TikTok user ID
+  sec_uid?: string;
+
+  // Bio & links
+  signature?: string;       // bio text
+  bio_url?: string;         // THE EXTERNAL LINK (linktree, youtube, etc.)
+  bio_secure_url?: string;  // TikTok safety-wrapped version of bio_url
+  signature_language?: string; // detected language of bio (e.g. "en")
+
+  // Social cross-links
+  ins_id?: string;          // Instagram handle
+  twitter_id?: string;      // Twitter/X handle
+  twitter_name?: string;
+  youtube_channel_id?: string;
+  youtube_channel_title?: string;
+
+  // Stats
+  follower_count?: number;
+  following_count?: number;
+  total_favorited?: number; // total likes received
+  aweme_count?: number;     // total videos
+  favoriting_count?: number;
+
+  // Profile metadata
+  category?: string;        // e.g. "Public Figure", "Creator"
+  verification_type?: number;
+  custom_verify?: string;   // e.g. "verified account"
+
+  // Avatar
+  avatar_larger?: { url_list?: string[] };
+  avatar_medium?: { url_list?: string[] };
+  avatar_thumb?: { url_list?: string[] };
+
   // Catch-all for any other fields
   [key: string]: unknown;
 }
@@ -267,10 +285,10 @@ async function runApifyProfileScraper(
     console.log(`[PROFILE-SCRAPER] First item FULL:`, JSON.stringify(items[0], null, 2).slice(0, 3000));
   }
 
-  // Build map by username
+  // Build map by username (xtdata uses unique_id for username)
   const map = new Map<string, ApifyProfileResult>();
   for (const item of items) {
-    const username = normalizeUsername(item.username) ?? normalizeUsername(item.name);
+    const username = normalizeUsername(item.unique_id) ?? normalizeUsername(item.nickname);
     if (username) {
       map.set(username, item);
     }
@@ -281,57 +299,82 @@ async function runApifyProfileScraper(
 }
 
 /**
- * Extract bio link URL from a profile scraper result.
- * Handles all known formats: string, { link: "..." }, { url: "..." }
+ * Extract bio link URL from the xtdata profile scraper result.
+ * The xtdata actor returns TikTok's raw internal API format with bio_url field.
  */
 function extractBioLinkFromProfile(profile: ApifyProfileResult): string | null {
-  // Try bioLink field first (TikTok native: { link: "...", risk: 0 })
-  if (profile.bioLink) {
-    if (typeof profile.bioLink === "string") {
-      const norm = normalizeUrlCandidate(profile.bioLink);
-      if (norm && !isTiktokProfileUrl(norm)) return norm;
-    } else {
-      const linkVal = profile.bioLink.link ?? profile.bioLink.url;
-      if (typeof linkVal === "string") {
-        const norm = normalizeUrlCandidate(linkVal);
-        if (norm && !isTiktokProfileUrl(norm)) return norm;
-      }
+  // Primary: bio_url is THE external link on TikTok profile (linktree, youtube, etc.)
+  if (typeof profile.bio_url === "string" && profile.bio_url.trim()) {
+    const norm = normalizeUrlCandidate(profile.bio_url);
+    if (norm && !isTiktokProfileUrl(norm)) {
+      console.log(`[PROFILE-SCRAPER] Got bio_url:`, norm);
+      return norm;
     }
   }
 
-  // Try other link fields
-  const candidates = [profile.link, profile.externalLink, profile.website];
-  for (const c of candidates) {
-    if (typeof c === "string") {
-      const norm = normalizeUrlCandidate(c);
-      if (norm && !isTiktokProfileUrl(norm)) return norm;
-    }
-  }
-
-  // Scan all properties for link-like fields
-  for (const [k, v] of Object.entries(profile)) {
-    if (typeof v === "string") {
-      const kLower = k.toLowerCase();
-      if (kLower.includes("link") || kLower.includes("url") || kLower.includes("website")) {
-        const norm = normalizeUrlCandidate(v);
-        if (norm && !isTiktokProfileUrl(norm)) return norm;
-      }
-    } else if (v && typeof v === "object" && !Array.isArray(v)) {
-      const nested = v as Record<string, unknown>;
-      const nestedUrl = nested.link ?? nested.url ?? null;
-      if (typeof nestedUrl === "string") {
-        const norm = normalizeUrlCandidate(nestedUrl);
+  // Fallback: bio_secure_url (TikTok's safety-wrapped redirect URL — extract the target)
+  if (typeof profile.bio_secure_url === "string" && profile.bio_secure_url.trim()) {
+    try {
+      const parsed = new URL(profile.bio_secure_url);
+      const target = parsed.searchParams.get("target");
+      if (target) {
+        const decoded = decodeURIComponent(target);
+        const norm = normalizeUrlCandidate(decoded);
         if (norm && !isTiktokProfileUrl(norm)) {
-          console.log(`[PROFILE-SCRAPER] Found bioLink in nested ${k}.link:`, norm);
+          console.log(`[PROFILE-SCRAPER] Extracted from bio_secure_url target:`, norm);
+          return norm;
+        }
+      }
+    } catch {
+      // If URL parsing fails, try using bio_secure_url directly
+      const norm = normalizeUrlCandidate(profile.bio_secure_url);
+      if (norm && !isTiktokProfileUrl(norm)) return norm;
+    }
+  }
+
+  // Scan all string properties for any link-like fields we might have missed
+  for (const [k, v] of Object.entries(profile)) {
+    if (typeof v === "string" && v.trim()) {
+      const kLower = k.toLowerCase();
+      if (
+        (kLower.includes("link") || kLower.includes("url") || kLower.includes("website")) &&
+        !kLower.includes("avatar") && !kLower.includes("secure") && !kLower.includes("share")
+      ) {
+        const norm = normalizeUrlCandidate(v);
+        if (norm && !isTiktokProfileUrl(norm)) {
+          console.log(`[PROFILE-SCRAPER] Found link in field ${k}:`, norm);
           return norm;
         }
       }
     }
   }
 
-  // Fallback: try extracting from bio text
-  const bio = profile.bio ?? profile.signature;
-  return extractUrlFromBio(bio);
+  // Last resort: extract from bio text
+  return extractUrlFromBio(profile.signature);
+}
+
+/**
+ * Extract additional profile data from xtdata scraper result.
+ * Returns social links (Instagram, Twitter, YouTube) and language.
+ */
+function extractProfileExtras(profile: ApifyProfileResult): {
+  language: string | null;
+  instagramHandle: string | null;
+  twitterHandle: string | null;
+  youtubeChannel: string | null;
+  category: string | null;
+} {
+  return {
+    language: profile.signature_language ?? null,
+    instagramHandle: profile.ins_id && profile.ins_id.trim() ? profile.ins_id.trim() : null,
+    twitterHandle: profile.twitter_id && profile.twitter_id.trim() ? profile.twitter_id.trim() : null,
+    youtubeChannel: profile.youtube_channel_id
+      ? `https://youtube.com/channel/${profile.youtube_channel_id}`
+      : profile.youtube_channel_title
+        ? `https://youtube.com/@${profile.youtube_channel_title}`
+        : null,
+    category: profile.category ?? null,
+  };
 }
 
 function extractEmail(text: string | undefined | null): string | null {
@@ -901,16 +944,22 @@ export async function POST(request: NextRequest) {
             const bioFromText = extractUrlFromBio(bio);
             const videoScraperBioLink = rawBioLink ?? bioFromText;
 
-            // ── PROFILE SCRAPER ENRICHMENT: Use profile scraper data as highest priority ──
+            // ── PROFILE SCRAPER ENRICHMENT: Use xtdata profile scraper as highest priority ──
             const profileData = profileDataMap.get(username);
             let profileScraperBioLink: string | null = null;
+            let profileExtras: ReturnType<typeof extractProfileExtras> | null = null;
             if (profileData) {
               profileScraperBioLink = extractBioLinkFromProfile(profileData);
+              profileExtras = extractProfileExtras(profileData);
               console.log(`[BIOLINK-DEBUG] Profile scraper data for @${username}:`, {
-                bioLink: profileData.bioLink,
-                link: profileData.link,
-                externalLink: profileData.externalLink,
-                extracted: profileScraperBioLink,
+                bio_url: profileData.bio_url,
+                bio_secure_url: profileData.bio_secure_url,
+                signature_language: profileData.signature_language,
+                ins_id: profileData.ins_id,
+                twitter_id: profileData.twitter_id,
+                youtube_channel_id: profileData.youtube_channel_id,
+                extracted_bioLink: profileScraperBioLink,
+                extras: profileExtras,
               });
             } else {
               console.log(`[BIOLINK-DEBUG] No profile scraper data for @${username}`);
@@ -928,7 +977,26 @@ export async function POST(request: NextRequest) {
             console.log(`[BIOLINK-DEBUG] RESULT: source=${bioLinkSource} | profileScraper=${profileScraperBioLink} | videoScraper=${videoScraperBioLink} | FINAL bioLinkUrl=${bioLinkUrl}`);
             // ── END PROFILE ENRICHMENT ──
 
-            const socialLinks = normalizeSocialLinks(channel.socialLinks, bio);
+            // Merge social links from video scraper + profile scraper (Instagram, Twitter, YouTube)
+            let socialLinks = normalizeSocialLinks(channel.socialLinks, bio);
+            if (profileExtras) {
+              const extraLinks: string[] = [];
+              if (profileExtras.instagramHandle) extraLinks.push(`https://instagram.com/${profileExtras.instagramHandle}`);
+              if (profileExtras.twitterHandle) extraLinks.push(`https://x.com/${profileExtras.twitterHandle}`);
+              if (profileExtras.youtubeChannel) extraLinks.push(profileExtras.youtubeChannel);
+              if (extraLinks.length > 0) {
+                const existing: string[] = socialLinks ? JSON.parse(socialLinks) : [];
+                const seen = new Set(existing.map(u => u.toLowerCase().replace(/\/+$/, "")));
+                for (const u of extraLinks) {
+                  const n = u.toLowerCase().replace(/\/+$/, "");
+                  if (!seen.has(n)) {
+                    seen.add(n);
+                    existing.push(u);
+                  }
+                }
+                socialLinks = JSON.stringify(existing);
+              }
+            }
             const storedAvatarUrl = avatarUrl;
 
             // Send debug info to frontend SSE stream as well
