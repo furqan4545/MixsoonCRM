@@ -194,6 +194,32 @@ export default function DataScraperPage() {
                   fromBio: payload.fromBio,
                   bioLinkUrl: payload.bioLinkUrl,
                 });
+              } else if (payload.type === "apify_raw_debug") {
+                console.log(
+                  "%c[APIFY RAW] Full channel object from first item",
+                  "color: red; font-weight: bold; font-size: 14px",
+                );
+                console.log("[APIFY RAW] Top-level keys:", payload.topLevelKeys);
+                console.log("[APIFY RAW] Channel keys:", payload.channelKeys);
+                console.log("[APIFY RAW] FULL channel:", payload.channelFull);
+                console.log("[APIFY RAW] Total items returned:", payload.totalItems);
+              } else if (payload.type === "biolink_debug") {
+                const hasLink = payload.bioLinkUrl ? "✅" : "❌";
+                const source = payload.bioLinkSource ?? "unknown";
+                console.log(
+                  `%c[BIOLINK] ${hasLink} @${payload.username} (source: ${source})`,
+                  payload.bioLinkUrl ? "color: green; font-weight: bold" : "color: red; font-weight: bold",
+                );
+                console.log("[BIOLINK] Link-related fields:", payload.linkRelatedFields);
+                console.log("[BIOLINK] URL-like values:", payload.urlLikeFields);
+                console.log("[BIOLINK] Bio:", payload.bio);
+                console.log("[BIOLINK] Result:", {
+                  profileScraperBioLink: payload.profileScraperBioLink,
+                  videoScraperBioLink: payload.rawBioLink,
+                  fromBioText: payload.fromBioText,
+                  source: payload.bioLinkSource,
+                  FINAL: payload.bioLinkUrl,
+                });
               } else if (payload.type === "complete") {
                 setProgress("Scraping complete! Loading results...");
                 const resultRes = await fetch(

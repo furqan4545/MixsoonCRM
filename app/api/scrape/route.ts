@@ -3,8 +3,10 @@ import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
 
 const APIFY_API_KEY = process.env.APIFY_API_KEY!;
-const APIFY_ACTOR_ID = "ssOXktOBaQQiYfhc4";
+const APIFY_ACTOR_ID = "ssOXktOBaQQiYfhc4"; // Video scraper
+const APIFY_PROFILE_ACTOR_ID = "0FXVyOXXEmdGcV88a"; // Profile scraper (has bioLink)
 const BATCH_SIZE = 100;
+const PROFILE_BATCH_SIZE = 50; // Smaller batches for profile enrichment
 const MAX_INFLUENCER_RETRIES = 5;
 const RETRY_BACKOFF_MS = 2000;
 const MAX_APIFY_RUN_WAIT_MS = 10 * 60 * 1000;
@@ -20,7 +22,7 @@ interface ApifyChannel {
   email?: string;
   phone?: string;
   link?: string;
-  bioLink?: string | { url?: string };
+  bioLink?: string | { link?: string; url?: string; risk?: number };
   bioLinkUrl?: string;
   website?: string;
   linkInBio?: string;
@@ -40,6 +42,30 @@ interface ApifyItem {
   bookmarks?: number;
   uploadedAtFormatted?: string;
   video?: ApifyVideo;
+}
+
+/** Profile scraper returns a flat object per user (not nested under channel) */
+interface ApifyProfileResult {
+  name?: string;
+  username?: string;
+  id?: string;
+  bio?: string;
+  signature?: string;
+  bioLink?: string | { link?: string; url?: string; risk?: number };
+  link?: string;
+  externalLink?: string;
+  website?: string;
+  profileUrl?: string;
+  url?: string;
+  followers?: number;
+  following?: number;
+  hearts?: number;
+  videos?: number;
+  verified?: boolean;
+  avatar?: string;
+  profilePicture?: string;
+  // Catch-all for any other fields
+  [key: string]: unknown;
 }
 
 interface InfluencerScrapeData {
@@ -166,6 +192,146 @@ async function runApifyForUsernames(
     throw new Error(`Apify dataset fetch failed: ${datasetRes.statusText}`);
   }
   return (await datasetRes.json()) as ApifyItem[];
+}
+
+/**
+ * Run the Apify PROFILE scraper to get bio links, verified status, etc.
+ * This is a separate actor that returns profile-level data (not videos).
+ * Returns a Map of username → profile data.
+ */
+async function runApifyProfileScraper(
+  usernames: string[],
+): Promise<Map<string, ApifyProfileResult>> {
+  console.log(`[PROFILE-SCRAPER] Starting profile scrape for ${usernames.length} usernames`);
+
+  const startRes = await fetch(
+    `https://api.apify.com/v2/acts/${APIFY_PROFILE_ACTOR_ID}/runs`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${APIFY_API_KEY}`,
+      },
+      body: JSON.stringify({
+        usernames,
+        maxItems: usernames.length,
+      }),
+    },
+  );
+
+  if (!startRes.ok) {
+    const errText = await startRes.text().catch(() => startRes.statusText);
+    console.error(`[PROFILE-SCRAPER] Start failed: ${startRes.status} ${errText}`);
+    throw new Error(`Profile scraper start failed: ${startRes.statusText}`);
+  }
+
+  const startData = await startRes.json();
+  const runId = startData.data.id as string;
+  console.log(`[PROFILE-SCRAPER] Run started: ${runId}`);
+
+  const pollStartedAt = Date.now();
+  while (true) {
+    if (Date.now() - pollStartedAt > MAX_APIFY_RUN_WAIT_MS) {
+      throw new Error(`Profile scraper timed out after ${MAX_APIFY_RUN_WAIT_MS}ms`);
+    }
+    await sleep(5000);
+    const statusRes = await fetch(
+      `https://api.apify.com/v2/actor-runs/${runId}`,
+      { headers: { Authorization: `Bearer ${APIFY_API_KEY}` } },
+    );
+    if (!statusRes.ok) {
+      throw new Error(`Profile scraper status check failed: ${statusRes.statusText}`);
+    }
+    const statusData = await statusRes.json();
+    const runStatus = statusData.data.status as string;
+
+    if (runStatus === "SUCCEEDED") break;
+    if (runStatus === "FAILED" || runStatus === "ABORTED" || runStatus === "TIMED-OUT") {
+      throw new Error(`Profile scraper run ${runStatus}`);
+    }
+  }
+
+  const datasetRes = await fetch(
+    `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?format=json`,
+    { headers: { Authorization: `Bearer ${APIFY_API_KEY}` } },
+  );
+  if (!datasetRes.ok) {
+    throw new Error(`Profile scraper dataset fetch failed: ${datasetRes.statusText}`);
+  }
+  const items = (await datasetRes.json()) as ApifyProfileResult[];
+  console.log(`[PROFILE-SCRAPER] Got ${items.length} profile results`);
+
+  // Log the first item's full structure for debugging
+  if (items.length > 0) {
+    console.log(`[PROFILE-SCRAPER] First item keys:`, Object.keys(items[0]));
+    console.log(`[PROFILE-SCRAPER] First item FULL:`, JSON.stringify(items[0], null, 2).slice(0, 3000));
+  }
+
+  // Build map by username
+  const map = new Map<string, ApifyProfileResult>();
+  for (const item of items) {
+    const username = normalizeUsername(item.username) ?? normalizeUsername(item.name);
+    if (username) {
+      map.set(username, item);
+    }
+  }
+
+  console.log(`[PROFILE-SCRAPER] Mapped ${map.size} profiles by username`);
+  return map;
+}
+
+/**
+ * Extract bio link URL from a profile scraper result.
+ * Handles all known formats: string, { link: "..." }, { url: "..." }
+ */
+function extractBioLinkFromProfile(profile: ApifyProfileResult): string | null {
+  // Try bioLink field first (TikTok native: { link: "...", risk: 0 })
+  if (profile.bioLink) {
+    if (typeof profile.bioLink === "string") {
+      const norm = normalizeUrlCandidate(profile.bioLink);
+      if (norm && !isTiktokProfileUrl(norm)) return norm;
+    } else {
+      const linkVal = profile.bioLink.link ?? profile.bioLink.url;
+      if (typeof linkVal === "string") {
+        const norm = normalizeUrlCandidate(linkVal);
+        if (norm && !isTiktokProfileUrl(norm)) return norm;
+      }
+    }
+  }
+
+  // Try other link fields
+  const candidates = [profile.link, profile.externalLink, profile.website];
+  for (const c of candidates) {
+    if (typeof c === "string") {
+      const norm = normalizeUrlCandidate(c);
+      if (norm && !isTiktokProfileUrl(norm)) return norm;
+    }
+  }
+
+  // Scan all properties for link-like fields
+  for (const [k, v] of Object.entries(profile)) {
+    if (typeof v === "string") {
+      const kLower = k.toLowerCase();
+      if (kLower.includes("link") || kLower.includes("url") || kLower.includes("website")) {
+        const norm = normalizeUrlCandidate(v);
+        if (norm && !isTiktokProfileUrl(norm)) return norm;
+      }
+    } else if (v && typeof v === "object" && !Array.isArray(v)) {
+      const nested = v as Record<string, unknown>;
+      const nestedUrl = nested.link ?? nested.url ?? null;
+      if (typeof nestedUrl === "string") {
+        const norm = normalizeUrlCandidate(nestedUrl);
+        if (norm && !isTiktokProfileUrl(norm)) {
+          console.log(`[PROFILE-SCRAPER] Found bioLink in nested ${k}.link:`, norm);
+          return norm;
+        }
+      }
+    }
+  }
+
+  // Fallback: try extracting from bio text
+  const bio = profile.bio ?? profile.signature;
+  return extractUrlFromBio(bio);
 }
 
 function extractEmail(text: string | undefined | null): string | null {
@@ -497,6 +663,38 @@ export async function POST(request: NextRequest) {
           ) {
             const batch = normalizedTargetUsernames.slice(i, i + BATCH_SIZE);
             const items = await runApifyForUsernames(batch, videoCount);
+
+            // ── RAW APIFY RESPONSE DEBUG ──
+            // Log the first item's FULL channel object to see all fields Apify returns
+            if (i === 0 && items.length > 0) {
+              const sampleItem = items[0];
+              console.log(`\n[APIFY-RAW-DEBUG] ━━━ First raw item from Apify ━━━`);
+              console.log(`[APIFY-RAW-DEBUG] Top-level keys:`, Object.keys(sampleItem));
+              if (sampleItem.channel) {
+                console.log(`[APIFY-RAW-DEBUG] channel keys:`, Object.keys(sampleItem.channel));
+                console.log(`[APIFY-RAW-DEBUG] channel FULL object:`, JSON.stringify(sampleItem.channel, null, 2));
+              } else {
+                console.log(`[APIFY-RAW-DEBUG] WARNING: No 'channel' key! Full item keys:`, Object.keys(sampleItem));
+                console.log(`[APIFY-RAW-DEBUG] Full first item:`, JSON.stringify(sampleItem, null, 2).slice(0, 3000));
+              }
+              // Also log 2nd and 3rd items if they have different channel structures
+              for (let si = 1; si < Math.min(3, items.length); si++) {
+                const otherItem = items[si];
+                const otherUsername = normalizeUsername(otherItem.channel?.username);
+                if (otherUsername && otherItem.channel) {
+                  console.log(`[APIFY-RAW-DEBUG] Item #${si + 1} (@${otherUsername}) channel keys:`, Object.keys(otherItem.channel));
+                }
+              }
+              send({
+                type: "apify_raw_debug",
+                topLevelKeys: Object.keys(sampleItem),
+                channelKeys: sampleItem.channel ? Object.keys(sampleItem.channel) : [],
+                channelFull: sampleItem.channel ?? null,
+                totalItems: items.length,
+              });
+            }
+            // ── END RAW APIFY DEBUG ──
+
             mergeItemsIntoInfluencerMap(items);
           }
 
@@ -529,6 +727,47 @@ export async function POST(request: NextRequest) {
             data.videos = dedupeAndLimitVideos(data.videos, videoCount);
           }
 
+          // ── PROFILE ENRICHMENT: Run profile scraper to get bioLink data ──
+          // The video scraper often doesn't return bioLink, so we use a dedicated profile scraper
+          let profileDataMap = new Map<string, ApifyProfileResult>();
+          try {
+            send({
+              type: "stage",
+              message: `Enriching profiles for ${normalizedTargetUsernames.length} influencers (fetching bio links)...`,
+            });
+            for (
+              let i = 0;
+              i < normalizedTargetUsernames.length;
+              i += PROFILE_BATCH_SIZE
+            ) {
+              const batch = normalizedTargetUsernames.slice(i, i + PROFILE_BATCH_SIZE);
+              const batchMap = await runApifyProfileScraper(batch);
+              for (const [k, v] of batchMap) {
+                profileDataMap.set(k, v);
+              }
+              if (i + PROFILE_BATCH_SIZE < normalizedTargetUsernames.length) {
+                send({
+                  type: "stage",
+                  message: `Enriching profiles... (${Math.min(i + PROFILE_BATCH_SIZE, normalizedTargetUsernames.length)}/${normalizedTargetUsernames.length})`,
+                });
+              }
+            }
+            console.log(`[PROFILE-SCRAPER] Total enriched profiles: ${profileDataMap.size}/${normalizedTargetUsernames.length}`);
+            send({
+              type: "stage",
+              message: `Profile enrichment complete. Got bio data for ${profileDataMap.size} influencers.`,
+            });
+          } catch (profileErr) {
+            // Don't fail the whole scrape if profile enrichment fails — just log and continue
+            console.error(`[PROFILE-SCRAPER] Profile enrichment failed, continuing without:`, profileErr);
+            send({
+              type: "stage",
+              message: `Profile enrichment failed (${profileErr instanceof Error ? profileErr.message : "unknown error"}). Continuing with video data only...`,
+            });
+            profileDataMap = new Map();
+          }
+          // ── END PROFILE ENRICHMENT ──
+
           /** Merge channel from all items so we don't miss link/bio when actor puts them on a different item than the first. */
           function mergedChannel(items: ApifyItem[]): Record<string, unknown> {
             const out: Record<string, unknown> = {};
@@ -544,7 +783,6 @@ export async function POST(request: NextRequest) {
           const totalToProcess = influencerMap.size;
           let processedCount = 0;
           let totalVideosWritten = 0;
-          const debugScrape = process.env.DEBUG_SCRAPE === "1";
 
           for (const [username, data] of influencerMap) {
             const allItems = data.profile
@@ -554,19 +792,78 @@ export async function POST(request: NextRequest) {
             const bio = channel.bio ?? channel.signature ?? null;
             const avatarUrl = channel.avatar ?? channel.profilePicture ?? null;
 
+            // ── BIOLINK DEBUG: Log ALL channel keys and any link-like values ──
+            const channelRecord = channel as unknown as Record<string, unknown>;
+            const allChannelKeys = Object.keys(channelRecord);
+            const linkRelatedFields: Record<string, unknown> = {};
+            const urlLikeFields: Record<string, unknown> = {};
+            for (const [k, v] of Object.entries(channelRecord)) {
+              const kLower = k.toLowerCase();
+              if (
+                kLower.includes("link") ||
+                kLower.includes("url") ||
+                kLower.includes("website") ||
+                kLower.includes("bio") ||
+                kLower.includes("homepage") ||
+                kLower.includes("external") ||
+                kLower.includes("href")
+              ) {
+                linkRelatedFields[k] = v;
+              }
+              // Also catch any string value that looks like a URL
+              if (
+                typeof v === "string" &&
+                (v.startsWith("http") || v.includes(".com") || v.includes(".link") || v.includes("linktr") || v.includes("beacons"))
+              ) {
+                urlLikeFields[k] = v;
+              }
+              // Check nested objects for URLs
+              if (v && typeof v === "object" && !Array.isArray(v)) {
+                for (const [nk, nv] of Object.entries(v as Record<string, unknown>)) {
+                  if (typeof nv === "string" && (nv.startsWith("http") || nv.includes(".com"))) {
+                    urlLikeFields[`${k}.${nk}`] = nv;
+                  }
+                }
+              }
+            }
+            console.log(`\n[BIOLINK-DEBUG] ━━━ @${username} ━━━`);
+            console.log(`[BIOLINK-DEBUG] All channel keys (${allChannelKeys.length}):`, allChannelKeys);
+            console.log(`[BIOLINK-DEBUG] Link-related fields:`, JSON.stringify(linkRelatedFields, null, 2));
+            console.log(`[BIOLINK-DEBUG] URL-like values found:`, JSON.stringify(urlLikeFields, null, 2));
+            console.log(`[BIOLINK-DEBUG] Raw bio text:`, bio ? bio.slice(0, 300) : "(empty)");
+            // ── END BIOLINK DEBUG ──
+
             const email = channel.email ?? extractEmail(bio);
             const phone = channel.phone ?? extractPhone(bio);
-            const linkCandidates: (string | null | undefined)[] = [
-              channel.bioLinkUrl,
-              channel.link,
+            // Extract bioLink — TikTok returns { link: "...", risk: 0 }, some actors return string or { url: "..." }
+            console.log(`[BIOLINK-DEBUG] channel.bioLink raw value:`, JSON.stringify(channel.bioLink));
+            console.log(`[BIOLINK-DEBUG] channel.bioLink type:`, typeof channel.bioLink);
+            const bioLinkResolved =
               typeof channel.bioLink === "string"
                 ? channel.bioLink
-                : channel.bioLink?.url,
+                : channel.bioLink?.link ?? channel.bioLink?.url ?? null;
+            console.log(`[BIOLINK-DEBUG] bioLinkResolved:`, bioLinkResolved);
+
+            const linkCandidates: (string | null | undefined)[] = [
+              bioLinkResolved,          // bioLink.link (TikTok native format) — HIGHEST PRIORITY
+              channel.bioLinkUrl,
+              channel.link,
               channel.website,
               channel.linkInBio,
               channel.profileLink,
               channel.externalLink,
             ];
+
+            // ── DEBUG: Log each candidate and why it was accepted/rejected ──
+            console.log(`[BIOLINK-DEBUG] Link candidates (in priority order):`);
+            const candidateNames = ["bioLink(.link/.url)", "bioLinkUrl", "link", "website", "linkInBio", "profileLink", "externalLink"];
+            for (let ci = 0; ci < linkCandidates.length; ci++) {
+              const raw = linkCandidates[ci];
+              const normalized = normalizeUrlCandidate(raw as string);
+              const isTikTok = normalized ? isTiktokProfileUrl(normalized) : false;
+              console.log(`[BIOLINK-DEBUG]   ${candidateNames[ci]}: raw=${JSON.stringify(raw)} → normalized=${normalized} → isTikTok=${isTikTok}`);
+            }
+
             let rawBioLink: string | null = null;
             for (const v of linkCandidates) {
               const normalized = normalizeUrlCandidate(v);
@@ -577,40 +874,77 @@ export async function POST(request: NextRequest) {
             }
             if (!rawBioLink && typeof channel === "object") {
               for (const [k, v] of Object.entries(channel)) {
-                const normalized =
-                  typeof v === "string" ? normalizeUrlCandidate(v) : null;
+                let candidate: string | null = null;
+                if (typeof v === "string") {
+                  candidate = normalizeUrlCandidate(v);
+                } else if (v && typeof v === "object" && !Array.isArray(v)) {
+                  // Handle nested objects like bioLink: { link: "...", risk: 0 }
+                  const nested = v as Record<string, unknown>;
+                  const nestedUrl = nested.link ?? nested.url ?? nested.href ?? null;
+                  if (typeof nestedUrl === "string") {
+                    candidate = normalizeUrlCandidate(nestedUrl);
+                  }
+                }
                 if (
-                  normalized &&
-                  !isTiktokProfileUrl(normalized) &&
+                  candidate &&
+                  !isTiktokProfileUrl(candidate) &&
                   (k.toLowerCase().includes("link") ||
                     k.toLowerCase().includes("url") ||
                     k.toLowerCase().includes("website"))
                 ) {
-                  rawBioLink = normalized;
+                  rawBioLink = candidate;
+                  console.log(`[BIOLINK-DEBUG]   Fallback match from channel.${k}:`, candidate);
                   break;
                 }
               }
             }
-            const bioLinkUrl = rawBioLink ?? extractUrlFromBio(bio);
+            const bioFromText = extractUrlFromBio(bio);
+            const videoScraperBioLink = rawBioLink ?? bioFromText;
+
+            // ── PROFILE SCRAPER ENRICHMENT: Use profile scraper data as highest priority ──
+            const profileData = profileDataMap.get(username);
+            let profileScraperBioLink: string | null = null;
+            if (profileData) {
+              profileScraperBioLink = extractBioLinkFromProfile(profileData);
+              console.log(`[BIOLINK-DEBUG] Profile scraper data for @${username}:`, {
+                bioLink: profileData.bioLink,
+                link: profileData.link,
+                externalLink: profileData.externalLink,
+                extracted: profileScraperBioLink,
+              });
+            } else {
+              console.log(`[BIOLINK-DEBUG] No profile scraper data for @${username}`);
+            }
+
+            // Priority: profile scraper > video scraper channel > bio text parsing
+            const bioLinkUrl = profileScraperBioLink ?? videoScraperBioLink;
+            const bioLinkSource = profileScraperBioLink
+              ? "profile_scraper"
+              : rawBioLink
+                ? "video_scraper_channel"
+                : bioFromText
+                  ? "bio_text_parse"
+                  : "none";
+            console.log(`[BIOLINK-DEBUG] RESULT: source=${bioLinkSource} | profileScraper=${profileScraperBioLink} | videoScraper=${videoScraperBioLink} | FINAL bioLinkUrl=${bioLinkUrl}`);
+            // ── END PROFILE ENRICHMENT ──
+
             const socialLinks = normalizeSocialLinks(channel.socialLinks, bio);
             const storedAvatarUrl = avatarUrl;
 
-            if (debugScrape && processedCount < 3) {
-              const debugPayload = {
-                username,
-                channelKeys: Object.keys(channel),
-                bio: bio ? `${bio.slice(0, 120)}` : null,
-                rawBioLink,
-                fromBio: extractUrlFromBio(bio),
-                bioLinkUrl,
-              };
-              console.log(
-                "[scrape] channel sample for",
-                username,
-                debugPayload,
-              );
-              send({ type: "debug", ...debugPayload });
-            }
+            // Send debug info to frontend SSE stream as well
+            send({
+              type: "biolink_debug",
+              username,
+              channelKeys: allChannelKeys,
+              linkRelatedFields,
+              urlLikeFields,
+              bio: bio ? bio.slice(0, 300) : null,
+              bioLinkUrl,
+              rawBioLink: videoScraperBioLink,
+              profileScraperBioLink,
+              bioLinkSource,
+              fromBioText: bioFromText,
+            });
 
             const isSkippedProfileOnly = setSkipped.has(username);
 
