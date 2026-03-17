@@ -136,6 +136,7 @@ export async function GET(request: NextRequest) {
         followers: inf.followers,
         engagementRate: inf.engagementRate,
         rate: inf.rate,
+        language: inf.language,
         country: inf.country,
         email: inf.email,
         phone: inf.phone,

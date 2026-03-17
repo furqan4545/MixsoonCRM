@@ -47,6 +47,7 @@ export interface InfluencerRow {
   followers: number | null;
   engagementRate: number | null;
   rate: number | null;
+  language: string | null;
   country: string | null;
   email: string | null;
   phone: string | null;

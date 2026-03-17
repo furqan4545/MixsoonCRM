@@ -2,6 +2,30 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+
+/** Map ISO 639-1 language codes to full display names */
+const LANG_NAMES: Record<string, string> = {
+  ko: "Korean", ja: "Japanese", zh: "Chinese", th: "Thai", lo: "Lao",
+  my: "Burmese", km: "Khmer", vi: "Vietnamese", si: "Sinhala",
+  hi: "Hindi", bn: "Bengali", pa: "Punjabi", gu: "Gujarati", or: "Odia",
+  ta: "Tamil", te: "Telugu", kn: "Kannada", ml: "Malayalam", ur: "Urdu",
+  ne: "Nepali", mr: "Marathi", as: "Assamese",
+  ar: "Arabic", he: "Hebrew", fa: "Farsi",
+  es: "Spanish", pt: "Portuguese", fr: "French", it: "Italian", ro: "Romanian", ca: "Catalan",
+  de: "German", nl: "Dutch", sv: "Swedish", no: "Norwegian", da: "Danish", is: "Icelandic", af: "Afrikaans",
+  ru: "Russian", uk: "Ukrainian", pl: "Polish", cs: "Czech", sk: "Slovak", bg: "Bulgarian",
+  hr: "Croatian", sr: "Serbian", sl: "Slovenian", bs: "Bosnian", mk: "Macedonian", be: "Belarusian",
+  fi: "Finnish", hu: "Hungarian", el: "Greek", tr: "Turkish", ka: "Georgian", hy: "Armenian",
+  et: "Estonian", lv: "Latvian", lt: "Lithuanian", sq: "Albanian",
+  am: "Amharic", sw: "Swahili", ha: "Hausa", yo: "Yoruba", ig: "Igbo",
+  zu: "Zulu", xh: "Xhosa", st: "Sotho", tn: "Tswana", so: "Somali", rw: "Kinyarwanda",
+  id: "Indonesian", ms: "Malay", tl: "Tagalog", fil: "Filipino", ceb: "Cebuano", jv: "Javanese", su: "Sundanese",
+};
+
+function getLanguageName(code: string | null): string | null {
+  if (!code) return null;
+  return LANG_NAMES[code.toLowerCase()] ?? code.toUpperCase();
+}
 import {
   ArrowLeft,
   Edit2,
@@ -1374,10 +1398,15 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
                 onSelect={handleStageChange}
                 saving={saving}
               />
+              {influencer.language && (
+                <Badge variant="outline" className="text-xs gap-1">
+                  🗣 {getLanguageName(influencer.language)}
+                </Badge>
+              )}
               {influencer.country && (
                 <Badge variant="outline" className="text-xs gap-1">
                   <Globe className="h-3 w-3" />
-                  {influencer.country}
+                  {influencer.country.length <= 3 ? influencer.country : influencer.country}
                 </Badge>
               )}
             </div>
@@ -1478,8 +1507,12 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
                 <span className="text-sm text-muted-foreground">Platform</span>
                 <span className="text-sm font-medium">{influencer.platform ?? "—"}</span>
               </div>
+              <div className="flex items-center justify-between border-b px-4 py-3">
+                <span className="text-sm text-muted-foreground">Language</span>
+                <span className="text-sm font-medium">{influencer.language ? getLanguageName(influencer.language) : "—"}</span>
+              </div>
               <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-muted-foreground">Country</span>
+                <span className="text-sm text-muted-foreground">Est. Region</span>
                 <span className="text-sm font-medium">{influencer.country ?? "—"}</span>
               </div>
             </div>

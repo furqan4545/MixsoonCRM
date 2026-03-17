@@ -1,6 +1,17 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
+// ELD (Efficient Language Detector) — NLP-based, neural n-gram detector, 60 languages
+// Loaded lazily since it needs async init
+let _eld: typeof import("eld").default | null = null;
+async function getEld() {
+  if (!_eld) {
+    const mod = await import("eld");
+    _eld = mod.default ?? mod;
+    await (_eld as { load?: (name: string) => Promise<boolean> }).load?.("large");
+  }
+  return _eld;
+}
 
 const APIFY_API_KEY = process.env.APIFY_API_KEY!;
 const APIFY_ACTOR_ID = "ssOXktOBaQQiYfhc4"; // Video scraper
@@ -173,9 +184,14 @@ async function runApifyForUsernames(
   const runId = startData.data.id as string;
 
   const pollStartedAt = Date.now();
+  let transientFailures = 0;
+  const MAX_TRANSIENT_RETRIES = 5;
+  let runSucceeded = false;
+
   while (true) {
     if (Date.now() - pollStartedAt > MAX_APIFY_RUN_WAIT_MS) {
-      throw new Error(`Apify run timed out after ${MAX_APIFY_RUN_WAIT_MS}ms`);
+      console.warn(`[APIFY] Run timed out after ${MAX_APIFY_RUN_WAIT_MS}ms — skipping batch: ${usernames.join(", ")}`);
+      return [];
     }
     await sleep(5000);
     const statusRes = await fetch(
@@ -185,12 +201,27 @@ async function runApifyForUsernames(
       },
     );
     if (!statusRes.ok) {
-      throw new Error(`Apify status failed: ${statusRes.statusText}`);
+      // Transient Apify errors (502, 503, 429) — retry up to 5 times then skip
+      if (statusRes.status >= 500 || statusRes.status === 429) {
+        transientFailures++;
+        console.warn(`[APIFY] Transient error ${statusRes.status} (${statusRes.statusText}) — attempt ${transientFailures}/${MAX_TRANSIENT_RETRIES}`);
+        if (transientFailures >= MAX_TRANSIENT_RETRIES) {
+          console.warn(`[APIFY] Giving up after ${MAX_TRANSIENT_RETRIES} failures — skipping batch: ${usernames.join(", ")}`);
+          return [];
+        }
+        await sleep(5000);
+        continue;
+      }
+      console.warn(`[APIFY] Non-retryable error ${statusRes.status} (${statusRes.statusText}) — skipping batch: ${usernames.join(", ")}`);
+      return [];
     }
+    // Reset counter on successful poll
+    transientFailures = 0;
     const statusData = await statusRes.json();
     const runStatus = statusData.data.status as string;
 
     if (runStatus === "SUCCEEDED") {
+      runSucceeded = true;
       break;
     }
     if (
@@ -198,9 +229,12 @@ async function runApifyForUsernames(
       runStatus === "ABORTED" ||
       runStatus === "TIMED-OUT"
     ) {
-      throw new Error(`Apify run ${runStatus}`);
+      console.warn(`[APIFY] Run ${runStatus} — skipping batch: ${usernames.join(", ")}`);
+      return [];
     }
   }
+
+  if (!runSucceeded) return [];
 
   const datasetRes = await fetch(
     `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?format=json`,
@@ -298,6 +332,20 @@ async function runApifyProfileScraper(
   return map;
 }
 
+/** Map of common TikTok account languages to likely countries */
+const LANGUAGE_TO_COUNTRY: Record<string, string> = {
+  ko: "KR", ja: "JP", th: "TH", id: "ID", vi: "VN",
+  zh: "CN", "zh-Hans": "CN", "zh-Hant": "TW",
+  ms: "MY", tl: "PH", fil: "PH",
+  hi: "IN", bn: "BD", ta: "IN", te: "IN",
+  tr: "TR", ru: "RU", uk: "UA", pl: "PL",
+  de: "DE", fr: "FR", it: "IT", es: "ES", pt: "BR", "pt-BR": "BR",
+  ar: "SA", he: "IL", fa: "IR",
+  sv: "SE", da: "DK", nb: "NO", fi: "FI", nl: "NL",
+  ro: "RO", el: "GR", cs: "CZ", hu: "HU",
+};
+
+
 /**
  * Extract bio link URL from the xtdata profile scraper result.
  * The xtdata actor returns TikTok's raw internal API format with bio_url field.
@@ -357,15 +405,74 @@ function extractBioLinkFromProfile(profile: ApifyProfileResult): string | null {
  * Extract additional profile data from xtdata scraper result.
  * Returns social links (Instagram, Twitter, YouTube) and language.
  */
+// ── LANGUAGE DETECTION (NLP-based using ELD — Efficient Language Detector) ──
+// Uses neural n-gram analysis. 60 languages. Proven to beat CLD3 and franc in accuracy.
+// We ONLY use the 3 most recent video captions — NOT the bio (too noisy/short).
+// Voting: majority of 3 videos wins. English → null (we skip English).
+
+/**
+ * Detect language from a single text using ELD (Efficient Language Detector).
+ * Returns ISO 639-1 lang code or null. English returns null (skipped).
+ */
+async function detectLanguageFromText(text: string | null | undefined): Promise<string | null> {
+  if (!text || text.trim().length < 10) return null;
+  const eld = await getEld();
+  const result = (eld as { detect: (t: string) => { language: string; isReliable: () => boolean } }).detect(text.trim());
+  if (!result || !result.language || !result.isReliable()) return null;
+  // Skip English — we only tag non-English creators
+  if (result.language === "en") return null;
+  return result.language;
+}
+
+/**
+ * Detect the dominant language for an influencer using ONLY the 3 most recent video
+ * captions/titles. Bio is ignored (too short, noisy, often in English even for
+ * non-English creators). Voting: each of the 3 videos votes, majority wins.
+ * Requires at least 2/3 agreement for confidence.
+ */
+async function detectInfluencerLanguage(
+  videoTitles: string[],
+): Promise<string | null> {
+  // Only use the first 3 (most recent) videos
+  const recentTitles = videoTitles.slice(0, 3);
+  if (recentTitles.length === 0) return null;
+
+  const detections: (string | null)[] = [];
+  for (const title of recentTitles) {
+    const lang = await detectLanguageFromText(title);
+    detections.push(lang);
+  }
+
+  // Count votes (ignore nulls — those are English or too-short)
+  const votes: Record<string, number> = {};
+  for (const lang of detections) {
+    if (lang) votes[lang] = (votes[lang] ?? 0) + 1;
+  }
+
+  if (Object.keys(votes).length === 0) return null;
+
+  const sorted = Object.entries(votes).sort((a, b) => b[1] - a[1]);
+  const [topLang, topCount] = sorted[0];
+
+  console.log(`[LANG-DETECT] Video detections: [${detections.join(", ")}] → votes: ${sorted.map(([l, c]) => `${l}=${c}`).join(", ")}`);
+
+  // Require at least 2 votes for the winning language (2/3 majority)
+  if (topCount < 2) {
+    console.log(`[LANG-DETECT] No majority (top=${topCount}), skipping`);
+    return null;
+  }
+
+  return topLang;
+}
+
 function extractProfileExtras(profile: ApifyProfileResult): {
-  language: string | null;
   instagramHandle: string | null;
   twitterHandle: string | null;
   youtubeChannel: string | null;
   category: string | null;
 } {
+  // Language detection is now handled by detectInfluencerLanguage() using video captions only.
   return {
-    language: profile.signature_language ?? null,
     instagramHandle: profile.ins_id && profile.ins_id.trim() ? profile.ins_id.trim() : null,
     twitterHandle: profile.twitter_id && profile.twitter_id.trim() ? profile.twitter_id.trim() : null,
     youtubeChannel: profile.youtube_channel_id
@@ -375,6 +482,36 @@ function extractProfileExtras(profile: ApifyProfileResult): {
         : null,
     category: profile.category ?? null,
   };
+}
+
+/**
+ * Detect estimated region from TikTok CDN URL patterns.
+ * TikTok CDN domains and path prefixes leak the user's registered region.
+ *
+ * Patterns found:
+ *   Domain: tiktokcdn-us.com → Americas | tiktokcdn-eu.com → Europe | tiktokcdn.com + sign-sg → Asia
+ *   Path:   tos-useast* → Americas | tos-alisg → Asia/SEA | tos-maliva → Global CDN (ambiguous)
+ */
+function detectRegionFromCdn(url: string | null | undefined): string | null {
+  if (!url || typeof url !== "string") return null;
+  const lower = url.toLowerCase();
+
+  // 1. Domain-level detection (most reliable)
+  if (lower.includes("tiktokcdn-us.com")) return "Americas";
+  if (lower.includes("tiktokcdn-eu.com")) return "Europe";
+
+  // 2. Subdomain hints
+  if (lower.includes("sign-sg.tiktokcdn")) return "Asia";
+  if (lower.includes("sign-va.tiktokcdn")) return "Americas"; // VA = Virginia
+
+  // 3. Object storage prefix (tos-*)
+  if (lower.includes("tos-useast")) return "Americas";
+  if (lower.includes("tos-alisg")) return "Asia";     // alisg = Alibaba Singapore
+  if (lower.includes("tos-uswest")) return "Americas";
+  if (lower.includes("tos-eu")) return "Europe";
+
+  // tos-maliva is TikTok's global/default CDN — not region-specific
+  return null;
 }
 
 function extractEmail(text: string | undefined | null): string | null {
@@ -955,6 +1092,7 @@ export async function POST(request: NextRequest) {
                 bio_url: profileData.bio_url,
                 bio_secure_url: profileData.bio_secure_url,
                 signature_language: profileData.signature_language,
+                region: profileData.region,
                 ins_id: profileData.ins_id,
                 twitter_id: profileData.twitter_id,
                 youtube_channel_id: profileData.youtube_channel_id,
@@ -1016,6 +1154,28 @@ export async function POST(request: NextRequest) {
 
             const isSkippedProfileOnly = setSkipped.has(username);
 
+            // Language detection: ELD NLP on 3 most recent video captions (ignores bio)
+            const videoTitles: string[] = (data.videos ?? [])
+              .map((v) => (typeof v.title === "string" ? v.title : ""))
+              .filter((t) => t.length > 0);
+            const resolvedLanguage = await detectInfluencerLanguage(videoTitles);
+
+            // Region/Country detection: CDN URL analysis (free!) + language inference
+            const cdnRegion = detectRegionFromCdn(avatarUrl);
+            // Also check xtdata avatar URLs for more CDN hints
+            const xtdataAvatarUrl = profileData?.avatar_larger?.url_list?.[0]
+              ?? profileData?.avatar_medium?.url_list?.[0] ?? null;
+            const xtdaCdnRegion = detectRegionFromCdn(xtdataAvatarUrl);
+            const estimatedRegion = xtdaCdnRegion || cdnRegion || null;
+
+            // Country: language mapping (for non-ambiguous languages) or CDN region
+            const langCountry = resolvedLanguage ? LANGUAGE_TO_COUNTRY[resolvedLanguage] ?? null : null;
+            // Build a combined country string: e.g. "KR" from language, or "Americas" from CDN
+            const resolvedCountry = langCountry || estimatedRegion || null;
+
+            console.log(`[LANG-DETECT] @${username}: lang=${resolvedLanguage} (from top 3 of ${videoTitles.length} video captions)`);
+            console.log(`[REGION-DETECT] @${username}: cdnRegion=${cdnRegion} | xtdaCdn=${xtdaCdnRegion} | langCountry=${langCountry} | FINAL=${resolvedCountry}`);
+
             const influencer = await prisma.influencer.upsert({
               where: { username },
               create: {
@@ -1028,6 +1188,8 @@ export async function POST(request: NextRequest) {
                 email,
                 phone,
                 socialLinks,
+                language: resolvedLanguage,
+                country: resolvedCountry,
                 sourceFilename,
                 importId,
               },
@@ -1040,6 +1202,8 @@ export async function POST(request: NextRequest) {
                 email,
                 phone,
                 socialLinks,
+                language: resolvedLanguage,
+                ...(resolvedCountry ? { country: resolvedCountry } : {}),
                 sourceFilename,
                 importId,
               },

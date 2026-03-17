@@ -27,6 +27,7 @@ model Influencer {
   platform       String?          // TikTok, Instagram, YouTube, etc.
   engagementRate Float?           // e.g. 4.8 for 4.8%
   rate           Float?           // payment rate in USD
+  language       String?          // detected from profile (e.g. "en", "ko")
   country        String?          // e.g. "US", "KR"
   pipelineStage  PipelineStage    @default(PROSPECT)
   tags           String[]         // e.g. ["skincare", "beauty", "routine"]
