@@ -662,6 +662,7 @@ export async function POST(request: NextRequest) {
       skipped = [],
       videoCount: requestedVideoCount,
       refreshSkippedProfiles = false,
+      runAnalysis = false,
     } = body as {
       importId: string;
       toScrape?: string[];
@@ -669,6 +670,7 @@ export async function POST(request: NextRequest) {
       skipped?: string[];
       videoCount?: number;
       refreshSkippedProfiles?: boolean;
+      runAnalysis?: boolean;
     };
 
     importId = id;
@@ -1329,6 +1331,26 @@ export async function POST(request: NextRequest) {
             totalVideos: totalVideosWritten,
             skipped: skippedNotRescraped,
           });
+
+          // If audience analysis was requested, fire off analytics runs for each influencer
+          if (runAnalysis && importId) {
+            try {
+              const influencers = await prisma.influencer.findMany({
+                where: { importId },
+                select: { id: true },
+              });
+              for (const inf of influencers) {
+                // Fire-and-forget: trigger analytics pipeline via internal API
+                fetch(`${process.env.NEXTAUTH_URL ?? "http://localhost:3000"}/api/analytics/run`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ influencerId: inf.id }),
+                }).catch(() => {});
+              }
+            } catch (e) {
+              console.error("[Scrape] Failed to trigger analytics runs:", e);
+            }
+          }
         } catch (err) {
           console.error("Scrape error:", err);
           send({

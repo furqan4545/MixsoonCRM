@@ -58,6 +58,7 @@ import { ThumbnailImage } from "@/components/thumbnail-image";
 import type { InfluencerRow } from "./influencers-dashboard";
 import { InfluencerContactSection } from "@/components/influencer-contact-section";
 import { toast } from "sonner";
+import AnalyticsTab from "./analytics-tab";
 
 function formatNumber(n: number | null): string {
   if (n == null) return "—";
@@ -1479,6 +1480,12 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
           >
             Documents
           </TabsTrigger>
+          <TabsTrigger
+            value="analytics"
+            className="shrink-0 rounded-none border-b-2 border-transparent px-3 py-2.5 text-xs data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+          >
+            Analytics
+          </TabsTrigger>
         </TabsList>
 
         {/* Overview tab */}
@@ -1815,6 +1822,17 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
               influencerId={influencer.id}
               influencerName={influencer.displayName ?? influencer.username}
               email={influencer.email}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="analytics" className="mt-0 pt-5 pb-8">
+          {activeTab === "analytics" && (
+            <AnalyticsTab
+              influencerId={influencer.id}
+              username={influencer.username}
+              avatarUrl={influencer.avatarUrl}
+              videos={influencer.videos}
             />
           )}
         </TabsContent>

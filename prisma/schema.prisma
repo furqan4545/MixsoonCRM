@@ -50,6 +50,9 @@ model Influencer {
   onboardingTokens    OnboardingToken[]
   contracts           Contract[]
   contentSubmissions  ContentSubmission[]
+  comments            Comment[]
+  analysisRuns        AnalysisRun[]
+  analytics           InfluencerAnalytics?
 
   @@index([username])
   @@index([importId])
@@ -730,4 +733,100 @@ model ContentSubmission {
   @@index([influencerId])
   @@index([status])
   @@index([campaignId])
+}
+
+// ─── AUDIENCE ANALYTICS ─────────────────────────────────
+
+model Comment {
+  id             String    @id @default(cuid())
+  influencerId   String
+  influencer     Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  videoUrl       String?
+  text           String
+  username       String?
+  avatarUrl      String?   // commenter's profile pic (scraped for avatar sample)
+  likes          Int       @default(0)
+  replyCount     Int       @default(0)
+  commentedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([influencerId])
+}
+
+model AnalysisRun {
+  id             String            @id @default(cuid())
+  influencerId   String
+  influencer     Influencer        @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  status         AnalysisRunStatus @default(PENDING)
+  mode           AnalysisMode      @default(HYBRID)
+  commentCount   Int               @default(0)
+  avatarCount    Int               @default(0)
+  analyzedCount  Int               @default(0)
+  progress       Int               @default(0)   // 0-100
+  progressMsg    String?                         // current step message for SSE
+  errorMessage   String?
+  config         Json?             // snapshot of { videosToSample, commentsPerVideo, avatarsToAnalyze }
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([influencerId])
+  @@index([status])
+}
+
+enum AnalysisRunStatus {
+  PENDING
+  SCRAPING_COMMENTS
+  ANALYZING_COMMENTS
+  ANALYZING_FACES
+  COMPLETED
+  FAILED
+}
+
+enum AnalysisMode {
+  NLP_ONLY
+  HYBRID
+  FULL_VISION
+}
+
+model InfluencerAnalytics {
+  id                   String   @id @default(cuid())
+  influencerId         String   @unique
+  influencer           Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+
+  // Influencer profile (from their own profile pic via Gemini Vision)
+  influencerGender     String?  // "male" | "female" | "unknown"
+  influencerAgeRange   String?  // e.g. "25-34"
+  influencerEthnicity  String?  // e.g. "East Asian", "South Asian", "White/Caucasian", "Black", "Latino", "Middle Eastern", "Southeast Asian", "Central Asian", "Mixed"
+
+  // Audience demographics (from NLP + commenter avatars)
+  genderBreakdown      Json     // { male: %, female: %, unknown: % }
+  ageBrackets          Json     // { "13-17": %, "18-24": %, "25-34": %, "35-44": %, "45+": % }
+  topCountries         Json     // [{ country, countryName, percentage }]
+  ethnicityBreakdown   Json?    // { "East Asian": %, "White/Caucasian": %, ... }
+  topInterests         Json     // [{ category, score }]
+  audienceQuality      Float?   // 0-100
+
+  // Metadata
+  mode              AnalysisMode @default(HYBRID)
+  confidence        Float    @default(0)  // 0-1
+  commentCount      Int      @default(0)
+  avatarsSampled    Int      @default(0)
+  lastAnalyzedAt    DateTime @default(now())
+  analysisRunId     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([influencerId])
+}
+
+model AnalysisConfig {
+  id                  String   @id @default("default")
+  videosToSample      Int      @default(20)
+  commentsPerVideo    Int      @default(50)
+  maxTotalComments    Int      @default(1000)
+  avatarsToAnalyze    Int      @default(100)
+  commentBatchSize    Int      @default(200)
+  defaultMode         AnalysisMode @default(HYBRID)
+  geminiModel         String   @default("gemini-2.0-flash")
+  updatedAt           DateTime @updatedAt
 }
