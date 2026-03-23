@@ -577,7 +577,10 @@ export function mergeResults(
 
 // ─── Apify Comment Scraping ─────────────────────────────────
 
-const APIFY_COMMENT_ACTOR_ID = "BW7peEX6cuzdpgpam"; // xtdata comment scraper — update if using a different actor
+// clockworks/tiktok-comments-scraper — accepts profiles (usernames) and returns comments
+// Input: { profiles: ["username"], resultsPerPage: N }
+// Output: { text, uniqueId, avatarThumbnail, createTime, diggCount, replyCommentTotal, videoWebUrl }
+const APIFY_COMMENT_ACTOR_ID = "BDec00yAmCm1QbMEI";
 
 export interface ScrapedComment {
   text: string;
@@ -591,27 +594,21 @@ export interface ScrapedComment {
 
 export async function scrapeComments(
   username: string,
-  videoUrls: string[],
+  _videoUrls: string[], // Not used — actor scrapes by username directly
   config: AnalysisConfig = DEFAULT_CONFIG,
   onProgress?: (scraped: number, total: number) => void,
 ): Promise<ScrapedComment[]> {
   const apiKey = process.env.APIFY_API_KEY;
   if (!apiKey) throw new Error("APIFY_API_KEY is missing");
 
-  const selectedVideos = videoUrls.slice(0, config.videosToSample);
-  if (selectedVideos.length === 0) {
-    throw new Error("No video URLs provided for comment scraping");
-  }
-
-  // Start Apify run
+  // Start Apify run — pass username, actor finds videos and scrapes comments
   const startUrl = `https://api.apify.com/v2/acts/${APIFY_COMMENT_ACTOR_ID}/runs?token=${apiKey}`;
   const startRes = await fetch(startUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      urls: selectedVideos,
-      commentsPerPost: config.commentsPerVideo,
-      maxItems: config.maxTotalComments,
+      profiles: [username],
+      resultsPerPage: config.maxTotalComments,
     }),
   });
 
@@ -658,17 +655,21 @@ export async function scrapeComments(
   const comments: ScrapedComment[] = [];
 
   for (const item of items) {
-    const text = (item.text ?? item.comment ?? item.body ?? "") as string;
+    const text = (item.text ?? "") as string;
     if (!text || text.length < 2) continue;
 
     comments.push({
       text,
-      username: (item.uniqueId ?? item.user ?? item.username ?? item.author) as string | undefined,
-      avatarUrl: (item.avatarUrl ?? item.avatar ?? item.userAvatar ?? item.profilePic) as string | undefined,
-      likes: Number(item.likes ?? item.diggCount ?? 0),
-      replyCount: Number(item.replyCount ?? item.replyCommentTotal ?? 0),
-      commentedAt: (item.createTime ?? item.createdAt ?? item.date) as string | undefined,
-      videoUrl: (item.videoUrl ?? item.postUrl ?? item.url) as string | undefined,
+      username: (item.uniqueId ?? "") as string,
+      avatarUrl: (item.avatarThumbnail ?? "") as string,
+      likes: Number(item.diggCount ?? 0),
+      replyCount: Number(item.replyCommentTotal ?? 0),
+      commentedAt: item.createTimeISO
+        ? (item.createTimeISO as string)
+        : item.createTime
+          ? new Date(Number(item.createTime) * 1000).toISOString()
+          : undefined,
+      videoUrl: (item.videoWebUrl ?? "") as string,
     });
   }
 
