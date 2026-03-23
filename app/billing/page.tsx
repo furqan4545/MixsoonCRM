@@ -264,32 +264,7 @@ export default function BillingPage() {
         <div className="rounded-lg border p-4">
           <h3 className="mb-4 text-sm font-semibold">Cost by Service (Apify)</h3>
           {monthlyUsage && Object.keys(monthlyUsage.serviceBreakdown).length > 0 ? (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie
-                  data={Object.entries(monthlyUsage.serviceBreakdown)
-                    .filter(([, v]) => v > 0)
-                    .map(([name, value]) => ({
-                      name: SERVICE_LABELS[name] ?? name,
-                      value: Math.round(value * 10000) / 10000,
-                    }))}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={85}
-                  dataKey="value"
-                  paddingAngle={2}
-                >
-                  {Object.entries(monthlyUsage.serviceBreakdown)
-                    .filter(([, v]) => v > 0)
-                    .map(([key], i) => (
-                      <Cell key={key} fill={SERVICE_COLORS[key] ?? `hsl(${i * 60}, 70%, 50%)`} />
-                    ))}
-                </Pie>
-                <Tooltip formatter={(v: unknown) => `$${Number(v).toFixed(4)}`} />
-                <Legend iconSize={8} wrapperStyle={{ fontSize: "11px" }} />
-              </PieChart>
-            </ResponsiveContainer>
+            <ServiceDonut data={monthlyUsage.serviceBreakdown} />
           ) : (
             <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
               No service breakdown available
@@ -442,5 +417,60 @@ function StatCard({
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Service Donut (grouped, top 5 + Other) ─────────────────
+
+const TOP_N = 5;
+const DONUT_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#9ca3af"];
+
+function prettifyServiceName(raw: string): string {
+  return raw
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace("Gbytes", "GB")
+    .replace("Gbyte Hours", "GB·h")
+    .replace("Usd", "USD");
+}
+
+function ServiceDonut({ data }: { data: Record<string, number> }) {
+  const sorted = Object.entries(data)
+    .filter(([, v]) => v > 0.0001)
+    .sort(([, a], [, b]) => b - a);
+
+  const top = sorted.slice(0, TOP_N);
+  const otherTotal = sorted.slice(TOP_N).reduce((sum, [, v]) => sum + v, 0);
+
+  const chartData = top.map(([name, value]) => ({
+    name: SERVICE_LABELS[name] ?? prettifyServiceName(name),
+    value: Math.round(value * 100) / 100,
+  }));
+
+  if (otherTotal > 0.0001) {
+    chartData.push({ name: "Other", value: Math.round(otherTotal * 100) / 100 });
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={240}>
+      <PieChart>
+        <Pie
+          data={chartData}
+          cx="50%"
+          cy="50%"
+          innerRadius={55}
+          outerRadius={85}
+          dataKey="value"
+          paddingAngle={2}
+        >
+          {chartData.map((_, i) => (
+            <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />
+          ))}
+        </Pie>
+        <Tooltip formatter={(v: unknown) => `$${Number(v).toFixed(2)}`} />
+        <Legend iconSize={8} wrapperStyle={{ fontSize: "11px" }} />
+      </PieChart>
+    </ResponsiveContainer>
   );
 }
