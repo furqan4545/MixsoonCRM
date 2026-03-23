@@ -147,8 +147,10 @@ async function runAnalysisPipeline(params: {
     });
 
     // ── Step 2: Analyze influencer profile pic (Vision) ──
+    // Always attempt profile pic analysis — it's the one thing we can always do
+    // regardless of mode or comment availability
     let profileResult = null;
-    if (mode !== "NLP_ONLY" && influencer.avatarUrl) {
+    if (influencer.avatarUrl) {
       await updateRunStatus(runId, {
         progress: 35,
         progressMsg: "Analyzing influencer profile picture...",
@@ -161,7 +163,7 @@ async function runAnalysisPipeline(params: {
         );
       } catch (err) {
         console.error("[Analytics] Profile analysis failed:", err);
-        // Non-fatal — continue with NLP
+        // Non-fatal — continue with whatever else we have
       }
     }
 

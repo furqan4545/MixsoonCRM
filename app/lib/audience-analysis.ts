@@ -112,9 +112,27 @@ async function callGeminiVision(
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
       if (!res.ok) continue;
-      const buffer = await res.arrayBuffer();
-      const base64 = Buffer.from(buffer).toString("base64");
-      const contentType = res.headers.get("content-type") || "image/jpeg";
+      let buffer = Buffer.from(await res.arrayBuffer());
+      let contentType = res.headers.get("content-type") || "image/jpeg";
+
+      // Convert HEIC to JPEG — Gemini doesn't support HEIC
+      if (contentType.includes("heic") || contentType.includes("heif") || url.includes(".heic")) {
+        try {
+          const heicConvert = (await import("heic-convert")).default;
+          const jpegBuffer = await heicConvert({
+            buffer: new Uint8Array(buffer) as Parameters<typeof heicConvert>[0]["buffer"],
+            format: "JPEG",
+            quality: 0.8,
+          });
+          buffer = Buffer.from(jpegBuffer as ArrayBuffer);
+          contentType = "image/jpeg";
+        } catch (heicErr) {
+          console.error("[Vision] HEIC conversion failed, skipping image:", heicErr);
+          continue;
+        }
+      }
+
+      const base64 = buffer.toString("base64");
       imageParts.push({
         inlineData: { mimeType: contentType, data: base64 },
       });
