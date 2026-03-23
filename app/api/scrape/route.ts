@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
+import { logApiUsage } from "../../lib/usage-tracking";
 // ELD (Efficient Language Detector) — NLP-based, neural n-gram detector, 60 languages
 // Loaded lazily since it needs async init
 let _eld: typeof import("eld").default | null = null;
@@ -747,6 +748,7 @@ export async function POST(request: NextRequest) {
 
     const stream = new ReadableStream({
       async start(controller) {
+        const scrapeStartedAt = Date.now();
         const send = (data: object) => {
           controller.enqueue(
             new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`),
@@ -1323,6 +1325,17 @@ export async function POST(request: NextRequest) {
               status: "DRAFT",
               processedCount: processedCount + skippedNotRescraped,
             },
+          });
+
+          // Log API usage for this import
+          logApiUsage({
+            service: "apify_video",
+            action: "scrape_videos",
+            importId: importId!,
+            inputCount: processedCount + skippedNotRescraped,
+            outputCount: totalVideosWritten,
+            durationMs: Date.now() - scrapeStartedAt,
+            status: "success",
           });
 
           send({

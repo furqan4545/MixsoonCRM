@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   CheckSquare,
   ChevronsUpDown,
+  CreditCard,
   FileText,
   GitBranch,
   Inbox,
@@ -50,6 +51,7 @@ const workspaceItems = [
   { title: "Approvals", href: "/approvals", icon: CheckSquare },
   { title: "Documents", href: "/contracts", icon: FileText },
   { title: "Alerts", href: "/alerts", icon: AlertTriangle },
+  { title: "Billing", href: "/billing", icon: CreditCard },
 ];
 
 

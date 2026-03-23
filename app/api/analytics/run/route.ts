@@ -1,6 +1,7 @@
 import { after, type NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../../lib/prisma";
+import { logApiUsage, estimateGeminiCost, estimateTokensFromText } from "../../../lib/usage-tracking";
 import {
   analyzeInfluencerProfile,
   analyzeAudienceComments,
@@ -140,6 +141,18 @@ async function runAnalysisPipeline(params: {
       });
     }
 
+    // Log comment scraping usage
+    if (scrapedComments.length > 0) {
+      logApiUsage({
+        service: "apify_comments",
+        action: "scrape_comments",
+        influencerId,
+        analysisRunId: runId,
+        inputCount: influencer.videos.length,
+        outputCount: scrapedComments.length,
+      });
+    }
+
     await updateRunStatus(runId, {
       commentCount: scrapedComments.length,
       progress: 30,
@@ -192,6 +205,21 @@ async function runAnalysisPipeline(params: {
             });
           },
         );
+
+        // Log Gemini NLP usage
+        const totalText = commentTexts.join(" ");
+        const inputTokens = estimateTokensFromText(totalText) + 500; // +500 for prompt
+        const outputTokens = 300; // ~300 tokens per JSON response
+        logApiUsage({
+          service: "gemini_nlp",
+          action: "analyze_comments",
+          influencerId,
+          analysisRunId: runId,
+          inputCount: commentTexts.length,
+          inputTokens,
+          outputTokens,
+          costUsd: estimateGeminiCost(inputTokens, outputTokens),
+        });
       } catch (err) {
         console.error("[Analytics] NLP analysis failed:", err);
         await updateRunStatus(runId, {

@@ -830,3 +830,37 @@ model AnalysisConfig {
   geminiModel         String   @default("gemini-2.0-flash")
   updatedAt           DateTime @updatedAt
 }
+
+// ─── API USAGE & BILLING ────────────────────────────────
+
+model ApiUsageLog {
+  id             String   @id @default(cuid())
+  service        String   // "apify_video" | "apify_profile" | "apify_comments" | "gemini_nlp" | "gemini_vision"
+  action         String   // "scrape_videos" | "scrape_profiles" | "scrape_comments" | "analyze_comments" | "analyze_face"
+
+  importId       String?
+  influencerId   String?
+  analysisRunId  String?
+
+  apifyRunId     String?
+  apifyActorId   String?
+
+  costUsd        Float    @default(0)
+  inputCount     Int      @default(0)
+  outputCount    Int      @default(0)
+  durationMs     Int      @default(0)
+
+  inputTokens    Int      @default(0)
+  outputTokens   Int      @default(0)
+
+  status         String   @default("success") // "success" | "failed" | "partial"
+  errorMessage   String?
+
+  createdAt      DateTime @default(now())
+
+  @@index([service])
+  @@index([importId])
+  @@index([influencerId])
+  @@index([createdAt])
+  @@index([service, createdAt])
+}
