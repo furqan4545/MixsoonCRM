@@ -27,12 +27,7 @@ export async function POST(request: NextRequest) {
     select: { text: true, avatarUrl: true },
   });
 
-  if (comments.length < 50) {
-    return NextResponse.json(
-      { error: `Not enough comments: ${comments.length} (need 50+)` },
-      { status: 400 },
-    );
-  }
+  // No hard minimum — analyze whatever is available
 
   const influencer = await prisma.influencer.findUnique({
     where: { id: influencerId },
