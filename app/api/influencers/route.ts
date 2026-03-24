@@ -166,6 +166,8 @@ export async function GET(request: NextRequest) {
           uploadedAt: v.uploadedAt?.toISOString() ?? null,
           thumbnailUrl: v.thumbnailUrl,
           thumbnailProxied: fixThumbnailUrl(v.thumbnailUrl),
+          videoUrl: v.videoUrl ?? null,
+          tiktokId: v.tiktokId ?? null,
         })),
         activityLogs: inf.activityLogs.map((log) => ({
           id: log.id,

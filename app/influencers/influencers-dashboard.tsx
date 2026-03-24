@@ -34,6 +34,8 @@ export interface VideoRow {
   uploadedAt: string | null;
   thumbnailUrl: string | null;
   thumbnailProxied: string | null;
+  videoUrl: string | null;
+  tiktokId: string | null;
 }
 
 export interface InfluencerRow {
