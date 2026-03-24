@@ -12,6 +12,7 @@ import {
   ArrowRightLeft,
   Sparkles,
   Check,
+  BarChart3,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -357,6 +358,8 @@ export function InfluencersDashboard({ influencers }: Props) {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [moving, setMoving] = useState(false);
   const [panelExpanded, setPanelExpanded] = useState(false);
+  const [bulkAnalyzing, setBulkAnalyzing] = useState(false);
+  const bulkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Count per queue
   const queueCounts = useMemo(() => {
@@ -536,6 +539,83 @@ export function InfluencersDashboard({ influencers }: Props) {
     [selectedUnscoredIds, router],
   );
 
+  const runBulkAnalysis = useCallback(
+    async (mode: "NLP_ONLY" | "HYBRID" | "FULL_VISION") => {
+      setBulkAnalyzing(true);
+      try {
+        const ids = [...selectedRows];
+        const res = await fetch("/api/analytics/bulk-run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ influencerIds: ids, mode }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Failed");
+        }
+        const { batchId, total, skipped } = await res.json();
+        if (total === 0) {
+          toast.info("All selected influencers already have analysis running");
+          setBulkAnalyzing(false);
+          return;
+        }
+
+        const toastId = toast.loading(`Analyzing ${total} influencers...`, {
+          description: `Starting... ${skipped > 0 ? `(${skipped} skipped — already running)` : ""}`,
+          duration: Infinity,
+        });
+
+        // Poll for progress
+        bulkPollRef.current = setInterval(async () => {
+          try {
+            const statusRes = await fetch(`/api/analytics/bulk-status/${batchId}`);
+            if (!statusRes.ok) return;
+            const status = await statusRes.json();
+
+            toast.loading(
+              `Analyzing ${total} influencers... (${status.completed}/${total} done)`,
+              {
+                id: toastId,
+                description: status.current
+                  ? `Currently: @${status.current.username} — ${status.current.progressMsg ?? status.current.status}`
+                  : status.failed > 0
+                    ? `${status.completed} completed, ${status.failed} failed`
+                    : `${status.completed} completed`,
+              },
+            );
+
+            if (status.done) {
+              if (bulkPollRef.current) clearInterval(bulkPollRef.current);
+              bulkPollRef.current = null;
+              setBulkAnalyzing(false);
+              setSelectedRows(new Set());
+              router.refresh();
+
+              if (status.failed > 0) {
+                toast.warning(`Bulk analysis finished: ${status.completed} completed, ${status.failed} failed`, { id: toastId, duration: 5000 });
+              } else {
+                toast.success(`All ${status.completed} influencers analyzed!`, { id: toastId, duration: 5000 });
+              }
+            }
+          } catch {
+            // Ignore poll errors
+          }
+        }, 3000);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to start bulk analysis");
+        setBulkAnalyzing(false);
+      }
+    },
+    [selectedRows, router],
+  );
+
+  // Cleanup poll on unmount
+  useEffect(() => {
+    return () => {
+      if (bulkPollRef.current) clearInterval(bulkPollRef.current);
+    };
+  }, []);
+
   return (
     <div className="flex h-full">
       {/* Main table area */}
@@ -689,6 +769,31 @@ export function InfluencersDashboard({ influencers }: Props) {
                     Remove from Queue
                   </Button>
                 )}
+                {/* Bulk Audience Analysis */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={bulkAnalyzing}
+                      className="gap-1.5 text-xs text-purple-700 border-purple-300 hover:bg-purple-50"
+                    >
+                      <BarChart3 className="h-3 w-3" />
+                      {bulkAnalyzing ? "Analyzing..." : `Analyze Audience (${selectedRows.size})`}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => runBulkAnalysis("HYBRID")}>
+                      Hybrid (Recommended)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => runBulkAnalysis("NLP_ONLY")}>
+                      NLP Only (Fastest)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => runBulkAnalysis("FULL_VISION")}>
+                      Full Vision (Most Detailed)
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button
                   variant="ghost"
                   size="sm"

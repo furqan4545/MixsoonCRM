@@ -761,6 +761,7 @@ model AnalysisRun {
   influencer     Influencer        @relation(fields: [influencerId], references: [id], onDelete: Cascade)
   status         AnalysisRunStatus @default(PENDING)
   mode           AnalysisMode      @default(HYBRID)
+  batchId        String?           // links runs together in a bulk analysis batch
   commentCount   Int               @default(0)
   avatarCount    Int               @default(0)
   analyzedCount  Int               @default(0)
@@ -773,6 +774,7 @@ model AnalysisRun {
 
   @@index([influencerId])
   @@index([status])
+  @@index([batchId])
 }
 
 enum AnalysisRunStatus {

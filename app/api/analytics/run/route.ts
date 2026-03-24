@@ -19,7 +19,7 @@ export const maxDuration = 300;
 const MIN_VIDEOS = 1; // Allow analysis with even 1 video
 const MIN_COMMENTS = 0; // Analyze whatever is available — even 0 comments (will use profile pic only)
 
-async function loadConfig(): Promise<AnalysisConfig & { defaultMode: AnalysisMode }> {
+export async function loadConfig(): Promise<AnalysisConfig & { defaultMode: AnalysisMode }> {
   const cfg = await prisma.analysisConfig.findUnique({ where: { id: "default" } });
   if (!cfg) {
     return { ...DEFAULT_CONFIG, defaultMode: "HYBRID" };
@@ -53,7 +53,7 @@ async function updateRunStatus(
   }).catch((e) => console.error("[Analytics] Failed to update run status:", e));
 }
 
-async function runAnalysisPipeline(params: {
+export async function runAnalysisPipeline(params: {
   runId: string;
   influencerId: string;
   mode: AnalysisMode;
