@@ -85,6 +85,12 @@ export interface InfluencerRow {
     campaignName: string;
     campaignStatus: string;
   }[];
+  analytics: {
+    influencerGender: string | null;
+    influencerAgeRange: string | null;
+    influencerEthnicity: string | null;
+    influencerCountry: string | null;
+  } | null;
   createdAt: string;
 }
 

@@ -106,6 +106,14 @@ export async function GET(request: NextRequest) {
           },
           orderBy: { assignedAt: "desc" },
         },
+        analytics: {
+          select: {
+            influencerGender: true,
+            influencerAgeRange: true,
+            influencerEthnicity: true,
+            influencerCountry: true,
+          },
+        },
       },
     });
 
@@ -181,6 +189,7 @@ export async function GET(request: NextRequest) {
           campaignName: ca.campaign.name,
           campaignStatus: ca.campaign.status,
         })),
+        analytics: inf.analytics ?? null,
         createdAt: inf.createdAt.toISOString(),
       };
     });

@@ -1490,6 +1490,46 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
 
         {/* Overview tab */}
         <TabsContent value="overview" className="mt-0 pt-5 space-y-6 pb-8">
+          {/* AI-Detected Demographics */}
+          {influencer.analytics ? (
+            <section>
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Profile Demographics
+                <span className="ml-2 font-normal text-[10px] text-muted-foreground/60">AI-estimated</span>
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {influencer.analytics.influencerGender && influencer.analytics.influencerGender !== "unknown" && (
+                  <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 capitalize">
+                    {influencer.analytics.influencerGender}
+                  </span>
+                )}
+                {influencer.analytics.influencerAgeRange && influencer.analytics.influencerAgeRange !== "unknown" && (
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+                    {influencer.analytics.influencerAgeRange}
+                  </span>
+                )}
+                {influencer.analytics.influencerEthnicity && influencer.analytics.influencerEthnicity !== "Unknown" && (
+                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800">
+                    {influencer.analytics.influencerEthnicity}
+                  </span>
+                )}
+                {influencer.analytics.influencerCountry && influencer.analytics.influencerCountry !== "Unknown" && (
+                  <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800">
+                    {influencer.analytics.influencerCountry.includes("|")
+                      ? influencer.analytics.influencerCountry.split("|")[1]
+                      : influencer.analytics.influencerCountry}
+                  </span>
+                )}
+              </div>
+            </section>
+          ) : (
+            <section className="rounded-lg border border-dashed bg-muted/20 px-4 py-3">
+              <p className="text-xs text-muted-foreground">
+                Run audience analysis to detect influencer demographics (gender, age, ethnicity, country).
+              </p>
+            </section>
+          )}
+
           {/* Contact Information */}
           <section>
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1519,7 +1559,7 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
                 <span className="text-sm font-medium">{influencer.language ? getLanguageName(influencer.language) : "—"}</span>
               </div>
               <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-muted-foreground">Est. Region</span>
+                <span className="text-sm text-muted-foreground">Est. Region <span className="text-[10px] text-muted-foreground/50">(CDN)</span></span>
                 <span className="text-sm font-medium">{influencer.country ?? "—"}</span>
               </div>
             </div>

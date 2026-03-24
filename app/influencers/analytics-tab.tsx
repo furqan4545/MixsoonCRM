@@ -25,6 +25,7 @@ interface AnalyticsData {
   influencerGender: string | null;
   influencerAgeRange: string | null;
   influencerEthnicity: string | null;
+  influencerCountry: string | null;
   genderBreakdown: { male: number; female: number; unknown: number };
   ageBrackets: Record<string, number>;
   topCountries: { country: string; countryName: string; percentage: number }[];
@@ -349,6 +350,14 @@ export default function AnalyticsTab({
                     analytics.influencerEthnicity !== "Unknown" && (
                       <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
                         {analytics.influencerEthnicity}
+                      </span>
+                    )}
+                  {analytics.influencerCountry &&
+                    analytics.influencerCountry !== "Unknown" && (
+                      <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+                        {analytics.influencerCountry.includes("|")
+                          ? analytics.influencerCountry.split("|")[1]
+                          : analytics.influencerCountry}
                       </span>
                     )}
                 </div>
