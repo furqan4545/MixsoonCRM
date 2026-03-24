@@ -172,7 +172,7 @@ export async function analyzeInfluencerProfile(
   model: string = DEFAULT_CONFIG.geminiModel,
 ): Promise<ProfileAnalysisResult> {
   const bioContext = bio
-    ? `\n\nThe influencer's bio text is: "${bio}"\nUse this bio to help estimate their country (language, location mentions, cultural references, city names, country flags).`
+    ? `\n\nThe influencer's bio text is: "${bio}"\nUse the bio language, email domains, location mentions, country flags, and cultural references to help estimate country.`
     : "";
 
   const prompt = [
@@ -182,23 +182,77 @@ export async function analyzeInfluencerProfile(
     "1. gender: 'male', 'female', or 'unknown'",
     "2. ageRange: one of '13-17', '18-24', '25-34', '35-44', '45+'",
     "3. ethnicity: one of 'East Asian', 'South Asian', 'Southeast Asian', 'White/Caucasian', 'Black', 'Latino', 'Middle Eastern', 'Central Asian', 'Mixed', 'Unknown'",
-    "4. country: estimate the influencer's country of origin/residence. Use visual cues (clothing, background, cultural markers) and bio text if available. Return as 'CODE|Name' format, e.g. 'US|United States', 'KR|South Korea', 'GB|United Kingdom', 'IN|India', 'BR|Brazil'. If uncertain, return 'Unknown'.",
+    "4. country: estimate the influencer's most likely country of origin or residence.",
+    "   - Use ALL available signals: visual appearance, clothing, background, ethnicity, bio text, bio language, email domain (.co.uk = UK, .co = Colombia, etc.)",
+    "   - If the person appears South Asian and content is in English, likely US, UK, Canada, or India",
+    "   - If the person appears East Asian, likely South Korea, Japan, China, or US",
+    "   - If the person appears Latino, likely US, Mexico, Brazil, or Colombia",
+    "   - IMPORTANT: You MUST always pick a country. Never return 'Unknown'. Make your best probabilistic guess.",
+    "   - If South Asian ethnicity + English bio/content → most likely US, UK, or Canada (in that order)",
+    "   - Return as 'CODE|Name' format: 'US|United States', 'KR|South Korea', 'GB|United Kingdom', 'IN|India', 'BR|Brazil', 'CA|Canada', 'AU|Australia', 'PK|Pakistan', etc.",
     "",
-    "If the image does not clearly show a face (logo, cartoon, group photo, object), return gender='unknown', ageRange='unknown', ethnicity='Unknown'. Still try to estimate country from bio if available.",
+    "If the image does not clearly show a face (logo, cartoon, group photo, object), return gender='unknown', ageRange='unknown', ethnicity='Unknown'. Still estimate country from bio if available.",
     bioContext,
     "",
     'Return JSON only: {"gender": string, "ageRange": string, "ethnicity": string, "country": string}',
   ].join("\n");
 
-  const rawText = await callGeminiVision(prompt, [avatarUrl], model);
-  const parsed = JSON.parse(rawText);
+  let gender = "unknown";
+  let ageRange = "unknown";
+  let ethnicity = "Unknown";
+  let country = "Unknown";
 
-  return {
-    gender: parsed.gender ?? "unknown",
-    ageRange: parsed.ageRange ?? "unknown",
-    ethnicity: parsed.ethnicity ?? "Unknown",
-    country: parsed.country ?? "Unknown",
-  };
+  try {
+    const rawText = await callGeminiVision(prompt, [avatarUrl], model);
+    const parsed = JSON.parse(rawText);
+    gender = parsed.gender ?? "unknown";
+    ageRange = parsed.ageRange ?? "unknown";
+    ethnicity = parsed.ethnicity ?? "Unknown";
+    country = parsed.country ?? "Unknown";
+  } catch (err) {
+    console.error("[Profile Analysis] Vision call failed, falling back to text-only:", (err as Error).message);
+  }
+
+  // If vision couldn't determine country (or failed entirely), use a text-only follow-up
+  if (country === "Unknown" || !country) {
+    try {
+      const countryPrompt = [
+        "Based on the following information about a TikTok influencer, estimate their most likely country of residence.",
+        "",
+        `Ethnicity: ${ethnicity}`,
+        `Gender: ${gender}`,
+        `Age range: ${ageRange}`,
+        `Bio text: ${bio ?? "no bio"}`,
+        "",
+        "Rules:",
+        "- You MUST return a country. Never return Unknown.",
+        "- South Asian + English content → likely US, UK, Canada, or India",
+        "- East Asian + English content → likely US, South Korea, or Japan",
+        "- White/Caucasian + English → likely US, UK, Canada, or Australia",
+        "- Black + English → likely US, UK, or Nigeria",
+        "- Latino + English/Spanish → likely US, Mexico, or Colombia",
+        "- Middle Eastern + English → likely US, UK, UAE, or Saudi Arabia",
+        "- Use the bio language, email domain, and cultural cues to narrow down",
+        "",
+        'Return JSON only: {"country": "CODE|Name"}',
+        'Example: {"country": "US|United States"} or {"country": "GB|United Kingdom"}',
+      ].join("\n");
+
+      const countryText = await callGeminiText(countryPrompt, model);
+      console.log("[Profile Analysis] Country text fallback raw:", countryText);
+      let countryParsed = JSON.parse(countryText);
+      // Handle array response: [{"country": "..."}]
+      if (Array.isArray(countryParsed)) countryParsed = countryParsed[0];
+      if (countryParsed?.country && countryParsed.country !== "Unknown") {
+        country = countryParsed.country;
+        console.log("[Profile Analysis] Country detected via text fallback:", country);
+      }
+    } catch (err) {
+      console.error("[Profile Analysis] Country text fallback failed:", (err as Error).message);
+    }
+  }
+
+  return { gender, ageRange, ethnicity, country };
 }
 
 // ─── Audience NLP Analysis (Comment Text) ───────────────────
