@@ -19,7 +19,7 @@ const APIFY_ACTOR_ID = "ssOXktOBaQQiYfhc4"; // Video scraper
 const APIFY_PROFILE_ACTOR_ID = "BW7peEX6cuzdpgpam"; // xtdata profile scraper (returns bio_url, signature_language, ins_id, etc.)
 const BATCH_SIZE = 100;
 const PROFILE_BATCH_SIZE = 50; // Smaller batches for profile enrichment
-const MAX_INFLUENCER_RETRIES = 5;
+const MAX_INFLUENCER_RETRIES = 2; // Reduced from 5 — empty accounts are skipped after 1 retry
 const RETRY_BACKOFF_MS = 2000;
 const MAX_APIFY_RUN_WAIT_MS = 10 * 60 * 1000;
 
@@ -800,6 +800,8 @@ export async function POST(request: NextRequest) {
           ];
 
           const influencerMap = new Map<string, InfluencerScrapeData>();
+          // Track how many times each username returned 0 results from Apify
+          const emptyRetryCount = new Map<string, number>();
           for (const username of normalizedTargetUsernames) {
             influencerMap.set(username, {
               profile: null,
@@ -835,6 +837,14 @@ export async function POST(request: NextRequest) {
               const apiSaysNoMoreVideos =
                 data.channelVideoCount != null &&
                 data.channelVideoCount <= currentCount;
+
+              // Skip accounts that returned 0 videos after being retried once
+              // These are likely non-existent, private, or banned accounts
+              const retries = emptyRetryCount.get(username) ?? 0;
+              if (currentCount === 0 && retries >= 1) {
+                console.log(`[SCRAPER] Skipping @${username} — returned 0 videos after ${retries} attempt(s) (likely non-existent/private/banned)`);
+                continue;
+              }
 
               if (!hasEnoughVideos && !apiSaysNoMoreVideos) {
                 out.push(username);
@@ -909,9 +919,27 @@ export async function POST(request: NextRequest) {
               mergeItemsIntoInfluencerMap(retryItems);
             }
 
+            // Track which usernames still have 0 videos after this attempt
+            for (const username of usernamesMissingVideos) {
+              const data = influencerMap.get(username);
+              if (data && data.videos.length === 0) {
+                emptyRetryCount.set(username, (emptyRetryCount.get(username) ?? 0) + 1);
+              }
+            }
+
             if (attempt < MAX_INFLUENCER_RETRIES) {
               await sleep(RETRY_BACKOFF_MS * attempt);
             }
+          }
+
+          // Log summary of skipped empty accounts
+          const skippedEmpty = [...emptyRetryCount.entries()].filter(([, c]) => c >= 1);
+          if (skippedEmpty.length > 0) {
+            console.log(`[SCRAPER] Skipped ${skippedEmpty.length} empty/non-existent accounts: ${skippedEmpty.map(([u]) => `@${u}`).join(', ')}`);
+            send({
+              type: "stage",
+              message: `Skipped ${skippedEmpty.length} empty/non-existent accounts`,
+            });
           }
 
           for (const data of influencerMap.values()) {
