@@ -808,6 +808,9 @@ model InfluencerAnalytics {
   ethnicityBreakdown   Json?    // { "East Asian": %, "White/Caucasian": %, ... }
   topInterests         Json     // [{ category, score }]
   audienceQuality      Float?   // 0-100
+  sentiment            Json?    // { positive: %, negative: %, neutral: %, humorous: % }
+  commentTopics        Json?    // [{ topic, percentage, sentiment, sampleComments }]
+  commentSummary       String?  // 2-3 sentence marketing summary
 
   // Metadata
   mode              AnalysisMode @default(HYBRID)

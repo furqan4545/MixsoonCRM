@@ -21,6 +21,13 @@ import { toast } from "sonner";
 
 // ─── Types ──────────────────────────────────────────────────
 
+interface CommentTopic {
+  topic: string;
+  percentage: number;
+  sentiment: string;
+  sampleComments: string[];
+}
+
 interface AnalyticsData {
   influencerGender: string | null;
   influencerAgeRange: string | null;
@@ -37,6 +44,9 @@ interface AnalyticsData {
   commentCount: number;
   avatarsSampled: number;
   lastAnalyzedAt: string;
+  sentiment: { positive: number; negative: number; neutral: number; humorous: number } | null;
+  commentTopics: CommentTopic[] | null;
+  commentSummary: string | null;
 }
 
 interface RunStatus {
@@ -634,6 +644,91 @@ export default function AnalyticsTab({
                       {interest.score}
                     </span>
                   </span>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Comment Sentiment */}
+          {analytics.sentiment && (
+            <section>
+              <h4 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Comment Sentiment
+              </h4>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { label: "Positive", value: analytics.sentiment.positive, color: "bg-emerald-100 text-emerald-800", emoji: "👍" },
+                  { label: "Negative", value: analytics.sentiment.negative, color: "bg-red-100 text-red-800", emoji: "👎" },
+                  { label: "Neutral", value: analytics.sentiment.neutral, color: "bg-gray-100 text-gray-800", emoji: "😐" },
+                  { label: "Humorous", value: analytics.sentiment.humorous, color: "bg-amber-100 text-amber-800", emoji: "😂" },
+                ].map((s) => (
+                  <div key={s.label} className={`rounded-lg p-3 text-center ${s.color}`}>
+                    <p className="text-lg font-bold">{s.value}%</p>
+                    <p className="text-[10px] font-medium">{s.emoji} {s.label}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Comment Summary */}
+          {analytics.commentSummary && (
+            <section>
+              <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Audience Conversation Summary
+              </h4>
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <p className="text-sm leading-relaxed">{analytics.commentSummary}</p>
+              </div>
+            </section>
+          )}
+
+          {/* Comment Topics Breakdown */}
+          {analytics.commentTopics && analytics.commentTopics.length > 0 && (
+            <section>
+              <h4 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                What The Audience Is Talking About
+              </h4>
+              <div className="space-y-3">
+                {analytics.commentTopics.map((topic: CommentTopic, i: number) => (
+                  <div key={i} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">{topic.topic}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          topic.sentiment === "positive" ? "bg-emerald-100 text-emerald-700" :
+                          topic.sentiment === "negative" ? "bg-red-100 text-red-700" :
+                          topic.sentiment === "mixed" ? "bg-amber-100 text-amber-700" :
+                          "bg-gray-100 text-gray-700"
+                        }`}>
+                          {topic.sentiment}
+                        </span>
+                      </div>
+                      <span className="text-sm font-bold text-muted-foreground">{topic.percentage}%</span>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="mb-2 h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          topic.sentiment === "positive" ? "bg-emerald-500" :
+                          topic.sentiment === "negative" ? "bg-red-500" :
+                          topic.sentiment === "mixed" ? "bg-amber-500" :
+                          "bg-gray-400"
+                        }`}
+                        style={{ width: `${Math.min(topic.percentage, 100)}%` }}
+                      />
+                    </div>
+                    {/* Sample comments */}
+                    {topic.sampleComments?.length > 0 && (
+                      <div className="space-y-1">
+                        {topic.sampleComments.map((comment: string, j: number) => (
+                          <p key={j} className="text-[11px] text-muted-foreground italic truncate">
+                            &ldquo;{comment}&rdquo;
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             </section>
