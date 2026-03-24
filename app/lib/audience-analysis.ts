@@ -30,6 +30,20 @@ export interface ProfileAnalysisResult {
   country: string;   // e.g. "US|United States"
 }
 
+export interface CommentSentiment {
+  positive: number;   // % of comments that are positive/supportive
+  negative: number;   // % that are critical/negative
+  neutral: number;    // % that are neutral/informational
+  humorous: number;   // % that are jokes/memes/laughing
+}
+
+export interface CommentTopic {
+  topic: string;       // e.g. "Product inquiries", "Price questions", "Humor/Jokes"
+  percentage: number;  // % of comments about this topic
+  sentiment: string;   // "positive" | "negative" | "neutral" | "mixed"
+  sampleComments: string[]; // 2-3 example comments for this topic
+}
+
 export interface AudienceNlpResult {
   genderBreakdown: { male: number; female: number; unknown: number };
   ageBrackets: Record<string, number>;
@@ -38,6 +52,10 @@ export interface AudienceNlpResult {
   audienceQuality: number;
   confidence: number;
   reasoning: string;
+  // Comment content analysis
+  sentiment: CommentSentiment;
+  commentTopics: CommentTopic[];
+  commentSummary: string; // 2-3 sentence summary of what the audience is talking about
 }
 
 export interface AvatarAnalysisResult {
@@ -58,6 +76,10 @@ export interface MergedAnalytics {
   topInterests: { category: string; score: number }[];
   audienceQuality: number;
   confidence: number;
+  // Comment content analysis
+  sentiment: CommentSentiment | null;
+  commentTopics: CommentTopic[] | null;
+  commentSummary: string | null;
 }
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -293,12 +315,36 @@ function buildNlpPrompt(
     "   - Comment length distribution",
     "   - Engagement quality signals",
     "",
+    "6. COMMENT SENTIMENT:",
+    "   - Classify each comment's tone: positive (supportive, compliments, love), negative (criticism, complaints, hate), neutral (questions, observations), humorous (jokes, memes, laughing, 💀😂)",
+    "   - Return overall percentage breakdown",
+    "",
+    "7. COMMENT TOPICS (for marketing analysis):",
+    "   - What are commenters talking about? Categorize into topics like:",
+    '     * "Product inquiries" — asking about products, where to buy, links',
+    '     * "Price/cost questions" — asking how much, is it worth it, affordability',
+    '     * "Personal stories" — sharing own experiences, relating to content',
+    '     * "Humor/jokes" — memes, jokes, funny reactions, sarcasm',
+    '     * "Compliments/fan love" — praising the creator, expressing admiration',
+    '     * "Criticism/hate" — negative feedback, trolling, disagreement',
+    '     * "Requests/suggestions" — asking for specific content, collabs, features',
+    '     * "Tagging friends" — @mentions, "show this to X"',
+    '     * "Debate/discussion" — arguing about topics in the video',
+    '     * "Spam/self-promo" — promoting own content, follow-for-follow',
+    "   - Include 2-3 actual example comments per topic (shortened if needed)",
+    "   - Assign sentiment per topic (positive, negative, neutral, mixed)",
+    "",
+    "8. COMMENT SUMMARY:",
+    "   - Write a 2-3 sentence marketing-focused summary of what the audience is talking about",
+    "   - Highlight the dominant conversation themes and overall tone",
+    "",
     "=== RULES ===",
     "- Base estimates ONLY on evidence in the comments",
     "- Percentages must sum to 100 for gender and age brackets",
     "- Country percentages should sum to 100",
+    "- Sentiment percentages must sum to 100",
+    "- Topic percentages should sum to approximately 100",
     "- Express uncertainty: if comments are mostly in one language, acknowledge the sample bias",
-    "- Minimum 50 comments needed for reasonable estimates; flag low confidence if fewer",
     "",
     "Return JSON:",
     "{",
@@ -308,7 +354,10 @@ function buildNlpPrompt(
     '  "topInterests": [{ "category": "...", "score": number }],',
     '  "audienceQuality": number,',
     '  "confidence": number,',
-    '  "reasoning": "Brief explanation of key signals found"',
+    '  "reasoning": "Brief explanation of key signals found",',
+    '  "sentiment": { "positive": number, "negative": number, "neutral": number, "humorous": number },',
+    '  "commentTopics": [{ "topic": "...", "percentage": number, "sentiment": "positive|negative|neutral|mixed", "sampleComments": ["...", "..."] }],',
+    '  "commentSummary": "2-3 sentence marketing summary of audience conversation"',
     "}",
   ].join("\n");
 }
@@ -348,6 +397,9 @@ export async function analyzeAudienceComments(
         audienceQuality: Number(parsed.audienceQuality) || 50,
         confidence: Number(parsed.confidence) || 0.5,
         reasoning: parsed.reasoning ?? "",
+        sentiment: parsed.sentiment ?? { positive: 25, negative: 25, neutral: 25, humorous: 25 },
+        commentTopics: parsed.commentTopics ?? [],
+        commentSummary: parsed.commentSummary ?? "",
         count: batches[i].length,
       });
     } catch (err) {
@@ -429,6 +481,48 @@ function mergeNlpBatches(
     batches.reduce((sum, b) => sum + b.confidence * (b.count / totalCount), 0) * 100,
   ) / 100;
 
+  // Weighted average for sentiment
+  const sentiment = { positive: 0, negative: 0, neutral: 0, humorous: 0 };
+  for (const b of batches) {
+    const w = b.count / totalCount;
+    sentiment.positive += (b.sentiment?.positive ?? 0) * w;
+    sentiment.negative += (b.sentiment?.negative ?? 0) * w;
+    sentiment.neutral += (b.sentiment?.neutral ?? 0) * w;
+    sentiment.humorous += (b.sentiment?.humorous ?? 0) * w;
+  }
+
+  // Merge comment topics — aggregate by topic name, keep best sample comments
+  const topicMap = new Map<string, { percentage: number; sentiment: string; sampleComments: string[] }>();
+  for (const b of batches) {
+    const w = b.count / totalCount;
+    for (const t of (b.commentTopics ?? [])) {
+      const existing = topicMap.get(t.topic);
+      if (existing) {
+        existing.percentage += (t.percentage ?? 0) * w;
+        // Keep more sample comments
+        if (t.sampleComments?.length) {
+          existing.sampleComments.push(...t.sampleComments);
+        }
+      } else {
+        topicMap.set(t.topic, {
+          percentage: (t.percentage ?? 0) * w,
+          sentiment: t.sentiment ?? "neutral",
+          sampleComments: [...(t.sampleComments ?? [])],
+        });
+      }
+    }
+  }
+  const commentTopics = [...topicMap.entries()]
+    .map(([topic, data]) => ({
+      topic,
+      percentage: Math.round(data.percentage),
+      sentiment: data.sentiment,
+      sampleComments: data.sampleComments.slice(0, 3), // Keep max 3 examples
+    }))
+    .filter((t) => t.percentage > 0)
+    .sort((a, b) => b.percentage - a.percentage)
+    .slice(0, 10);
+
   return {
     genderBreakdown: {
       male: Math.round(gender.male),
@@ -443,6 +537,14 @@ function mergeNlpBatches(
     audienceQuality,
     confidence,
     reasoning: batches.map((b) => b.reasoning).filter(Boolean).join(" | "),
+    sentiment: {
+      positive: Math.round(sentiment.positive),
+      negative: Math.round(sentiment.negative),
+      neutral: Math.round(sentiment.neutral),
+      humorous: Math.round(sentiment.humorous),
+    },
+    commentTopics,
+    commentSummary: batches.map((b) => b.commentSummary).filter(Boolean)[0] ?? "",
   };
 }
 
@@ -571,6 +673,9 @@ export function mergeResults(
       topInterests: nlpResult.topInterests,
       audienceQuality: nlpResult.audienceQuality,
       confidence: nlpResult.confidence,
+      sentiment: nlpResult.sentiment ?? null,
+      commentTopics: nlpResult.commentTopics ?? null,
+      commentSummary: nlpResult.commentSummary ?? null,
     };
   }
 
@@ -610,6 +715,9 @@ export function mergeResults(
     topInterests: nlpResult.topInterests,
     audienceQuality: nlpResult.audienceQuality,
     confidence: mergedConfidence,
+    sentiment: nlpResult.sentiment ?? null,
+    commentTopics: nlpResult.commentTopics ?? null,
+    commentSummary: nlpResult.commentSummary ?? null,
   };
 }
 
