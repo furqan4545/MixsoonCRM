@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       videos: {
         orderBy: { views: "desc" },
         take: DEFAULT_CONFIG.videosToSample,
-        select: { username: true },
+        select: { username: true, videoUrl: true, tiktokId: true },
       },
     },
   });
@@ -36,9 +36,13 @@ export async function POST(request: NextRequest) {
 
   after(async () => {
     try {
-      const videoUrls = influencer.videos.map(
-        (v) => `https://www.tiktok.com/@${v.username}`,
-      );
+      const videoUrls = influencer.videos
+        .map((v) => {
+          if (v.videoUrl) return v.videoUrl;
+          if (v.tiktokId) return `https://www.tiktok.com/@${v.username}/video/${v.tiktokId}`;
+          return null;
+        })
+        .filter((url): url is string => url !== null);
 
       const comments = await scrapeComments(
         influencer.username,
