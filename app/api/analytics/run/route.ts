@@ -178,6 +178,7 @@ async function runAnalysisPipeline(params: {
       try {
         profileResult = await analyzeInfluencerProfile(
           influencer.avatarUrl,
+          influencer.biolink,
           config.geminiModel,
         );
       } catch (err) {
@@ -300,6 +301,7 @@ async function runAnalysisPipeline(params: {
         influencerGender: merged.influencerGender,
         influencerAgeRange: merged.influencerAgeRange,
         influencerEthnicity: merged.influencerEthnicity,
+        influencerCountry: merged.influencerCountry,
         genderBreakdown: merged.genderBreakdown,
         ageBrackets: merged.ageBrackets,
         topCountries: merged.topCountries,
@@ -317,6 +319,7 @@ async function runAnalysisPipeline(params: {
         influencerGender: merged.influencerGender,
         influencerAgeRange: merged.influencerAgeRange,
         influencerEthnicity: merged.influencerEthnicity,
+        influencerCountry: merged.influencerCountry,
         genderBreakdown: merged.genderBreakdown,
         ageBrackets: merged.ageBrackets,
         topCountries: merged.topCountries,

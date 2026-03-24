@@ -799,6 +799,7 @@ model InfluencerAnalytics {
   influencerGender     String?  // "male" | "female" | "unknown"
   influencerAgeRange   String?  // e.g. "25-34"
   influencerEthnicity  String?  // e.g. "East Asian", "South Asian", "White/Caucasian", "Black", "Latino", "Middle Eastern", "Southeast Asian", "Central Asian", "Mixed"
+  influencerCountry    String?  // AI-estimated country e.g. "US|United States", "KR|South Korea"
 
   // Audience demographics (from NLP + commenter avatars)
   genderBreakdown      Json     // { male: %, female: %, unknown: % }

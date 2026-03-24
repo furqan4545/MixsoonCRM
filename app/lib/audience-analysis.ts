@@ -27,6 +27,7 @@ export interface ProfileAnalysisResult {
   gender: string;   // "male" | "female" | "unknown"
   ageRange: string;  // e.g. "25-34"
   ethnicity: string; // e.g. "East Asian"
+  country: string;   // e.g. "US|United States"
 }
 
 export interface AudienceNlpResult {
@@ -49,6 +50,7 @@ export interface MergedAnalytics {
   influencerGender: string | null;
   influencerAgeRange: string | null;
   influencerEthnicity: string | null;
+  influencerCountry: string | null;
   genderBreakdown: { male: number; female: number; unknown: number };
   ageBrackets: Record<string, number>;
   topCountries: { country: string; countryName: string; percentage: number }[];
@@ -166,8 +168,13 @@ function sleep(ms: number): Promise<void> {
 
 export async function analyzeInfluencerProfile(
   avatarUrl: string,
+  bio: string | null = null,
   model: string = DEFAULT_CONFIG.geminiModel,
 ): Promise<ProfileAnalysisResult> {
+  const bioContext = bio
+    ? `\n\nThe influencer's bio text is: "${bio}"\nUse this bio to help estimate their country (language, location mentions, cultural references, city names, country flags).`
+    : "";
+
   const prompt = [
     "Analyze this profile picture of a social media influencer.",
     "Estimate the following based on visual appearance:",
@@ -175,10 +182,12 @@ export async function analyzeInfluencerProfile(
     "1. gender: 'male', 'female', or 'unknown'",
     "2. ageRange: one of '13-17', '18-24', '25-34', '35-44', '45+'",
     "3. ethnicity: one of 'East Asian', 'South Asian', 'Southeast Asian', 'White/Caucasian', 'Black', 'Latino', 'Middle Eastern', 'Central Asian', 'Mixed', 'Unknown'",
+    "4. country: estimate the influencer's country of origin/residence. Use visual cues (clothing, background, cultural markers) and bio text if available. Return as 'CODE|Name' format, e.g. 'US|United States', 'KR|South Korea', 'GB|United Kingdom', 'IN|India', 'BR|Brazil'. If uncertain, return 'Unknown'.",
     "",
-    "If the image does not clearly show a face (logo, cartoon, group photo, object), return gender='unknown', ageRange='unknown', ethnicity='Unknown'.",
+    "If the image does not clearly show a face (logo, cartoon, group photo, object), return gender='unknown', ageRange='unknown', ethnicity='Unknown'. Still try to estimate country from bio if available.",
+    bioContext,
     "",
-    'Return JSON only: {"gender": string, "ageRange": string, "ethnicity": string}',
+    'Return JSON only: {"gender": string, "ageRange": string, "ethnicity": string, "country": string}',
   ].join("\n");
 
   const rawText = await callGeminiVision(prompt, [avatarUrl], model);
@@ -188,6 +197,7 @@ export async function analyzeInfluencerProfile(
     gender: parsed.gender ?? "unknown",
     ageRange: parsed.ageRange ?? "unknown",
     ethnicity: parsed.ethnicity ?? "Unknown",
+    country: parsed.country ?? "Unknown",
   };
 }
 
@@ -508,6 +518,7 @@ export function mergeResults(
       influencerGender: profileResult?.gender ?? null,
       influencerAgeRange: profileResult?.ageRange ?? null,
       influencerEthnicity: profileResult?.ethnicity ?? null,
+      influencerCountry: profileResult?.country ?? null,
       genderBreakdown: nlpResult.genderBreakdown,
       ageBrackets: nlpResult.ageBrackets,
       topCountries: nlpResult.topCountries,

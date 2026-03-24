@@ -117,6 +117,14 @@ export async function GET(
         take: 1,
         select: { score: true },
       },
+      analytics: {
+        select: {
+          influencerGender: true,
+          influencerAgeRange: true,
+          influencerEthnicity: true,
+          influencerCountry: true,
+        },
+      },
     },
   });
 
