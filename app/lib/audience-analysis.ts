@@ -112,27 +112,9 @@ async function callGeminiVision(
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
       if (!res.ok) continue;
-      let buffer = Buffer.from(await res.arrayBuffer());
-      let contentType = res.headers.get("content-type") || "image/jpeg";
-
-      // Convert HEIC to JPEG — Gemini doesn't support HEIC
-      if (contentType.includes("heic") || contentType.includes("heif") || url.includes(".heic")) {
-        try {
-          const heicConvert = (await import("heic-convert")).default;
-          const jpegBuffer = await heicConvert({
-            buffer: new Uint8Array(buffer) as Parameters<typeof heicConvert>[0]["buffer"],
-            format: "JPEG",
-            quality: 0.8,
-          });
-          buffer = Buffer.from(jpegBuffer as ArrayBuffer);
-          contentType = "image/jpeg";
-        } catch (heicErr) {
-          console.error("[Vision] HEIC conversion failed, skipping image:", heicErr);
-          continue;
-        }
-      }
-
-      const base64 = buffer.toString("base64");
+      const buffer = await res.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString("base64");
+      const contentType = res.headers.get("content-type") || "image/jpeg";
       imageParts.push({
         inlineData: { mimeType: contentType, data: base64 },
       });
@@ -577,10 +559,8 @@ export function mergeResults(
 
 // ─── Apify Comment Scraping ─────────────────────────────────
 
-// clockworks/tiktok-comments-scraper — accepts profiles (usernames) and returns comments
-// Input: { profiles: ["username"], resultsPerPage: N }
-// Output: { text, uniqueId, avatarThumbnail, createTime, diggCount, replyCommentTotal, videoWebUrl }
-const APIFY_COMMENT_ACTOR_ID = "BDec00yAmCm1QbMEI";
+// clockworks/tiktok-comments-scraper — dedicated TikTok comment scraping actor
+const APIFY_COMMENT_ACTOR_ID = "clockworks~tiktok-comments-scraper";
 
 export interface ScrapedComment {
   text: string;
@@ -594,21 +574,37 @@ export interface ScrapedComment {
 
 export async function scrapeComments(
   username: string,
-  _videoUrls: string[], // Not used — actor scrapes by username directly
+  videoUrls: string[],
   config: AnalysisConfig = DEFAULT_CONFIG,
   onProgress?: (scraped: number, total: number) => void,
 ): Promise<ScrapedComment[]> {
   const apiKey = process.env.APIFY_API_KEY;
   if (!apiKey) throw new Error("APIFY_API_KEY is missing");
 
-  // Start Apify run — pass username, actor finds videos and scrapes comments
+  // Filter to actual video URLs (must contain /video/), fall back to profile URL
+  const actualVideoUrls = videoUrls.filter((u) => u.includes("/video/"));
+  const selectedVideos = actualVideoUrls.slice(0, config.videosToSample);
+
+  // If we have no video URLs, construct a profile URL so the actor can find videos
+  const postURLs =
+    selectedVideos.length > 0
+      ? selectedVideos
+      : [`https://www.tiktok.com/@${username}`];
+
+  console.log(
+    `[Comment Scraper] Scraping comments for @${username}: ${postURLs.length} URLs, ${config.commentsPerVideo} per post`,
+  );
+
+  // Start Apify run with clockworks comment scraper input format
   const startUrl = `https://api.apify.com/v2/acts/${APIFY_COMMENT_ACTOR_ID}/runs?token=${apiKey}`;
   const startRes = await fetch(startUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      profiles: [username],
-      resultsPerPage: config.maxTotalComments,
+      postURLs: postURLs,
+      commentsPerPost: config.commentsPerVideo,
+      maxRepliesPerComment: 0,
+      resultsPerPage: 100,
     }),
   });
 
@@ -619,6 +615,7 @@ export async function scrapeComments(
 
   const { data: runData } = await startRes.json();
   const runId = runData.id;
+  console.log(`[Comment Scraper] Apify run started: ${runId}`);
 
   // Poll for completion
   const MAX_WAIT = 10 * 60 * 1000; // 10 minutes
@@ -636,7 +633,10 @@ export async function scrapeComments(
     const { data: statusData } = await statusRes.json();
     const status = statusData.status;
 
-    if (status === "SUCCEEDED") break;
+    if (status === "SUCCEEDED") {
+      console.log(`[Comment Scraper] Run completed successfully`);
+      break;
+    }
     if (status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT") {
       throw new Error(`Comment scraping ${status}`);
     }
@@ -645,34 +645,39 @@ export async function scrapeComments(
   }
 
   // Fetch results
-  const datasetUrl = `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apiKey}`;
+  const datasetUrl = `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apiKey}&limit=${config.maxTotalComments}`;
   const dataRes = await fetch(datasetUrl);
   if (!dataRes.ok) {
     throw new Error(`Failed to fetch comment results: ${dataRes.status}`);
   }
 
   const items: Record<string, unknown>[] = await dataRes.json();
+  console.log(`[Comment Scraper] Got ${items.length} raw items from Apify`);
+
+  // Log first item keys for debugging field mapping
+  if (items.length > 0) {
+    console.log(`[Comment Scraper] Sample item keys:`, Object.keys(items[0]));
+  }
+
   const comments: ScrapedComment[] = [];
 
   for (const item of items) {
-    const text = (item.text ?? "") as string;
+    // clockworks comment scraper field names: text, uniqueId, avatarThumbnail, diggCount, replyCount, createTimeISO
+    const text = (item.text ?? item.comment ?? item.body ?? "") as string;
     if (!text || text.length < 2) continue;
 
     comments.push({
       text,
-      username: (item.uniqueId ?? "") as string,
-      avatarUrl: (item.avatarThumbnail ?? "") as string,
-      likes: Number(item.diggCount ?? 0),
-      replyCount: Number(item.replyCommentTotal ?? 0),
-      commentedAt: item.createTimeISO
-        ? (item.createTimeISO as string)
-        : item.createTime
-          ? new Date(Number(item.createTime) * 1000).toISOString()
-          : undefined,
-      videoUrl: (item.videoWebUrl ?? "") as string,
+      username: (item.uniqueId ?? item.user ?? item.username ?? item.author) as string | undefined,
+      avatarUrl: (item.avatarThumbnail ?? item.avatarUrl ?? item.avatar ?? item.userAvatar ?? item.profilePic) as string | undefined,
+      likes: Number(item.diggCount ?? item.likes ?? 0),
+      replyCount: Number(item.replyCount ?? item.replyCommentTotal ?? 0),
+      commentedAt: (item.createTimeISO ?? item.createTime ?? item.createdAt ?? item.date) as string | undefined,
+      videoUrl: (item.videoWebUrl ?? item.videoUrl ?? item.postUrl ?? item.url) as string | undefined,
     });
   }
 
+  console.log(`[Comment Scraper] Parsed ${comments.length} valid comments`);
   onProgress?.(comments.length, config.maxTotalComments);
   return comments.slice(0, config.maxTotalComments);
 }

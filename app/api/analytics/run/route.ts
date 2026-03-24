@@ -1,7 +1,6 @@
 import { after, type NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../../lib/prisma";
-import { logApiUsage, estimateGeminiCost, estimateTokensFromText } from "../../../lib/usage-tracking";
 import {
   analyzeInfluencerProfile,
   analyzeAudienceComments,
@@ -11,12 +10,14 @@ import {
   DEFAULT_CONFIG,
   type AnalysisConfig,
   type ScrapedComment,
+  type AudienceNlpResult,
 } from "../../../lib/audience-analysis";
 import type { AnalysisMode } from "@prisma/client";
 
 export const maxDuration = 300;
 
-const MIN_VIDEOS = 0; // Analyze even with no videos — profile pic alone is useful
+const MIN_VIDEOS = 1; // Allow analysis with even 1 video
+const MIN_COMMENTS = 0; // Analyze whatever is available — even 0 comments (will use profile pic only)
 
 async function loadConfig(): Promise<AnalysisConfig & { defaultMode: AnalysisMode }> {
   const cfg = await prisma.analysisConfig.findUnique({ where: { id: "default" } });
@@ -68,7 +69,7 @@ async function runAnalysisPipeline(params: {
         videos: {
           orderBy: { views: "desc" },
           take: config.videosToSample,
-          select: { id: true, title: true, views: true, username: true },
+          select: { id: true, title: true, views: true, username: true, videoUrl: true, tiktokId: true },
         },
       },
     });
@@ -83,75 +84,82 @@ async function runAnalysisPipeline(params: {
       return;
     }
 
-    // ── Step 1: Scrape comments (best-effort) ──
-    let scrapedComments: ScrapedComment[] = [];
-
-    if (influencer.videos.length > 0) {
+    // ── Edge case: skip if < MIN_VIDEOS ──
+    if (influencer.videos.length < MIN_VIDEOS) {
       await updateRunStatus(runId, {
-        status: "SCRAPING_COMMENTS",
-        progress: 5,
-        progressMsg: `Scraping comments from ${influencer.videos.length} videos...`,
+        status: "FAILED",
+        progress: 0,
+        progressMsg: `Insufficient data: only ${influencer.videos.length} videos (need ${MIN_VIDEOS}+)`,
+        errorMessage: `Insufficient data: only ${influencer.videos.length} videos (minimum ${MIN_VIDEOS} required)`,
       });
+      return;
+    }
 
-      const videoUrls = influencer.videos.map(
-        (v) => `https://www.tiktok.com/@${v.username}`,
+    // ── Step 1: Scrape comments ──
+    await updateRunStatus(runId, {
+      status: "SCRAPING_COMMENTS",
+      progress: 5,
+      progressMsg: `Scraping comments from ${influencer.videos.length} videos...`,
+    });
+
+    // Build video URLs for scraping — use stored URLs or construct from tiktokId
+    const videoUrls = influencer.videos
+      .map((v) => {
+        if (v.videoUrl) return v.videoUrl;
+        if (v.tiktokId) return `https://www.tiktok.com/@${v.username}/video/${v.tiktokId}`;
+        return null;
+      })
+      .filter((url): url is string => url !== null);
+
+    let scrapedComments: ScrapedComment[] = [];
+    try {
+      scrapedComments = await scrapeComments(
+        influencer.username,
+        videoUrls,
+        config,
+        (scraped, total) => {
+          updateRunStatus(runId, {
+            progress: 5 + Math.round((scraped / total) * 25),
+            progressMsg: `Scraped ${scraped}/${total} comments...`,
+          });
+        },
       );
+    } catch (err) {
+      console.error("[Analytics] Comment scraping failed:", err);
+      await updateRunStatus(runId, {
+        status: "FAILED",
+        progress: 5,
+        progressMsg: "Comment scraping failed",
+        errorMessage: `Comment scraping failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return;
+    }
 
-      try {
-        scrapedComments = await scrapeComments(
-          influencer.username,
-          videoUrls,
-          config,
-          (scraped, total) => {
-            updateRunStatus(runId, {
-              progress: 5 + Math.round((scraped / total) * 25),
-              progressMsg: `Scraped ${scraped}/${total} comments...`,
-            });
-          },
-        );
-      } catch (err) {
-        // Non-fatal — continue with whatever we have (profile pic, video titles, etc.)
-        console.error("[Analytics] Comment scraping failed, continuing with available data:", err);
-        await updateRunStatus(runId, {
-          progress: 30,
-          progressMsg: `Comment scraping failed (${err instanceof Error ? err.message : "unknown"}). Continuing with available data...`,
-        });
-      }
-    } else {
+    // ── Low comments: warn but continue — analyze whatever is available ──
+    if (scrapedComments.length === 0) {
+      console.log(`[Analytics] No comments scraped for @${influencer.username}, falling back to profile-only analysis`);
       await updateRunStatus(runId, {
         progress: 30,
-        progressMsg: "No videos found. Analyzing profile picture only...",
+        progressMsg: `No comments found. Analyzing profile picture only...`,
       });
+    } else if (scrapedComments.length < 50) {
+      console.log(`[Analytics] Low comment count (${scrapedComments.length}) for @${influencer.username}, results may have low confidence`);
     }
 
-    // ── Save comments to DB (if any) ──
-    if (scrapedComments.length > 0) {
-      await prisma.comment.deleteMany({ where: { influencerId } });
-      await prisma.comment.createMany({
-        data: scrapedComments.map((c) => ({
-          influencerId,
-          text: c.text,
-          username: c.username ?? null,
-          avatarUrl: c.avatarUrl ?? null,
-          likes: c.likes ?? 0,
-          replyCount: c.replyCount ?? 0,
-          videoUrl: c.videoUrl ?? null,
-          commentedAt: c.commentedAt ? new Date(c.commentedAt) : null,
-        })),
-      });
-    }
-
-    // Log comment scraping usage
-    if (scrapedComments.length > 0) {
-      logApiUsage({
-        service: "apify_comments",
-        action: "scrape_comments",
+    // ── Save comments to DB ──
+    await prisma.comment.deleteMany({ where: { influencerId } }); // Clear old comments
+    await prisma.comment.createMany({
+      data: scrapedComments.map((c) => ({
         influencerId,
-        analysisRunId: runId,
-        inputCount: influencer.videos.length,
-        outputCount: scrapedComments.length,
-      });
-    }
+        text: c.text,
+        username: c.username ?? null,
+        avatarUrl: c.avatarUrl ?? null,
+        likes: c.likes ?? 0,
+        replyCount: c.replyCount ?? 0,
+        videoUrl: c.videoUrl ?? null,
+        commentedAt: c.commentedAt ? new Date(c.commentedAt) : null,
+      })),
+    });
 
     await updateRunStatus(runId, {
       commentCount: scrapedComments.length,
@@ -160,10 +168,8 @@ async function runAnalysisPipeline(params: {
     });
 
     // ── Step 2: Analyze influencer profile pic (Vision) ──
-    // Always attempt profile pic analysis — it's the one thing we can always do
-    // regardless of mode or comment availability
     let profileResult = null;
-    if (influencer.avatarUrl) {
+    if (mode !== "NLP_ONLY" && influencer.avatarUrl) {
       await updateRunStatus(runId, {
         progress: 35,
         progressMsg: "Analyzing influencer profile picture...",
@@ -176,21 +182,21 @@ async function runAnalysisPipeline(params: {
         );
       } catch (err) {
         console.error("[Analytics] Profile analysis failed:", err);
-        // Non-fatal — continue with whatever else we have
+        // Non-fatal — continue with NLP
       }
     }
 
-    // ── Step 3: NLP analysis on comments (if any) ──
-    let nlpResult = null;
-    const commentTexts = scrapedComments.map((c) => c.text);
+    // ── Step 3: NLP analysis on comments (skip if 0 comments) ──
+    let nlpResult: AudienceNlpResult | null = null;
 
-    if (commentTexts.length > 0) {
+    if (scrapedComments.length > 0) {
       await updateRunStatus(runId, {
         status: "ANALYZING_COMMENTS",
         progress: 40,
-        progressMsg: `Running NLP analysis on ${commentTexts.length} comments...`,
+        progressMsg: "Running NLP analysis on comments...",
       });
 
+      const commentTexts = scrapedComments.map((c) => c.text);
       try {
         nlpResult = await analyzeAudienceComments(
           influencer.username,
@@ -205,33 +211,13 @@ async function runAnalysisPipeline(params: {
             });
           },
         );
-
-        // Log Gemini NLP usage
-        const totalText = commentTexts.join(" ");
-        const inputTokens = estimateTokensFromText(totalText) + 500; // +500 for prompt
-        const outputTokens = 300; // ~300 tokens per JSON response
-        logApiUsage({
-          service: "gemini_nlp",
-          action: "analyze_comments",
-          influencerId,
-          analysisRunId: runId,
-          inputCount: commentTexts.length,
-          inputTokens,
-          outputTokens,
-          costUsd: estimateGeminiCost(inputTokens, outputTokens),
-        });
       } catch (err) {
         console.error("[Analytics] NLP analysis failed:", err);
-        await updateRunStatus(runId, {
-          progress: 70,
-          progressMsg: `NLP analysis failed. Continuing with face analysis...`,
-        });
       }
     } else {
       await updateRunStatus(runId, {
-        status: "ANALYZING_COMMENTS",
         progress: 70,
-        progressMsg: "No comments available. Skipping NLP, using face analysis only...",
+        progressMsg: "No comments to analyze, using profile data only...",
       });
     }
 
@@ -278,42 +264,34 @@ async function runAnalysisPipeline(params: {
     }
 
     // ── Step 5: Merge results and save ──
-    // If we have absolutely nothing (no profile, no comments, no avatars), still save what we can
-    if (!profileResult && !nlpResult && !visionResult) {
-      await updateRunStatus(runId, {
-        status: "FAILED",
-        progress: 95,
-        progressMsg: "No data could be analyzed (no profile pic, no comments, no avatars)",
-        errorMessage: "No analyzable data available",
-      });
-      return;
-    }
-
     await updateRunStatus(runId, {
       progress: 95,
       progressMsg: "Merging results and saving...",
     });
 
-    // Build a default NLP result if we have none (face-only analysis)
-    const nlpForMerge = nlpResult ?? {
+    // If we have no NLP and no vision and no profile, fail gracefully
+    if (!nlpResult && !visionResult && !profileResult) {
+      await updateRunStatus(runId, {
+        status: "FAILED",
+        progress: 95,
+        progressMsg: "No analyzable data available",
+        errorMessage: "No analyzable data: no comments scraped, no profile picture, and no avatars analyzed",
+      });
+      return;
+    }
+
+    // Create a default NLP result if we have none (profile-only analysis)
+    const effectiveNlp: AudienceNlpResult = nlpResult ?? {
       genderBreakdown: { male: 0, female: 0, unknown: 100 },
       ageBrackets: { "13-17": 0, "18-24": 0, "25-34": 0, "35-44": 0, "45+": 0 },
-      topCountries: [] as { country: string; countryName: string; percentage: number }[],
-      topInterests: [] as { category: string; score: number }[],
+      topCountries: [],
+      topInterests: [],
       audienceQuality: 0,
       confidence: 0,
       reasoning: "No comments available for NLP analysis",
     };
 
-    const merged = mergeResults(mode, profileResult, nlpForMerge, visionResult);
-
-    // Lower confidence if we had no comments
-    if (!nlpResult) {
-      merged.confidence = Math.min(merged.confidence, 0.2);
-    } else if (scrapedComments.length < 50) {
-      // Scale confidence down for fewer comments
-      merged.confidence = merged.confidence * Math.min(1, scrapedComments.length / 50);
-    }
+    const merged = mergeResults(mode, profileResult, effectiveNlp, visionResult);
 
     await prisma.influencerAnalytics.upsert({
       where: { influencerId },

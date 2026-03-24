@@ -54,6 +54,13 @@ interface ApifyItem {
   bookmarks?: number;
   uploadedAtFormatted?: string;
   video?: ApifyVideo;
+  // Video identification fields (varies by scraper)
+  webVideoUrl?: string;
+  videoUrl?: string;
+  url?: string;
+  id?: string;
+  itemId?: string;
+  aweme_id?: string;
 }
 
 /** xtdata profile scraper returns TikTok's raw internal API format */
@@ -1215,9 +1222,30 @@ export async function POST(request: NextRequest) {
 
             // For "skipped" users we only refresh profile/contact; do not touch videos
             if (!isSkippedProfileOnly) {
+              // Debug: log ALL keys from first video item to discover available fields
+              if (data.videos.length > 0) {
+                const sample = data.videos[0] as Record<string, unknown>;
+                const allKeys = Object.keys(sample);
+                console.log(`[VIDEO-DEBUG] @${username} first video keys (${allKeys.length}):`, allKeys.join(', '));
+                // Log any URL-like or ID-like fields
+                for (const [k, val] of Object.entries(sample)) {
+                  const kl = k.toLowerCase();
+                  if (kl.includes('url') || kl.includes('id') || kl.includes('link') || kl.includes('web') || kl.includes('aweme')) {
+                    console.log(`[VIDEO-DEBUG]   ${k}:`, typeof val === 'string' ? val.substring(0, 120) : val);
+                  }
+                }
+              }
+
               const videoData = await Promise.all(
                 data.videos.map(async (v) => {
                   const thumbnailUrl = v.video?.cover ?? null;
+                  // Extract TikTok video ID from various possible field names
+                  const tiktokId = (v.id ?? v.itemId ?? v.aweme_id ?? null) as string | null;
+                  // Build video URL: use provided URL or construct from username + ID
+                  let videoUrl = (v.webVideoUrl ?? v.videoUrl ?? v.url ?? null) as string | null;
+                  if (!videoUrl && tiktokId && username) {
+                    videoUrl = `https://www.tiktok.com/@${username}/video/${tiktokId}`;
+                  }
 
                   return {
                     influencerId: influencer.id,
@@ -1229,6 +1257,8 @@ export async function POST(request: NextRequest) {
                       ? new Date(v.uploadedAtFormatted)
                       : null,
                     thumbnailUrl,
+                    videoUrl,
+                    tiktokId,
                   };
                 }),
               );

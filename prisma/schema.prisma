@@ -96,6 +96,8 @@ model Video {
   bookmarks    Int?
   uploadedAt   DateTime?
   thumbnailUrl String?  // video cover image URL
+  videoUrl     String?  // full TikTok video URL (https://www.tiktok.com/@user/video/123)
+  tiktokId     String?  // TikTok video ID (aweme_id / itemId)
   createdAt    DateTime @default(now())
 
   @@index([influencerId])

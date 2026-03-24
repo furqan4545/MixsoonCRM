@@ -1740,51 +1740,66 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              {influencer.videos.map((video) => (
-                <div
-                  key={video.id}
-                  className="group overflow-hidden rounded-xl border bg-background transition-shadow hover:shadow-md"
-                >
-                  <div className="relative aspect-9/16 overflow-hidden bg-muted">
-                    {video.thumbnailProxied ? (
-                      <ThumbnailImage
-                        src={video.thumbnailProxied}
-                        alt={video.title ?? "Video thumbnail"}
-                        className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                        No thumbnail
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-2.5">
-                    <p className="truncate text-xs font-medium leading-tight">
-                      {video.title ?? "Untitled"}
-                    </p>
-                    <div className="mt-1.5 space-y-1">
-                      {video.views != null && (
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <Eye className="h-2.5 w-2.5" />
-                          <span>{formatNumber(video.views)} views</span>
+              {influencer.videos.map((video) => {
+                const videoLink = video.videoUrl
+                  ?? (video.tiktokId ? `https://www.tiktok.com/@${influencer.username}/video/${video.tiktokId}` : null);
+                const Wrapper = videoLink ? "a" : "div";
+                const wrapperProps = videoLink
+                  ? { href: videoLink, target: "_blank", rel: "noopener noreferrer" }
+                  : {};
+
+                return (
+                  <Wrapper
+                    key={video.id}
+                    {...wrapperProps}
+                    className="group overflow-hidden rounded-xl border bg-background transition-shadow hover:shadow-md cursor-pointer"
+                  >
+                    <div className="relative aspect-9/16 overflow-hidden bg-muted">
+                      {video.thumbnailProxied ? (
+                        <ThumbnailImage
+                          src={video.thumbnailProxied}
+                          alt={video.title ?? "Video thumbnail"}
+                          className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                          No thumbnail
                         </div>
                       )}
-                      {video.bookmarks != null && (
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <Bookmark className="h-2.5 w-2.5" />
-                          <span>{formatNumber(video.bookmarks)} saves</span>
-                        </div>
-                      )}
-                      {video.uploadedAt && (
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <Calendar className="h-2.5 w-2.5" />
-                          <span>{new Date(video.uploadedAt).toLocaleDateString()}</span>
+                      {videoLink && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/30">
+                          <ExternalLink className="h-5 w-5 text-white opacity-0 transition-opacity group-hover:opacity-100" />
                         </div>
                       )}
                     </div>
-                  </div>
-                </div>
-              ))}
+                    <div className="p-2.5">
+                      <p className="truncate text-xs font-medium leading-tight">
+                        {video.title ?? "Untitled"}
+                      </p>
+                      <div className="mt-1.5 space-y-1">
+                        {video.views != null && (
+                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <Eye className="h-2.5 w-2.5" />
+                            <span>{formatNumber(video.views)} views</span>
+                          </div>
+                        )}
+                        {video.bookmarks != null && (
+                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <Bookmark className="h-2.5 w-2.5" />
+                            <span>{formatNumber(video.bookmarks)} saves</span>
+                          </div>
+                        )}
+                        {video.uploadedAt && (
+                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <Calendar className="h-2.5 w-2.5" />
+                            <span>{new Date(video.uploadedAt).toLocaleDateString()}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </Wrapper>
+                );
+              })}
             </div>
           )}
         </TabsContent>
