@@ -1741,18 +1741,17 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {influencer.videos.map((video) => {
+                // Always link to TikTok — use stored URL, construct from ID, or fall back to profile
                 const videoLink = video.videoUrl
-                  ?? (video.tiktokId ? `https://www.tiktok.com/@${influencer.username}/video/${video.tiktokId}` : null);
-                const Wrapper = videoLink ? "a" : "div";
-                const wrapperProps = videoLink
-                  ? { href: videoLink, target: "_blank", rel: "noopener noreferrer" }
-                  : {};
+                  ?? (video.tiktokId ? `https://www.tiktok.com/@${influencer.username}/video/${video.tiktokId}` : null)
+                  ?? `https://www.tiktok.com/@${influencer.username}`;
+                const wrapperProps = { href: videoLink, target: "_blank" as const, rel: "noopener noreferrer" };
 
                 return (
-                  <Wrapper
+                  <a
                     key={video.id}
                     {...wrapperProps}
-                    className="group overflow-hidden rounded-xl border bg-background transition-shadow hover:shadow-md cursor-pointer"
+                    className="group block overflow-hidden rounded-xl border bg-background transition-shadow hover:shadow-md cursor-pointer"
                   >
                     <div className="relative aspect-9/16 overflow-hidden bg-muted">
                       {video.thumbnailProxied ? (
@@ -1766,11 +1765,9 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
                           No thumbnail
                         </div>
                       )}
-                      {videoLink && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/30">
-                          <ExternalLink className="h-5 w-5 text-white opacity-0 transition-opacity group-hover:opacity-100" />
-                        </div>
-                      )}
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/30">
+                        <ExternalLink className="h-5 w-5 text-white opacity-0 transition-opacity group-hover:opacity-100" />
+                      </div>
                     </div>
                     <div className="p-2.5">
                       <p className="truncate text-xs font-medium leading-tight">
@@ -1797,7 +1794,7 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
                         )}
                       </div>
                     </div>
-                  </Wrapper>
+                  </a>
                 );
               })}
             </div>
