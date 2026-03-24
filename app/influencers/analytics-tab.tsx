@@ -66,6 +66,7 @@ interface AnalyticsTabProps {
   username: string;
   avatarUrl: string | null;
   videos: VideoData[];
+  onAnalysisComplete?: () => void;
 }
 
 // ─── Constants ──────────────────────────────────────────────
@@ -96,6 +97,7 @@ export default function AnalyticsTab({
   username,
   avatarUrl,
   videos,
+  onAnalysisComplete,
 }: AnalyticsTabProps) {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [latestRun, setLatestRun] = useState<RunStatus | null>(null);
@@ -161,6 +163,7 @@ export default function AnalyticsTab({
           es.close();
           eventSourceRef.current = null;
           fetchAnalytics();
+          onAnalysisComplete?.();
           toast.success("Audience analysis completed!");
         } else if (data.status === "FAILED") {
           setAnalyzing(false);
@@ -168,6 +171,7 @@ export default function AnalyticsTab({
           eventSourceRef.current = null;
           toast.error(data.errorMessage ?? "Analysis failed");
           fetchAnalytics();
+          onAnalysisComplete?.();
         }
       } catch {}
     };
