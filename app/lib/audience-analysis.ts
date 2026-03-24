@@ -187,8 +187,7 @@ export async function analyzeInfluencerProfile(
     "   - If the person appears South Asian and content is in English, likely US, UK, Canada, or India",
     "   - If the person appears East Asian, likely South Korea, Japan, China, or US",
     "   - If the person appears Latino, likely US, Mexico, Brazil, or Colombia",
-    "   - IMPORTANT: You MUST always pick a country. Never return 'Unknown'. Make your best probabilistic guess.",
-    "   - If South Asian ethnicity + English bio/content → most likely US, UK, or Canada (in that order)",
+    "   - Make your best estimate based on available signals. If you genuinely cannot determine the country, return 'Unknown'.",
     "   - Return as 'CODE|Name' format: 'US|United States', 'KR|South Korea', 'GB|United Kingdom', 'IN|India', 'BR|Brazil', 'CA|Canada', 'AU|Australia', 'PK|Pakistan', etc.",
     "",
     "If the image does not clearly show a face (logo, cartoon, group photo, object), return gender='unknown', ageRange='unknown', ethnicity='Unknown'. Still estimate country from bio if available.",
@@ -213,39 +212,31 @@ export async function analyzeInfluencerProfile(
     console.error("[Profile Analysis] Vision call failed, falling back to text-only:", (err as Error).message);
   }
 
-  // If vision couldn't determine country (or failed entirely), use a text-only follow-up
+  // If vision couldn't determine country, try a text-only call with all available signals
   if (country === "Unknown" || !country) {
     try {
       const countryPrompt = [
         "Based on the following information about a TikTok influencer, estimate their most likely country of residence.",
         "",
-        `Ethnicity: ${ethnicity}`,
-        `Gender: ${gender}`,
-        `Age range: ${ageRange}`,
-        `Bio text: ${bio ?? "no bio"}`,
+        `Detected ethnicity: ${ethnicity}`,
+        `Detected gender: ${gender}`,
+        `Detected age range: ${ageRange}`,
+        `Bio text: ${bio ?? "no bio available"}`,
         "",
-        "Rules:",
-        "- You MUST return a country. Never return Unknown.",
-        "- South Asian + English content → likely US, UK, Canada, or India",
-        "- East Asian + English content → likely US, South Korea, or Japan",
-        "- White/Caucasian + English → likely US, UK, Canada, or Australia",
-        "- Black + English → likely US, UK, or Nigeria",
-        "- Latino + English/Spanish → likely US, Mexico, or Colombia",
-        "- Middle Eastern + English → likely US, UK, UAE, or Saudi Arabia",
-        "- Use the bio language, email domain, and cultural cues to narrow down",
+        "Use ALL available signals: ethnicity, bio language, email domains, cultural references, charity/organization names, etc.",
+        "If you can make a reasonable estimate, return it. If you genuinely cannot determine the country, return 'Unknown'.",
         "",
         'Return JSON only: {"country": "CODE|Name"}',
-        'Example: {"country": "US|United States"} or {"country": "GB|United Kingdom"}',
+        'Examples: {"country": "US|United States"}, {"country": "GB|United Kingdom"}, {"country": "Unknown"}',
       ].join("\n");
 
       const countryText = await callGeminiText(countryPrompt, model);
       console.log("[Profile Analysis] Country text fallback raw:", countryText);
       let countryParsed = JSON.parse(countryText);
-      // Handle array response: [{"country": "..."}]
       if (Array.isArray(countryParsed)) countryParsed = countryParsed[0];
-      if (countryParsed?.country && countryParsed.country !== "Unknown") {
+      if (countryParsed?.country) {
         country = countryParsed.country;
-        console.log("[Profile Analysis] Country detected via text fallback:", country);
+        console.log("[Profile Analysis] Country from text fallback:", country);
       }
     } catch (err) {
       console.error("[Profile Analysis] Country text fallback failed:", (err as Error).message);
