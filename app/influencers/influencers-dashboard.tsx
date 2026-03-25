@@ -895,9 +895,20 @@ export function InfluencersDashboard({ influencers }: Props) {
                           <div className="flex items-center gap-3">
                             <Avatar inf={inf} size="sm" />
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold">
-                                {inf.displayName ?? inf.username}
-                              </p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="truncate text-sm font-semibold">
+                                  {inf.displayName ?? inf.username}
+                                </p>
+                                {inf.analytics?.lastAnalyzedAt && (
+                                  <span
+                                    className="inline-flex items-center gap-0.5 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700"
+                                    title={`Analyzed ${new Date(inf.analytics.lastAnalyzedAt).toLocaleDateString()} · ${inf.analytics.mode ?? "HYBRID"} · ${Math.round((inf.analytics.confidence ?? 0) * 100)}% confidence`}
+                                  >
+                                    <BarChart3 className="h-2.5 w-2.5" />
+                                    AI
+                                  </span>
+                                )}
+                              </div>
                               <p className="truncate text-xs text-muted-foreground">
                                 @{inf.username}
                               </p>
