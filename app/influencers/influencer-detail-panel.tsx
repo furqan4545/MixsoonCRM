@@ -1885,7 +1885,10 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
               username={influencer.username}
               avatarUrl={influencer.avatarUrl}
               videos={influencer.videos}
-              onAnalysisComplete={() => router.refresh()}
+              onAnalysisComplete={() => {
+                router.refresh();
+                window.dispatchEvent(new CustomEvent("analysis-complete", { detail: influencer.id }));
+              }}
             />
           )}
         </TabsContent>

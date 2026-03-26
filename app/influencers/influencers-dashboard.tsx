@@ -589,7 +589,7 @@ export function InfluencersDashboard({ influencers }: Props) {
               bulkPollRef.current = null;
               setBulkAnalyzing(false);
               setSelectedRows(new Set());
-              router.refresh();
+              window.dispatchEvent(new CustomEvent("analysis-complete"));
 
               if (status.failed > 0) {
                 toast.warning(`Bulk analysis finished: ${status.completed} completed, ${status.failed} failed`, { id: toastId, duration: 5000 });

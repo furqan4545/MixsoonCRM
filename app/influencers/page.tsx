@@ -43,6 +43,29 @@ export default function InfluencersPage() {
     fetchPage();
   }, [fetchPage]);
 
+  // Silently update analytics data when analysis completes (no full page reload)
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const influencerId = (e as CustomEvent).detail;
+      try {
+        // Fetch fresh data silently in the background
+        const res = await fetch("/api/influencers?limit=50");
+        if (!res.ok) return;
+        const data = await res.json();
+        const fresh: InfluencerRow[] = data.influencers ?? [];
+        // Merge analytics into existing list without resetting scroll/selection
+        setInfluencers((prev) =>
+          prev.map((inf) => {
+            const updated = fresh.find((f: InfluencerRow) => f.id === inf.id);
+            return updated ? { ...inf, analytics: updated.analytics } : inf;
+          }),
+        );
+      } catch {}
+    };
+    window.addEventListener("analysis-complete", handler);
+    return () => window.removeEventListener("analysis-complete", handler);
+  }, []);
+
   if (loading) {
     return <InfluencersLoadingSkeleton />;
   }

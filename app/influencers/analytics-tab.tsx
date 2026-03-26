@@ -332,52 +332,67 @@ export default function AnalyticsTab({
       {analytics && (
         <>
           {/* Influencer Profile Card */}
-          {(analytics.influencerGender ||
-            analytics.influencerAgeRange ||
-            analytics.influencerEthnicity) && (
-            <section className="rounded-lg border p-4">
-              <h4 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Influencer Profile
-              </h4>
-              <div className="flex items-center gap-4">
-                {avatarUrl && (
-                  <img
-                    src={avatarUrl}
-                    alt={username}
-                    className="h-14 w-14 rounded-full object-cover"
-                  />
-                )}
-                <div className="flex flex-wrap gap-2">
+          <section className="rounded-lg border p-4">
+            <h4 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Influencer Profile
+            </h4>
+            <div className="flex items-center gap-4">
+              {avatarUrl && (
+                <img
+                  src={avatarUrl}
+                  alt={username}
+                  className="h-14 w-14 rounded-full object-cover"
+                />
+              )}
+              <div>
+                <p className="text-sm font-semibold">{username}</p>
+                <div className="mt-1.5 flex flex-wrap gap-2">
                   {analytics.influencerGender &&
-                    analytics.influencerGender !== "unknown" && (
+                    analytics.influencerGender !== "unknown" ? (
                       <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
                         {analytics.influencerGender === "male" ? "Male" : "Female"}
                       </span>
+                    ) : (
+                      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                        Gender: Unknown
+                      </span>
                     )}
                   {analytics.influencerAgeRange &&
-                    analytics.influencerAgeRange !== "unknown" && (
+                    analytics.influencerAgeRange !== "unknown" ? (
                       <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
                         {analytics.influencerAgeRange}
                       </span>
+                    ) : (
+                      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                        Age: Unknown
+                      </span>
                     )}
                   {analytics.influencerEthnicity &&
-                    analytics.influencerEthnicity !== "Unknown" && (
+                    analytics.influencerEthnicity !== "Unknown" ? (
                       <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
                         {analytics.influencerEthnicity}
                       </span>
+                    ) : (
+                      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                        Ethnicity: Unknown
+                      </span>
                     )}
                   {analytics.influencerCountry &&
-                    analytics.influencerCountry !== "Unknown" && (
+                    analytics.influencerCountry !== "Unknown" ? (
                       <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
                         {analytics.influencerCountry.includes("|")
                           ? analytics.influencerCountry.split("|")[1]
                           : analytics.influencerCountry}
                       </span>
+                    ) : (
+                      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                        Country: Unknown
+                      </span>
                     )}
                 </div>
               </div>
-            </section>
-          )}
+            </div>
+          </section>
 
           {/* Demographics Row */}
           <section>
