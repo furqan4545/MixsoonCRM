@@ -34,6 +34,7 @@ model Influencer {
   notes          String?          // internal notes
   aiScore        Int?             // 0-100 AI relevance score
 
+  trashedAt      DateTime?              // soft-delete: when set, influencer is in Trash queue
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -57,6 +58,7 @@ model Influencer {
   @@index([username])
   @@index([importId])
   @@index([pipelineStage])
+  @@index([trashedAt])
 }
 
 enum PipelineStage {
@@ -117,11 +119,14 @@ model Import {
   saveProgress   Int          @default(0)
   saveTotal      Int          @default(0)
   errorMessage   String?
+  autoDeleteAt   DateTime?    // auto-delete unactioned imports after this date
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   influencers Influencer[]
   aiFilterRuns AiFilterRun[]
+
+  @@index([autoDeleteAt])
 }
 
 enum ImportStatus {

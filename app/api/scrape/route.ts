@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
 import { logApiUsage } from "../../lib/usage-tracking";
+import { processGcsSave } from "../../lib/gcs-save";
 // ELD (Efficient Language Detector) — NLP-based, neural n-gram detector, 60 languages
 // Loaded lazily since it needs async init
 let _eld: typeof import("eld").default | null = null;
@@ -1384,6 +1385,16 @@ export async function POST(request: NextRequest) {
               processedCount: processedCount + skippedNotRescraped,
             },
           });
+
+          // Auto-save to GCS immediately after scraping (no manual Save button needed)
+          if (importId) {
+            const total = processedCount + skippedNotRescraped;
+            prisma.import.update({
+              where: { id: importId },
+              data: { status: "PROCESSING", saveProgress: 0, saveTotal: total, errorMessage: null },
+            }).then(() => processGcsSave(importId!))
+              .catch((e) => console.error("[Scrape] Auto-save failed:", e));
+          }
 
           // Log API usage for this import
           logApiUsage({

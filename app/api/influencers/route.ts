@@ -24,14 +24,27 @@ export async function GET(request: NextRequest) {
     const cursor = searchParams.get("cursor");
     const search = searchParams.get("search");
     const minimal = searchParams.get("minimal") === "true";
-    // Minimal mode can fetch more (small payload per record); full mode caps at 100
-    const maxLimit = minimal ? 2000 : 100;
+    const trash = searchParams.get("trash") === "true";
+    const importId = searchParams.get("importId");
+    // When filtering by importId, allow loading all (up to 2000)
+    const maxLimit = minimal || importId ? 2000 : 100;
     const limit = Math.min(
       parseInt(searchParams.get("limit") ?? "50", 10) || 50,
       maxLimit,
     );
 
     const where: Record<string, unknown> = {};
+
+    // Trash filter: show trashed or non-trashed
+    if (trash) {
+      where.trashedAt = { not: null };
+    } else {
+      where.trashedAt = null;
+    }
+
+    if (importId) {
+      where.importId = importId;
+    }
     if (pipelineStage) {
       where.pipelineStage = pipelineStage;
     }

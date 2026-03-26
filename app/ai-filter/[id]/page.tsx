@@ -30,8 +30,27 @@ type Evaluation = {
   influencer: {
     id: string;
     username: string;
+    displayName: string | null;
     followers: number | null;
     profileUrl: string | null;
+    avatarUrl: string | null;
+    platform: string | null;
+    engagementRate: number | null;
+    language: string | null;
+    country: string | null;
+    pipelineStage: string;
+    tags: string[];
+    email: string | null;
+    videos: { id: string; title: string | null; views: number | null; thumbnailUrl: string | null; videoUrl: string | null }[];
+    analytics: {
+      influencerGender: string | null;
+      influencerAgeRange: string | null;
+      influencerEthnicity: string | null;
+      influencerCountry: string | null;
+      lastAnalyzedAt: string | null;
+      mode: string | null;
+      confidence: number | null;
+    } | null;
   };
 };
 
@@ -62,6 +81,7 @@ export default function AiFilterRunPage() {
   const [selectedReviewIds, setSelectedReviewIds] = useState<string[]>([]);
   const [actionLoading, setActionLoading] = useState(false);
   const [bucketAction, setBucketAction] = useState<string | null>(null);
+  const [selectedInfluencerId, setSelectedInfluencerId] = useState<string | null>(null);
 
   const loadRun = useCallback(async () => {
     setLoading(true);
@@ -199,7 +219,8 @@ export default function AiFilterRunPage() {
   const isProcessing = run.status === "PROCESSING";
 
   return (
-    <div className="p-6">
+    <div className="flex h-full">
+    <div className={`flex-1 overflow-y-auto p-6 ${selectedInfluencerId ? "max-w-[60%]" : ""}`}>
       <div className="mb-5">
         <h1 className="text-2xl font-bold tracking-tight">AI Filter Run</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -298,6 +319,8 @@ export default function AiFilterRunPage() {
           onDelete={() => handleBucketAction("APPROVED", "delete")}
           onMoveEval={moveEval}
           actionLoading={bucketAction}
+          onSelectInfluencer={setSelectedInfluencerId}
+          selectedInfluencerId={selectedInfluencerId}
         />
         <BucketList
           title="Okish"
@@ -308,6 +331,8 @@ export default function AiFilterRunPage() {
           onDelete={() => handleBucketAction("OKISH", "delete")}
           onMoveEval={moveEval}
           actionLoading={bucketAction}
+          onSelectInfluencer={setSelectedInfluencerId}
+          selectedInfluencerId={selectedInfluencerId}
         />
         <BucketList
           title="Rejected"
@@ -318,10 +343,131 @@ export default function AiFilterRunPage() {
           onDelete={() => handleBucketAction("REJECTED", "delete")}
           onMoveEval={moveEval}
           actionLoading={bucketAction}
+          onSelectInfluencer={setSelectedInfluencerId}
+          selectedInfluencerId={selectedInfluencerId}
         />
       </section>
     </div>
+
+    {/* Detail Panel — shown when an influencer is selected */}
+    {selectedInfluencerId && (() => {
+      const allEvals = [...approved, ...okish, ...rejected, ...reviewQueue];
+      const evalRow = allEvals.find((e) => e.influencer.id === selectedInfluencerId);
+      if (!evalRow) return null;
+      const inf = evalRow.influencer;
+      return (
+      <div className="w-[40%] min-w-[400px] border-l overflow-y-auto bg-background">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-background px-4 py-2">
+          <span className="text-sm font-semibold">Influencer Details</span>
+          <button
+            onClick={() => setSelectedInfluencerId(null)}
+            className="rounded p-1 text-muted-foreground hover:bg-muted"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          {/* Profile Header */}
+          <div className="flex items-center gap-3">
+            {inf.avatarUrl ? (
+              <img src={`/api/thumbnail?url=${encodeURIComponent(inf.avatarUrl)}`} alt={inf.username} className="h-16 w-16 rounded-full object-cover" />
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-lg font-bold">{inf.username.slice(0, 2).toUpperCase()}</div>
+            )}
+            <div>
+              <p className="text-lg font-bold">{inf.displayName ?? inf.username}</p>
+              <p className="text-sm text-muted-foreground">@{inf.username}</p>
+              <div className="mt-1 flex gap-1.5 flex-wrap">
+                {inf.analytics?.influencerGender && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">{inf.analytics.influencerGender}</span>}
+                {inf.analytics?.influencerAgeRange && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">{inf.analytics.influencerAgeRange}</span>}
+                {inf.analytics?.influencerEthnicity && <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">{inf.analytics.influencerEthnicity}</span>}
+                {inf.analytics?.influencerCountry && <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">{inf.analytics.influencerCountry}</span>}
+              </div>
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-lg border p-3 text-center">
+              <p className="text-xs text-muted-foreground">Followers</p>
+              <p className="text-lg font-bold">{formatNumber(inf.followers)}</p>
+            </div>
+            <div className="rounded-lg border p-3 text-center">
+              <p className="text-xs text-muted-foreground">Engagement</p>
+              <p className="text-lg font-bold">{inf.engagementRate != null ? `${inf.engagementRate}%` : "—"}</p>
+            </div>
+            <div className="rounded-lg border p-3 text-center">
+              <p className="text-xs text-muted-foreground">AI Score</p>
+              <p className="text-lg font-bold">{evalRow.score ?? "—"}</p>
+            </div>
+          </div>
+
+          {/* AI Reasons */}
+          {evalRow.reasons && (
+            <div className="rounded-lg border p-3">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">AI Reasoning</p>
+              <p className="text-sm">{evalRow.reasons}</p>
+            </div>
+          )}
+          {evalRow.matchedSignals && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+              <p className="text-xs font-semibold text-emerald-700 mb-1">Matched Signals</p>
+              <p className="text-sm text-emerald-800">{evalRow.matchedSignals}</p>
+            </div>
+          )}
+          {evalRow.riskSignals && (
+            <div className="rounded-lg border border-red-200 bg-red-50/50 p-3">
+              <p className="text-xs font-semibold text-red-700 mb-1">Risk Signals</p>
+              <p className="text-sm text-red-800">{evalRow.riskSignals}</p>
+            </div>
+          )}
+
+          {/* Videos */}
+          {inf.videos.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-2">Recent Videos ({inf.videos.length})</p>
+              <div className="space-y-2">
+                {inf.videos.slice(0, 6).map((video) => (
+                  <a
+                    key={video.id}
+                    href={video.videoUrl ?? "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 rounded-md border p-2 hover:bg-muted/50 transition-colors"
+                  >
+                    {video.thumbnailUrl && (
+                      <img src={`/api/thumbnail?url=${encodeURIComponent(video.thumbnailUrl)}`} alt="" className="h-12 w-10 rounded object-cover" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs line-clamp-2">{video.title ?? "Untitled"}</p>
+                      <p className="text-[10px] text-muted-foreground">{formatNumber(video.views)} views</p>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Open full profile link */}
+          <Link
+            href={`/influencers?selected=${inf.id}`}
+            className="block rounded-lg border p-3 text-center text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+          >
+            Open Full Profile →
+          </Link>
+        </div>
+      </div>
+      );
+    })()}
+    </div>
   );
+}
+
+function formatNumber(n: number | null | undefined) {
+  if (n == null) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
 }
 
 function BucketList({
@@ -333,6 +479,8 @@ function BucketList({
   onDelete,
   onMoveEval,
   actionLoading,
+  onSelectInfluencer,
+  selectedInfluencerId,
 }: {
   title: string;
   bucket: string;
@@ -342,6 +490,8 @@ function BucketList({
   onDelete: () => void;
   onMoveEval: (evalId: string, targetBucket: string) => void;
   actionLoading: string | null;
+  onSelectInfluencer?: (id: string) => void;
+  selectedInfluencerId?: string | null;
 }) {
   const allSaved =
     rows.length > 0 && rows.every((r) => r.reviewStatus === "SAVED");
@@ -383,8 +533,9 @@ function BucketList({
               size="sm"
               onClick={onDelete}
               disabled={actionLoading !== null}
+              className="text-red-600"
             >
-              {actionLoading === `delete-${bucket}` ? "Deleting..." : "Delete"}
+              {actionLoading === `delete-${bucket}` ? "Trashing..." : "Move to Trash"}
             </Button>
           </div>
         )}
@@ -395,29 +546,44 @@ function BucketList({
         </p>
       ) : (
         <div className="space-y-2 p-3">
-          {rows.map((row) => (
+          {rows.map((row) => {
+            const inf = row.influencer;
+            const isSelected = selectedInfluencerId === inf.id;
+            return (
             <div
               key={row.id}
-              className="group rounded-md border px-3 py-2 transition-colors hover:bg-muted/40"
+              className={`group rounded-md border px-3 py-2 transition-colors cursor-pointer ${isSelected ? "bg-accent border-foreground/20" : "hover:bg-muted/40"}`}
+              onClick={() => onSelectInfluencer?.(inf.id)}
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Link
-                    href={`/influencers/${row.influencer.id}`}
-                    className="font-medium hover:underline"
-                  >
-                    @{row.influencer.username}
-                  </Link>
-                  {row.influencer.profileUrl && (
-                    <a
-                      href={row.influencer.profileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-blue-600 hover:underline dark:text-blue-400"
-                    >
-                      TikTok
-                    </a>
+                <div className="flex items-center gap-3">
+                  {/* Avatar */}
+                  {inf.avatarUrl ? (
+                    <img
+                      src={`/api/thumbnail?url=${encodeURIComponent(inf.avatarUrl)}`}
+                      alt={inf.username}
+                      className="h-9 w-9 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted font-bold text-xs">
+                      {inf.username.slice(0, 2).toUpperCase()}
+                    </div>
                   )}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-semibold truncate">
+                        {inf.displayName ?? inf.username}
+                      </p>
+                      {inf.analytics?.lastAnalyzedAt && (
+                        <span className="inline-flex items-center gap-0.5 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">
+                          AI
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      @{inf.username} · {formatNumber(inf.followers)} followers
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {/* Move-to buttons — hidden by default, shown on hover */}
@@ -428,7 +594,7 @@ function BucketList({
                         <button
                           key={target}
                           type="button"
-                          onClick={() => onMoveEval(row.id, target)}
+                          onClick={(e) => { e.stopPropagation(); onMoveEval(row.id, target); }}
                           className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold transition-colors ${colors.border} ${colors.text} ${colors.hover}`}
                           title={`Move to ${BUCKET_LABELS[target]}`}
                         >
@@ -437,27 +603,19 @@ function BucketList({
                       );
                     })}
                   </div>
-                  <span className="text-sm tabular-nums">
-                    Score: {row.score ?? "—"}
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums">
+                    {row.score ?? "—"}
                   </span>
                 </div>
               </div>
               {row.reasons && (
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1 ml-12 text-xs text-muted-foreground line-clamp-2">
                   {row.reasons}
                 </p>
               )}
-              {(row.matchedSignals || row.riskSignals) && (
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {row.matchedSignals
-                    ? `Matched: ${row.matchedSignals}`
-                    : "Matched: —"}
-                  {" · "}
-                  {row.riskSignals ? `Risk: ${row.riskSignals}` : "Risk: —"}
-                </p>
-              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -27,7 +27,7 @@ export async function POST(
   return NextResponse.json({ saved: updated.count });
 }
 
-// DELETE /api/ai/filter/runs/:id/bucket — Discard all evaluations in a bucket
+// DELETE /api/ai/filter/runs/:id/bucket — Move influencers to trash (soft-delete)
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -44,9 +44,29 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid bucket" }, { status: 400 });
   }
 
-  const deleted = await prisma.influencerAiEvaluation.deleteMany({
+  // Find evals in this bucket to get influencer IDs
+  const evals = await prisma.influencerAiEvaluation.findMany({
     where: { runId, bucket: bucket as "APPROVED" | "OKISH" | "REJECTED" },
+    select: { id: true, influencerId: true },
   });
 
-  return NextResponse.json({ deleted: deleted.count });
+  if (evals.length === 0) {
+    return NextResponse.json({ trashed: 0 });
+  }
+
+  const influencerIds = evals.map((e) => e.influencerId);
+
+  // Mark evals as discarded (soft remove from AI filter view)
+  await prisma.influencerAiEvaluation.updateMany({
+    where: { id: { in: evals.map((e) => e.id) } },
+    data: { reviewStatus: "DISCARDED" },
+  });
+
+  // Soft-delete the influencers (move to trash)
+  await prisma.influencer.updateMany({
+    where: { id: { in: influencerIds }, trashedAt: null },
+    data: { trashedAt: new Date() },
+  });
+
+  return NextResponse.json({ trashed: evals.length });
 }
