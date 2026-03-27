@@ -46,7 +46,7 @@ const workspaceItems = [
   { title: "Pipeline", href: "/", icon: GitBranch },
   { title: "Influencers", href: "/influencers", icon: Users },
   { title: "Campaigns", href: "/campaigns", icon: Megaphone },
-  { title: "AI Runs", href: "/ai-filter", icon: Sparkles },
+  { title: "AI Filter", href: "/ai-filter", icon: Sparkles },
   { title: "Inbox", href: "/email", icon: Inbox },
   { title: "Approvals", href: "/approvals", icon: CheckSquare },
   { title: "Documents", href: "/contracts", icon: FileText },

@@ -621,9 +621,12 @@ function extractSocialHandlesFromBio(bio: string | undefined | null): string[] {
   const fbShort = bio.matchAll(/\bFB[:\s]*@?([a-zA-Z0-9.]+)/gi);
   for (const m of fbShort) add(`https://facebook.com/${m[1]}`);
 
-  // X / Twitter
-  const xMatch = bio.matchAll(/(?:X|Twitter)[:\s]*@?([a-zA-Z0-9_]+)/gi);
-  for (const m of xMatch) add(`https://x.com/${m[1]}`);
+  // X / Twitter — only match "Twitter:" or standalone "X:" with colon (not bare "X" which matches inside words like "toxic")
+  const twitterMatch = bio.matchAll(/Twitter[:\s]*@?([a-zA-Z0-9_]+)/gi);
+  for (const m of twitterMatch) add(`https://x.com/${m[1]}`);
+  // Only match "X:" with a colon immediately after (not "X " alone which is too ambiguous)
+  const xColonMatch = bio.matchAll(/\bX:[\s]*@?([a-zA-Z0-9_]+)/g);
+  for (const m of xColonMatch) add(`https://x.com/${m[1]}`);
 
   // TikTok (TT: / TikTok:)
   const ttShort = bio.matchAll(/\bTT[:\s]*@?([a-zA-Z0-9_.]+)/gi);
@@ -1005,6 +1008,18 @@ export async function POST(request: NextRequest) {
           let totalVideosWritten = 0;
 
           for (const [username, data] of influencerMap) {
+            // Skip influencers with 0 videos — empty/dead accounts
+            if (data.videos.length === 0 && !data.profile) {
+              console.log(`[Scrape] Skipping @${username} — no videos, no profile data`);
+              processedCount++;
+              continue;
+            }
+            if (data.videos.length === 0) {
+              console.log(`[Scrape] Skipping @${username} — 0 videos (empty/private account)`);
+              processedCount++;
+              continue;
+            }
+
             const allItems = data.profile
               ? [data.profile, ...data.videos]
               : [...data.videos];

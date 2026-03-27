@@ -580,17 +580,20 @@ export default function DataScraperPage() {
                     New Import
                   </Button>
                 </>
-              ) : saving ? (
-                <span className="text-sm text-muted-foreground">
-                  Saving in background — you can navigate away
-                </span>
               ) : (
                 <>
+                  <span className="flex items-center gap-1.5 text-sm text-emerald-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    Auto-saved to cloud
+                  </span>
                   <Button variant="outline" onClick={handleDiscard}>
                     Discard
                   </Button>
-                  <Button onClick={handleSave} disabled={saving}>
-                    Save Import
+                  <Button
+                    variant="outline"
+                    onClick={() => router.push("/influencers")}
+                  >
+                    View Influencers
                   </Button>
                 </>
               )}

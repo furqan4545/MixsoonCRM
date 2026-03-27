@@ -376,7 +376,14 @@ export default function AiFilterRunPage() {
             )}
             <div>
               <p className="text-lg font-bold">{inf.displayName ?? inf.username}</p>
-              <p className="text-sm text-muted-foreground">@{inf.username}</p>
+              <a
+                href={`https://www.tiktok.com/@${inf.username}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-600 hover:underline"
+              >
+                @{inf.username} ↗
+              </a>
               <div className="mt-1 flex gap-1.5 flex-wrap">
                 {inf.analytics?.influencerGender && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">{inf.analytics.influencerGender}</span>}
                 {inf.analytics?.influencerAgeRange && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">{inf.analytics.influencerAgeRange}</span>}

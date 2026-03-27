@@ -160,13 +160,17 @@ export function AiFilterPanel({
         <div>
           <h2 className="text-lg font-semibold">AI Filter</h2>
           <p className="text-sm text-muted-foreground">
-            Select a saved campaign filter, tweak keywords, then run Gemini
-            scoring.
+            Set target & avoid keywords, adjust strictness, then run Gemini scoring.
           </p>
         </div>
-        <Button variant="outline" onClick={() => router.push("/campaigns")}>
-          Manage Campaign Filters
-        </Button>
+        {latestRuns.length > 0 && (
+          <Button
+            variant="outline"
+            onClick={() => router.push(`/ai-filter/${latestRuns[0].id}`)}
+          >
+            View Latest Results →
+          </Button>
+        )}
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
