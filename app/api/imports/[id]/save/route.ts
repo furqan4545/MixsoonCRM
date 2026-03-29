@@ -7,8 +7,9 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let currentUser;
   try {
-    await requirePermission("imports", "write");
+    currentUser = await requirePermission("imports", "write");
   } catch {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -63,6 +64,18 @@ export async function POST(
   });
 
   processGcsSave(id).catch((err) => console.error("[save] Unhandled:", err));
+
+  // Auto-assign uploading user as PIC to all influencers in this import
+  if (currentUser?.id && importRecord.influencers.length > 0) {
+    const infIds = importRecord.influencers.map((i) => i.id);
+    prisma.influencerPic.createMany({
+      data: infIds.map((infId) => ({
+        influencerId: infId,
+        userId: currentUser.id,
+      })),
+      skipDuplicates: true,
+    }).catch((err) => console.error("[save] PIC assignment error:", err));
+  }
 
   return NextResponse.json({ started: true, total }, { status: 202 });
 }
