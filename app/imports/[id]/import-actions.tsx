@@ -1,9 +1,8 @@
 "use client";
 
-import { CloudUpload, Trash2 } from "lucide-react";
+import { Trash2, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { startSaveImport } from "@/components/save-progress-bar";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,45 +13,59 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 
 export function ImportActions({
   importId,
   status,
   influencerCount,
+  influencerIds,
 }: {
   importId: string;
   status: string;
   influencerCount: number;
+  influencerIds: string[];
 }) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const isDraft = status === "DRAFT";
-  const isProcessing = status === "PROCESSING";
-  const isCompleted = status === "COMPLETED";
-  const isFailed = status === "FAILED";
+  // PIC assignment
+  const [picUsers, setPicUsers] = useState<{ id: string; name: string | null; email: string; role: string }[] | null>(null);
+  const [assigning, setAssigning] = useState(false);
 
-  async function handleSaveToCloud() {
-    setSaving(true);
+  const fetchPicUsers = useCallback(async () => {
+    if (picUsers) return;
     try {
-      const res = await fetch(`/api/imports/${importId}/save`, {
+      const res = await fetch("/api/users");
+      if (res.ok) setPicUsers(await res.json());
+    } catch {}
+  }, [picUsers]);
+
+  const assignPic = async (userId: string) => {
+    if (influencerIds.length === 0) return;
+    setAssigning(true);
+    try {
+      const res = await fetch("/api/influencers/pics", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ influencerIds, userIds: [userId] }),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Save failed");
-      }
-      startSaveImport(importId);
-      router.refresh();
-    } catch (e) {
-      console.error("Save error:", e);
-      alert(e instanceof Error ? e.message : "Failed to save to cloud.");
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      toast.success(data.message);
+    } catch {
+      toast.error("Failed to assign PIC");
     } finally {
-      setSaving(false);
+      setAssigning(false);
     }
-  }
+  };
 
   async function handleDelete(mode: "soft" | "hard") {
     setDeleting(true);
@@ -78,23 +91,31 @@ export function ImportActions({
 
   return (
     <div className="flex items-center gap-2">
-      {(isDraft || isCompleted || isFailed) && (
-        <Button
-          size="sm"
-          onClick={handleSaveToCloud}
-          disabled={saving || influencerCount === 0}
-        >
-          <CloudUpload className="mr-2 h-4 w-4" />
-          {saving
-            ? "Saving…"
-            : isDraft
-              ? "Save to cloud"
-              : "Save to cloud again"}
-        </Button>
-      )}
-      {isProcessing && (
-        <span className="text-sm text-muted-foreground">Saving to cloud…</span>
-      )}
+      {/* Assign PIC to all influencers in this import */}
+      <DropdownMenu onOpenChange={(open) => open && fetchPicUsers()}>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" disabled={assigning || influencerCount === 0}>
+            <UserPlus className="mr-2 h-4 w-4" />
+            {assigning ? "Assigning..." : "Assign PIC"}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
+          {!picUsers && <DropdownMenuItem disabled>Loading users...</DropdownMenuItem>}
+          {picUsers && picUsers.length === 0 && <DropdownMenuItem disabled>No users found</DropdownMenuItem>}
+          {picUsers?.map((u) => (
+            <DropdownMenuItem key={u.id} onClick={() => assignPic(u.id)}>
+              <div className="flex items-center gap-2">
+                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[8px] font-bold text-white">
+                  {(u.name ?? u.email).charAt(0).toUpperCase()}
+                </div>
+                <span>{u.name ?? u.email}</span>
+                <span className="text-[10px] text-muted-foreground">{u.role}</span>
+              </div>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogTrigger asChild>
           <Button variant="destructive" size="sm">
@@ -112,15 +133,13 @@ export function ImportActions({
           </DialogHeader>
 
           <div className="space-y-3 py-4">
-            {/* Soft Delete */}
             <div className="rounded-lg border p-4">
               <h4 className="text-sm font-semibold">
                 Remove import record only
               </h4>
               <p className="mt-1 text-xs text-muted-foreground">
                 Deletes the import entry but keeps all {influencerCount}{" "}
-                influencers and their videos in the database. The influencers
-                will be unlinked from this import.
+                influencers and their videos in the database.
               </p>
               <Button
                 variant="outline"
@@ -133,7 +152,6 @@ export function ImportActions({
               </Button>
             </div>
 
-            {/* Hard Delete */}
             <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-4">
               <h4 className="text-sm font-semibold text-destructive">
                 Delete everything
