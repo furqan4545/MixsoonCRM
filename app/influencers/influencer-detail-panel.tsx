@@ -1633,6 +1633,7 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
               socialLinksJson={influencer.socialLinks}
               onEmailChange={(newEmail) => saveField("email", newEmail)}
               onPhoneChange={(newPhone) => saveField("phone", newPhone)}
+              onBioLinkUrlChange={(newUrl) => saveField("bioLinkUrl", newUrl)}
             />
             <div className="mt-2 rounded-lg border bg-muted/30 px-3 py-2">
               <p className="text-xs font-medium text-muted-foreground mb-1">Bio</p>

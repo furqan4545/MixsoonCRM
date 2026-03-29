@@ -23,6 +23,7 @@ export async function PATCH(
     if ("email" in body) data.email = body.email ?? null;
     if ("phone" in body) data.phone = body.phone ?? null;
     if ("biolink" in body) data.biolink = body.biolink ?? null;
+    if ("bioLinkUrl" in body) data.bioLinkUrl = body.bioLinkUrl ?? null;
     if ("language" in body) data.language = body.language ?? null;
     if ("notes" in body) data.notes = body.notes ?? null;
     if ("aiScore" in body) data.aiScore = body.aiScore != null ? Number(body.aiScore) : null;

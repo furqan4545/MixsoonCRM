@@ -127,6 +127,7 @@ interface InfluencerContactSectionProps {
   socialLinksJson: string | null;
   onEmailChange?: (newEmail: string | null) => void;
   onPhoneChange?: (newPhone: string | null) => void;
+  onBioLinkUrlChange?: (newUrl: string | null) => void;
 }
 
 export function InfluencerContactSection({
@@ -137,6 +138,7 @@ export function InfluencerContactSection({
   socialLinksJson,
   onEmailChange,
   onPhoneChange,
+  onBioLinkUrlChange,
 }: InfluencerContactSectionProps) {
   const [editingEmail, setEditingEmail] = useState(false);
   const [emailInput, setEmailInput] = useState(email ?? "");
@@ -145,6 +147,10 @@ export function InfluencerContactSection({
   const [editingPhone, setEditingPhone] = useState(false);
   const [phoneInput, setPhoneInput] = useState(phone ?? "");
   const [displayPhone, setDisplayPhone] = useState(phone);
+
+  const [editingBioLink, setEditingBioLink] = useState(false);
+  const [bioLinkInput, setBioLinkInput] = useState(bioLinkUrl ?? "");
+  const [displayBioLink, setDisplayBioLink] = useState(bioLinkUrl);
 
   useEffect(() => {
     setDisplayEmail(email);
@@ -155,6 +161,11 @@ export function InfluencerContactSection({
     setDisplayPhone(phone);
     setPhoneInput(phone ?? "");
   }, [phone]);
+
+  useEffect(() => {
+    setDisplayBioLink(bioLinkUrl);
+    setBioLinkInput(bioLinkUrl ?? "");
+  }, [bioLinkUrl]);
 
   const handleSaveEmail = useCallback(() => {
     const trimmed = emailInput.trim();
@@ -176,6 +187,16 @@ export function InfluencerContactSection({
     }
   }, [phoneInput, displayPhone, onPhoneChange]);
 
+  const handleSaveBioLink = useCallback(() => {
+    const trimmed = bioLinkInput.trim();
+    const newUrl = trimmed || null;
+    setEditingBioLink(false);
+    if (trimmed !== (displayBioLink ?? "")) {
+      setDisplayBioLink(newUrl);
+      onBioLinkUrlChange?.(newUrl);
+    }
+  }, [bioLinkInput, displayBioLink, onBioLinkUrlChange]);
+
   let socialUrls: string[] = [];
   try {
     if (socialLinksJson) {
@@ -190,7 +211,7 @@ export function InfluencerContactSection({
     // ignore
   }
 
-  const hasAny = displayEmail || displayPhone || bioLinkUrl || socialUrls.length > 0 || onEmailChange || onPhoneChange;
+  const hasAny = displayEmail || displayPhone || displayBioLink || socialUrls.length > 0 || onEmailChange || onPhoneChange || onBioLinkUrlChange;
   if (!hasAny) return null;
   const composeHref = displayEmail
     ? `/email/compose?to=${encodeURIComponent(displayEmail)}${influencerId ? `&influencerId=${influencerId}` : ""}`
@@ -247,29 +268,24 @@ export function InfluencerContactSection({
           </div>
         ) : displayEmail ? (
           <div className="flex items-center gap-2">
-            <div className="flex-1">
-              <ContactRow
-                icon={<Mail className="h-4 w-4" />}
-                label="email"
-                href={composeHref}
-                copyValue={displayEmail!}
-                displayText={displayEmail!}
-              />
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+              <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
+              {onEmailChange ? (
+                <button
+                  type="button"
+                  onClick={() => { setEmailInput(displayEmail ?? ""); setEditingEmail(true); }}
+                  className="min-w-0 truncate text-sm text-blue-600 hover:underline dark:text-blue-400 text-left"
+                  title="Click to edit email"
+                >
+                  {displayEmail}
+                </button>
+              ) : (
+                <span className="min-w-0 truncate text-sm">{displayEmail}</span>
+              )}
+              <div className="ml-auto shrink-0">
+                <CopyButton value={displayEmail!} label="email" />
+              </div>
             </div>
-            {onEmailChange && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => {
-                  setEmailInput(displayEmail ?? "");
-                  setEditingEmail(true);
-                }}
-                title="Edit email"
-              >
-                <Edit2 className="h-3.5 w-3.5 text-muted-foreground" />
-              </Button>
-            )}
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -356,17 +372,66 @@ export function InfluencerContactSection({
             <span>Add phone number</span>
           </button>
         ) : null}
-        {bioLinkUrl && (
-          <ContactRow
-            icon={<Link2 className="h-4 w-4" />}
-            label="bio link"
-            href={bioLinkUrl}
-            copyValue={bioLinkUrl}
-            displayText={
-              bioLinkUrl.replace(/^https?:\/\//, "").split("/")[0] ?? bioLinkUrl
-            }
-          />
-        )}
+        {editingBioLink ? (
+          <div className="flex items-center gap-2">
+            <div className="flex flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+              <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                autoFocus
+                type="url"
+                value={bioLinkInput}
+                onChange={(e) => setBioLinkInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveBioLink();
+                  if (e.key === "Escape") { setEditingBioLink(false); setBioLinkInput(displayBioLink ?? ""); }
+                }}
+                placeholder="https://linktr.ee/username"
+                className="h-6 flex-1 bg-transparent text-sm outline-none"
+              />
+            </div>
+            <Button type="button" variant="default" size="sm" className="shrink-0 gap-1" onClick={handleSaveBioLink}>
+              <Save className="h-3.5 w-3.5" /> Save
+            </Button>
+            <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => { setEditingBioLink(false); setBioLinkInput(displayBioLink ?? ""); }}>
+              Cancel
+            </Button>
+          </div>
+        ) : displayBioLink ? (
+          <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+              <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+              {onBioLinkUrlChange ? (
+                <button
+                  type="button"
+                  onClick={() => { setBioLinkInput(displayBioLink ?? ""); setEditingBioLink(true); }}
+                  className="min-w-0 truncate text-sm text-blue-600 hover:underline dark:text-blue-400 text-left"
+                  title="Click to edit link"
+                >
+                  {displayBioLink.replace(/^https?:\/\//, "").split("/")[0] ?? displayBioLink}
+                </button>
+              ) : (
+                <a href={displayBioLink} target="_blank" rel="noopener noreferrer" className="min-w-0 truncate text-sm text-blue-600 hover:underline dark:text-blue-400">
+                  {displayBioLink.replace(/^https?:\/\//, "").split("/")[0] ?? displayBioLink}
+                </a>
+              )}
+              <div className="ml-auto flex items-center gap-1 shrink-0">
+                <CopyButton value={displayBioLink} label="bio link" />
+                <a href={displayBioLink} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground" title="Open link">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+            </div>
+          </div>
+        ) : onBioLinkUrlChange ? (
+          <button
+            type="button"
+            onClick={() => { setBioLinkInput(""); setEditingBioLink(true); }}
+            className="flex w-full items-center gap-2 rounded-lg border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-colors"
+          >
+            <Link2 className="h-4 w-4" />
+            <span>Add bio link</span>
+          </button>
+        ) : null}
         {socialUrls.map((url, i) => (
           <div
             key={`${url}-${i}`}
