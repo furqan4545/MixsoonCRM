@@ -347,20 +347,18 @@ export function InfluencerContactSection({
           </div>
         ) : displayPhone ? (
           <div className="flex items-center gap-2">
-            <div className="flex-1">
-              <ContactRow
-                icon={<Phone className="h-4 w-4" />}
-                label="phone"
-                href={`tel:${displayPhone.replace(/\s/g, "")}`}
-                copyValue={displayPhone}
-                displayText={displayPhone}
-              />
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+              <Phone className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 truncate text-sm">{displayPhone}</span>
+              <div className="ml-auto flex items-center gap-1 shrink-0">
+                <CopyButton value={displayPhone} label="phone" />
+                {onPhoneChange && (
+                  <Button type="button" variant="ghost" size="icon-xs" onClick={() => { setPhoneInput(displayPhone ?? ""); setEditingPhone(true); }} title="Edit phone">
+                    <Edit2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Button>
+                )}
+              </div>
             </div>
-            {onPhoneChange && (
-              <Button type="button" variant="ghost" size="icon-xs" onClick={() => { setPhoneInput(displayPhone ?? ""); setEditingPhone(true); }} title="Edit phone">
-                <Edit2 className="h-3.5 w-3.5 text-muted-foreground" />
-              </Button>
-            )}
           </div>
         ) : onPhoneChange ? (
           <button
@@ -400,25 +398,19 @@ export function InfluencerContactSection({
           <div className="flex items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
               <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-              {onBioLinkUrlChange ? (
-                <button
-                  type="button"
-                  onClick={() => { setBioLinkInput(displayBioLink ?? ""); setEditingBioLink(true); }}
-                  className="min-w-0 truncate text-sm text-blue-600 hover:underline dark:text-blue-400 text-left"
-                  title="Click to edit link"
-                >
-                  {displayBioLink.replace(/^https?:\/\//, "").split("/")[0] ?? displayBioLink}
-                </button>
-              ) : (
-                <a href={displayBioLink} target="_blank" rel="noopener noreferrer" className="min-w-0 truncate text-sm text-blue-600 hover:underline dark:text-blue-400">
-                  {displayBioLink.replace(/^https?:\/\//, "").split("/")[0] ?? displayBioLink}
-                </a>
-              )}
+              <a href={displayBioLink} target="_blank" rel="noopener noreferrer" className="min-w-0 truncate text-sm text-blue-600 hover:underline dark:text-blue-400">
+                {displayBioLink.replace(/^https?:\/\//, "").split("/")[0] ?? displayBioLink}
+              </a>
               <div className="ml-auto flex items-center gap-1 shrink-0">
                 <CopyButton value={displayBioLink} label="bio link" />
                 <a href={displayBioLink} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground" title="Open link">
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
+                {onBioLinkUrlChange && (
+                  <Button type="button" variant="ghost" size="icon-xs" onClick={() => { setBioLinkInput(displayBioLink ?? ""); setEditingBioLink(true); }} title="Edit link">
+                    <Edit2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Button>
+                )}
               </div>
             </div>
           </div>
