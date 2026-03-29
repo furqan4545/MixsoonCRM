@@ -1345,6 +1345,20 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
   const lastPostedAt = influencer.videos.length > 0 ? influencer.videos[0].uploadedAt : null;
   const daysSincePost = lastPostedAt ? Math.floor((Date.now() - new Date(lastPostedAt).getTime()) / 86400000) : null;
 
+  // Average posting frequency — avg days between consecutive posts
+  const avgPostingGap = (() => {
+    const dates = influencer.videos
+      .map((v) => v.uploadedAt ? new Date(v.uploadedAt).getTime() : null)
+      .filter((d): d is number => d != null)
+      .sort((a, b) => b - a); // desc
+    if (dates.length < 2) return null;
+    let totalGap = 0;
+    for (let i = 0; i < dates.length - 1; i++) {
+      totalGap += dates[i] - dates[i + 1];
+    }
+    return Math.round(totalGap / (dates.length - 1) / 86400000);
+  })();
+
   const saveField = useCallback(
     async (field: string, value: unknown) => {
       setSaving(true);
@@ -1540,27 +1554,37 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
           </div>
         </div>
 
-        {/* Last Posted */}
+        {/* Posting Activity */}
         {lastPostedAt && (
-          <div className={`mt-3 flex items-center justify-between rounded-lg border px-4 py-2.5 ${daysSincePost != null && daysSincePost > 30 ? "border-red-200 bg-red-50/50" : "bg-background"}`}>
-            <div className="flex items-center gap-2">
-              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Last Posted</span>
+          <div className={`mt-3 rounded-lg border overflow-hidden ${daysSincePost != null && daysSincePost > 30 ? "border-red-200" : ""}`}>
+            <div className={`flex items-center justify-between px-4 py-2.5 ${daysSincePost != null && daysSincePost > 30 ? "bg-red-50/50" : "bg-background"}`}>
+              <div className="flex items-center gap-2">
+                <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Last Posted</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">
+                  {new Date(lastPostedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                </span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  daysSincePost != null && daysSincePost > 30
+                    ? "bg-red-100 text-red-700"
+                    : daysSincePost != null && daysSincePost > 14
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-emerald-100 text-emerald-700"
+                }`}>
+                  {daysSincePost === 0 ? "Today" : daysSincePost === 1 ? "1 day ago" : `${daysSincePost} days ago`}
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">
-                {new Date(lastPostedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-              </span>
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                daysSincePost != null && daysSincePost > 30
-                  ? "bg-red-100 text-red-700"
-                  : daysSincePost != null && daysSincePost > 14
-                    ? "bg-amber-100 text-amber-700"
-                    : "bg-emerald-100 text-emerald-700"
-              }`}>
-                {daysSincePost === 0 ? "Today" : daysSincePost === 1 ? "1 day ago" : `${daysSincePost} days ago`}
-              </span>
-            </div>
+            {avgPostingGap != null && (
+              <div className="flex items-center justify-between border-t px-4 py-2.5 bg-background">
+                <span className="text-xs text-muted-foreground">Avg Posting Frequency</span>
+                <span className="text-sm font-medium">
+                  {avgPostingGap === 0 ? "Daily" : avgPostingGap === 1 ? "Every day" : avgPostingGap <= 3 ? `Every ${avgPostingGap} days` : avgPostingGap <= 7 ? `~${Math.round(avgPostingGap)} days` : avgPostingGap <= 14 ? "~Weekly" : avgPostingGap <= 30 ? `~${Math.round(avgPostingGap / 7)}x/month` : `~${avgPostingGap} days`}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
