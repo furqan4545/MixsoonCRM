@@ -126,6 +126,7 @@ interface InfluencerContactSectionProps {
   bioLinkUrl: string | null;
   socialLinksJson: string | null;
   onEmailChange?: (newEmail: string | null) => void;
+  onPhoneChange?: (newPhone: string | null) => void;
 }
 
 export function InfluencerContactSection({
@@ -135,17 +136,25 @@ export function InfluencerContactSection({
   bioLinkUrl,
   socialLinksJson,
   onEmailChange,
+  onPhoneChange,
 }: InfluencerContactSectionProps) {
   const [editingEmail, setEditingEmail] = useState(false);
   const [emailInput, setEmailInput] = useState(email ?? "");
-  // Track the displayed email locally so it updates immediately after save
   const [displayEmail, setDisplayEmail] = useState(email);
 
-  // Sync with parent prop when it changes (e.g. after router.refresh())
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneInput, setPhoneInput] = useState(phone ?? "");
+  const [displayPhone, setDisplayPhone] = useState(phone);
+
   useEffect(() => {
     setDisplayEmail(email);
     setEmailInput(email ?? "");
   }, [email]);
+
+  useEffect(() => {
+    setDisplayPhone(phone);
+    setPhoneInput(phone ?? "");
+  }, [phone]);
 
   const handleSaveEmail = useCallback(() => {
     const trimmed = emailInput.trim();
@@ -156,6 +165,17 @@ export function InfluencerContactSection({
       onEmailChange?.(newEmail);
     }
   }, [emailInput, displayEmail, onEmailChange]);
+
+  const handleSavePhone = useCallback(() => {
+    const trimmed = phoneInput.trim();
+    const newPhone = trimmed || null;
+    setEditingPhone(false);
+    if (trimmed !== (displayPhone ?? "")) {
+      setDisplayPhone(newPhone);
+      onPhoneChange?.(newPhone);
+    }
+  }, [phoneInput, displayPhone, onPhoneChange]);
+
   let socialUrls: string[] = [];
   try {
     if (socialLinksJson) {
@@ -170,7 +190,7 @@ export function InfluencerContactSection({
     // ignore
   }
 
-  const hasAny = displayEmail || phone || bioLinkUrl || socialUrls.length > 0 || onEmailChange;
+  const hasAny = displayEmail || displayPhone || bioLinkUrl || socialUrls.length > 0 || onEmailChange || onPhoneChange;
   if (!hasAny) return null;
   const composeHref = displayEmail
     ? `/email/compose?to=${encodeURIComponent(displayEmail)}${influencerId ? `&influencerId=${influencerId}` : ""}`
@@ -282,15 +302,60 @@ export function InfluencerContactSection({
             <span>Add email address</span>
           </button>
         ) : null}
-        {phone && (
-          <ContactRow
-            icon={<Phone className="h-4 w-4" />}
-            label="phone"
-            href={`tel:${phone.replace(/\s/g, "")}`}
-            copyValue={phone}
-            displayText={phone}
-          />
-        )}
+        {editingPhone ? (
+          <div className="flex items-center gap-2">
+            <div className="flex flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+              <Phone className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                autoFocus
+                type="tel"
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSavePhone();
+                  if (e.key === "Escape") {
+                    setEditingPhone(false);
+                    setPhoneInput(displayPhone ?? "");
+                  }
+                }}
+                placeholder="+1 555 123 4567"
+                className="h-6 flex-1 bg-transparent text-sm outline-none"
+              />
+            </div>
+            <Button type="button" variant="default" size="sm" className="shrink-0 gap-1" onClick={handleSavePhone}>
+              <Save className="h-3.5 w-3.5" /> Save
+            </Button>
+            <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => { setEditingPhone(false); setPhoneInput(displayPhone ?? ""); }}>
+              Cancel
+            </Button>
+          </div>
+        ) : displayPhone ? (
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <ContactRow
+                icon={<Phone className="h-4 w-4" />}
+                label="phone"
+                href={`tel:${displayPhone.replace(/\s/g, "")}`}
+                copyValue={displayPhone}
+                displayText={displayPhone}
+              />
+            </div>
+            {onPhoneChange && (
+              <Button type="button" variant="ghost" size="icon-xs" onClick={() => { setPhoneInput(displayPhone ?? ""); setEditingPhone(true); }} title="Edit phone">
+                <Edit2 className="h-3.5 w-3.5 text-muted-foreground" />
+              </Button>
+            )}
+          </div>
+        ) : onPhoneChange ? (
+          <button
+            type="button"
+            onClick={() => { setPhoneInput(""); setEditingPhone(true); }}
+            className="flex w-full items-center gap-2 rounded-lg border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-colors"
+          >
+            <Phone className="h-4 w-4" />
+            <span>Add phone number</span>
+          </button>
+        ) : null}
         {bioLinkUrl && (
           <ContactRow
             icon={<Link2 className="h-4 w-4" />}

@@ -151,6 +151,76 @@ function formatEmailDate(dateStr: string): string {
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+/* ── Inline editable field ── */
+function EditableField({
+  value,
+  onSave,
+  label,
+  type = "text",
+  placeholder,
+  displayValue,
+  className,
+}: {
+  value: string | number | null;
+  onSave: (val: string | number | null) => void;
+  label: string;
+  type?: "text" | "number" | "textarea";
+  placeholder?: string;
+  displayValue?: string;
+  className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value ?? ""));
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (type === "number") {
+      const num = trimmed ? Number(trimmed) : null;
+      if (num !== value) onSave(num);
+    } else {
+      const newVal = trimmed || null;
+      if (newVal !== value) onSave(newVal);
+    }
+  };
+
+  if (editing) {
+    const shared = {
+      ref: inputRef as React.RefObject<HTMLInputElement>,
+      value: draft,
+      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(e.target.value),
+      onBlur: commit,
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === "Enter" && type !== "textarea") commit();
+        if (e.key === "Escape") { setEditing(false); setDraft(String(value ?? "")); }
+      },
+      placeholder: placeholder ?? label,
+      className: "w-full bg-transparent text-sm outline-none",
+    };
+    return type === "textarea" ? (
+      <textarea {...shared} ref={inputRef as React.RefObject<HTMLTextAreaElement>} rows={3} className={`w-full rounded-lg border bg-background p-2 text-sm outline-none focus:ring-1 focus:ring-ring resize-none ${className ?? ""}`} />
+    ) : (
+      <input {...shared} type={type} className={`h-7 rounded border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring ${className ?? ""}`} />
+    );
+  }
+
+  const display = displayValue ?? (value != null ? String(value) : null);
+  return (
+    <span
+      onClick={() => { setDraft(String(value ?? "")); setEditing(true); }}
+      className={`cursor-pointer rounded px-1 -mx-1 hover:bg-accent transition-colors ${className ?? ""}`}
+      title={`Click to edit ${label}`}
+    >
+      {display || <span className="text-muted-foreground/50">{placeholder ?? `Add ${label}`}</span>}
+    </span>
+  );
+}
+
 /* ── Stage dropdown ── */
 function StageDropdown({
   currentStage,
@@ -1340,10 +1410,6 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
               {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             </Button>
           )}
-          <Button variant="ghost" size="sm" className="gap-1.5 text-xs">
-            <Edit2 className="h-3.5 w-3.5" />
-            Edit
-          </Button>
           {influencer.email && (
             <Button asChild variant="ghost" size="icon" className="h-8 w-8">
               <a href={`/email/compose?to=${encodeURIComponent(influencer.email)}&influencerId=${influencer.id}`}>
@@ -1381,13 +1447,23 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold truncate">
-                {influencer.displayName ?? influencer.username}
+                <EditableField
+                  value={influencer.displayName}
+                  onSave={(val) => saveField("displayName", val)}
+                  label="display name"
+                  placeholder={influencer.username}
+                  displayValue={influencer.displayName ?? influencer.username}
+                />
               </h2>
-              {influencer.aiScore != null && (
-                <div className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-emerald-600 bg-emerald-50 text-[10px] font-bold text-emerald-700">
-                  {influencer.aiScore}
-                </div>
-              )}
+              <EditableField
+                value={influencer.aiScore}
+                onSave={(val) => saveField("aiScore", val)}
+                label="AI score"
+                type="number"
+                className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-emerald-600 bg-emerald-50 text-[10px] font-bold text-emerald-700"
+                displayValue={influencer.aiScore != null ? String(influencer.aiScore) : undefined}
+                placeholder="—"
+              />
             </div>
             <p className="text-sm text-muted-foreground">
               @{influencer.username}
@@ -1427,7 +1503,14 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
               Engagement
             </p>
             <p className="mt-0.5 text-lg font-bold">
-              {influencer.engagementRate != null ? `${influencer.engagementRate}%` : "—"}
+              <EditableField
+                value={influencer.engagementRate}
+                onSave={(val) => saveField("engagementRate", val)}
+                label="engagement rate"
+                type="number"
+                displayValue={influencer.engagementRate != null ? `${influencer.engagementRate}%` : undefined}
+                placeholder="—"
+              />
             </p>
           </div>
           <div className="px-3 py-3 text-center">
@@ -1435,7 +1518,14 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
               Rate
             </p>
             <p className="mt-0.5 text-lg font-bold">
-              {influencer.rate != null ? `$${influencer.rate.toLocaleString()}` : "—"}
+              <EditableField
+                value={influencer.rate}
+                onSave={(val) => saveField("rate", val)}
+                label="rate"
+                type="number"
+                displayValue={influencer.rate != null ? `$${influencer.rate.toLocaleString()}` : undefined}
+                placeholder="—"
+              />
             </p>
           </div>
           <div className="px-3 py-3 text-center">
@@ -1542,25 +1632,53 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
               bioLinkUrl={influencer.bioLinkUrl}
               socialLinksJson={influencer.socialLinks}
               onEmailChange={(newEmail) => saveField("email", newEmail)}
+              onPhoneChange={(newPhone) => saveField("phone", newPhone)}
             />
-            {influencer.biolink && (
-              <div className="mt-2 rounded-lg border bg-muted/30 px-3 py-2">
-                <p className="text-xs font-medium text-muted-foreground mb-1">Bio</p>
-                <p className="text-sm whitespace-pre-line">{influencer.biolink}</p>
-              </div>
-            )}
+            <div className="mt-2 rounded-lg border bg-muted/30 px-3 py-2">
+              <p className="text-xs font-medium text-muted-foreground mb-1">Bio</p>
+              <EditableField
+                value={influencer.biolink}
+                onSave={(val) => saveField("biolink", val)}
+                label="bio"
+                type="textarea"
+                placeholder="Add bio..."
+                className="text-sm whitespace-pre-line"
+              />
+            </div>
             <div className="mt-2 space-y-0 rounded-lg border overflow-hidden">
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <span className="text-sm text-muted-foreground">Platform</span>
-                <span className="text-sm font-medium">{influencer.platform ?? "—"}</span>
+                <span className="text-sm font-medium">
+                  <EditableField
+                    value={influencer.platform}
+                    onSave={(val) => saveField("platform", val)}
+                    label="platform"
+                    placeholder="—"
+                  />
+                </span>
               </div>
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <span className="text-sm text-muted-foreground">Language</span>
-                <span className="text-sm font-medium">{influencer.language ? getLanguageName(influencer.language) : "—"}</span>
+                <span className="text-sm font-medium">
+                  <EditableField
+                    value={influencer.language}
+                    onSave={(val) => saveField("language", val)}
+                    label="language"
+                    displayValue={influencer.language ? (getLanguageName(influencer.language) ?? undefined) : undefined}
+                    placeholder="—"
+                  />
+                </span>
               </div>
               <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-muted-foreground">Est. Region <span className="text-[10px] text-muted-foreground/50">(CDN)</span></span>
-                <span className="text-sm font-medium">{influencer.country ?? "—"}</span>
+                <span className="text-sm text-muted-foreground">Country</span>
+                <span className="text-sm font-medium">
+                  <EditableField
+                    value={influencer.country}
+                    onSave={(val) => saveField("country", val)}
+                    label="country"
+                    placeholder="—"
+                  />
+                </span>
               </div>
             </div>
           </section>
