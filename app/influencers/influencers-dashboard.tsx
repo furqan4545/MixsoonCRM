@@ -952,6 +952,9 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                     <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">
                       AI Score
                     </th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Last Posted
+                    </th>
                     {queueFilter === "ALL" && (
                       <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         Queue
@@ -1024,6 +1027,18 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                         </td>
                         <td className="px-4 py-3 text-center">
                           <AiScoreBadge score={inf.aiScore} />
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          {(() => {
+                            const lastVideo = inf.videos[0];
+                            if (!lastVideo?.uploadedAt) return <span className="text-muted-foreground">—</span>;
+                            const days = Math.floor((Date.now() - new Date(lastVideo.uploadedAt).getTime()) / 86400000);
+                            return (
+                              <span className={`${days > 30 ? "text-red-600 font-medium" : days > 14 ? "text-amber-600" : "text-muted-foreground"}`}>
+                                {days === 0 ? "Today" : days === 1 ? "1d ago" : `${days}d ago`}
+                              </span>
+                            );
+                          })()}
                         </td>
                         {queueFilter === "ALL" && (
                           <td className="px-4 py-3">

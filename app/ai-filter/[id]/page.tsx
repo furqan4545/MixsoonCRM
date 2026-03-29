@@ -362,6 +362,8 @@ export default function AiFilterRunPage() {
       const avgViews = inf.videos.length > 0
         ? Math.round(inf.videos.reduce((sum: number, v: { views?: number | null }) => sum + (v.views ?? 0), 0) / inf.videos.length)
         : null;
+      const lastPostedAt = inf.videos.length > 0 ? (inf.videos[0] as { uploadedAt?: string | null }).uploadedAt : null;
+      const daysSincePost = lastPostedAt ? Math.floor((Date.now() - new Date(lastPostedAt).getTime()) / 86400000) : null;
       return (
       <div className="w-[40%] min-w-[400px] border-l overflow-y-auto bg-background">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-background px-4 py-2">
@@ -439,6 +441,27 @@ export default function AiFilterRunPage() {
               </div>
             )}
           </div>
+
+          {/* Last Posted */}
+          {lastPostedAt && (
+            <div className={`flex items-center justify-between rounded-lg border px-3 py-2 ${daysSincePost != null && daysSincePost > 30 ? "border-red-200 bg-red-50/50" : ""}`}>
+              <span className="text-xs text-muted-foreground">Last Posted</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">
+                  {new Date(lastPostedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                </span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  daysSincePost != null && daysSincePost > 30
+                    ? "bg-red-100 text-red-700"
+                    : daysSincePost != null && daysSincePost > 14
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-emerald-100 text-emerald-700"
+                }`}>
+                  {daysSincePost === 0 ? "Today" : daysSincePost === 1 ? "1 day ago" : `${daysSincePost}d ago`}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Contact & Links */}
           {(inf.email || inf.bioLinkUrl) && (

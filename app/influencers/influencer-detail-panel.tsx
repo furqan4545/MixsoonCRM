@@ -1341,6 +1341,10 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
   const totalBookmarks = influencer.videos.reduce((sum, v) => sum + (v.bookmarks ?? 0), 0);
   const avgViews = influencer.videos.length > 0 ? Math.round(totalViews / influencer.videos.length) : 0;
 
+  // Last posted date — videos are already sorted by uploadedAt desc
+  const lastPostedAt = influencer.videos.length > 0 ? influencer.videos[0].uploadedAt : null;
+  const daysSincePost = lastPostedAt ? Math.floor((Date.now() - new Date(lastPostedAt).getTime()) / 86400000) : null;
+
   const saveField = useCallback(
     async (field: string, value: unknown) => {
       setSaving(true);
@@ -1535,6 +1539,30 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
             <p className="mt-0.5 text-lg font-bold">{influencer.conversationCount}</p>
           </div>
         </div>
+
+        {/* Last Posted */}
+        {lastPostedAt && (
+          <div className={`mt-3 flex items-center justify-between rounded-lg border px-4 py-2.5 ${daysSincePost != null && daysSincePost > 30 ? "border-red-200 bg-red-50/50" : "bg-background"}`}>
+            <div className="flex items-center gap-2">
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Last Posted</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">
+                {new Date(lastPostedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+              </span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                daysSincePost != null && daysSincePost > 30
+                  ? "bg-red-100 text-red-700"
+                  : daysSincePost != null && daysSincePost > 14
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-emerald-100 text-emerald-700"
+              }`}>
+                {daysSincePost === 0 ? "Today" : daysSincePost === 1 ? "1 day ago" : `${daysSincePost} days ago`}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
