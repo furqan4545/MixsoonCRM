@@ -658,8 +658,9 @@ function normalizeSocialLinks(
 
 // POST /api/scrape — Run Apify scrape with SSE progress; incremental writes for existing influencers
 export async function POST(request: NextRequest) {
+  let currentUser;
   try {
-    await requirePermission("data-scraper", "write");
+    currentUser = await requirePermission("data-scraper", "write");
   } catch {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -1263,6 +1264,15 @@ export async function POST(request: NextRequest) {
                 importId,
               },
             });
+
+            // Auto-assign the scraping user as PIC
+            if (currentUser?.id) {
+              await prisma.influencerPic.upsert({
+                where: { influencerId_userId: { influencerId: influencer.id, userId: currentUser.id } },
+                create: { influencerId: influencer.id, userId: currentUser.id },
+                update: {},
+              });
+            }
 
             // For "skipped" users we only refresh profile/contact; do not touch videos
             if (!isSkippedProfileOnly) {
