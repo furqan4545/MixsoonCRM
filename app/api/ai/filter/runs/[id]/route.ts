@@ -54,6 +54,10 @@ export async function GET(
                     confidence: true,
                   },
                 },
+                pics: {
+                  include: { user: { select: { id: true, name: true, email: true } } },
+                  orderBy: { assignedAt: "asc" as const },
+                },
               },
             },
           },

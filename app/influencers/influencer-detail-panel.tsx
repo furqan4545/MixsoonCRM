@@ -1332,6 +1332,10 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
   const [newTag, setNewTag] = useState("");
   const [showTagInput, setShowTagInput] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [picList, setPicList] = useState(influencer.pics ?? []);
+  const [showPicPicker, setShowPicPicker] = useState(false);
+  const [picUsers, setPicUsers] = useState<{ id: string; name: string | null; email: string; role: string }[] | null>(null);
+  const [picSearch, setPicSearch] = useState("");
   const [currentStage, setCurrentStage] = useState(influencer.pipelineStage);
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -1403,6 +1407,47 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
     const updated = tags.filter((t) => t !== tag);
     setTags(updated);
     saveField("tags", updated);
+  };
+
+  const fetchPicUsers = useCallback(async () => {
+    if (picUsers) return;
+    try {
+      const res = await fetch("/api/users");
+      if (res.ok) setPicUsers(await res.json());
+    } catch {}
+  }, [picUsers]);
+
+  const handleAssignPic = async (userId: string) => {
+    try {
+      const res = await fetch("/api/influencers/pics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ influencerIds: [influencer.id], userIds: [userId] }),
+      });
+      if (!res.ok) throw new Error();
+      const user = picUsers?.find((u) => u.id === userId);
+      if (user) setPicList((prev) => [...prev, { id: user.id, name: user.name, email: user.email }]);
+      toast.success("PIC assigned");
+      setShowPicPicker(false);
+      setPicSearch("");
+    } catch {
+      toast.error("Failed to assign PIC");
+    }
+  };
+
+  const handleRemovePic = async (userId: string) => {
+    try {
+      const res = await fetch("/api/influencers/pics", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ influencerIds: [influencer.id], userId }),
+      });
+      if (!res.ok) throw new Error();
+      setPicList((prev) => prev.filter((p) => p.id !== userId));
+      toast.success("PIC removed");
+    } catch {
+      toast.error("Failed to remove PIC");
+    }
   };
 
   return (
@@ -1733,6 +1778,81 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
                   />
                 </span>
               </div>
+            </div>
+          </section>
+
+          {/* Person in Charge */}
+          <section>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Person in Charge
+            </h3>
+            <div className="flex flex-wrap items-center gap-2">
+              {picList.map((pic) => (
+                <div
+                  key={pic.id}
+                  className="flex items-center gap-1.5 rounded-full border bg-blue-50 pl-1 pr-2 py-0.5"
+                >
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[9px] font-bold text-white">
+                    {(pic.name ?? pic.email).charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-xs font-medium text-blue-800">{pic.name ?? pic.email}</span>
+                  <button onClick={() => handleRemovePic(pic.id)} className="text-blue-400 hover:text-blue-700">
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              {showPicPicker ? (
+                <div className="relative">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={picSearch}
+                    onChange={(e) => { setPicSearch(e.target.value); fetchPicUsers(); }}
+                    onFocus={fetchPicUsers}
+                    onKeyDown={(e) => { if (e.key === "Escape") { setShowPicPicker(false); setPicSearch(""); } }}
+                    placeholder="Search by name or email..."
+                    className="h-7 w-48 rounded border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  {picUsers && (
+                    <div className="absolute top-8 left-0 z-50 w-56 max-h-48 overflow-y-auto rounded-lg border bg-card shadow-lg py-1">
+                      {picUsers
+                        .filter((u) => !picList.some((p) => p.id === u.id))
+                        .filter((u) => {
+                          if (!picSearch.trim()) return true;
+                          const q = picSearch.toLowerCase();
+                          return (u.name?.toLowerCase().includes(q) ?? false) || u.email.toLowerCase().includes(q);
+                        })
+                        .map((u) => (
+                          <button
+                            key={u.id}
+                            onClick={() => handleAssignPic(u.id)}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors text-left"
+                          >
+                            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[8px] font-bold text-white">
+                              {(u.name ?? u.email).charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium truncate">{u.name ?? u.email}</p>
+                              {u.name && <p className="text-[10px] text-muted-foreground truncate">{u.email}</p>}
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">{u.role}</span>
+                          </button>
+                        ))}
+                      {picUsers.filter((u) => !picList.some((p) => p.id === u.id)).length === 0 && (
+                        <p className="px-3 py-2 text-xs text-muted-foreground">No users to add</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowPicPicker(true)}
+                  className="flex items-center gap-1 rounded-full border border-dashed px-3 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add PIC
+                </button>
+              )}
             </div>
           </section>
 

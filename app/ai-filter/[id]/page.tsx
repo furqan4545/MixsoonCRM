@@ -500,6 +500,23 @@ export default function AiFilterRunPage() {
             </div>
           )}
 
+          {/* PICs */}
+          {inf.pics && (inf.pics as { user: { id: string; name: string | null; email: string } }[]).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-1.5">Person in Charge</p>
+              <div className="flex flex-wrap gap-1.5">
+                {(inf.pics as { user: { id: string; name: string | null; email: string } }[]).map((p) => (
+                  <div key={p.user.id} className="flex items-center gap-1.5 rounded-full border bg-blue-50 pl-1 pr-2.5 py-0.5">
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[9px] font-bold text-white">
+                      {(p.user.name ?? p.user.email).charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-xs font-medium text-blue-800">{p.user.name ?? p.user.email}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Tags */}
           {inf.tags && inf.tags.length > 0 && (
             <div>

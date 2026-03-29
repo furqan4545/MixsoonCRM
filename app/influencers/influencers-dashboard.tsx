@@ -13,6 +13,7 @@ import {
   Sparkles,
   Check,
   BarChart3,
+  UserPlus,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -92,6 +93,7 @@ export interface InfluencerRow {
     influencerEthnicity: string | null;
     influencerCountry: string | null;
   } | null;
+  pics: { id: string; name: string | null; email: string }[];
   createdAt: string;
 }
 
@@ -543,6 +545,46 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
     [],
   );
 
+  // PIC assignment
+  const [picUsers, setPicUsers] = useState<{ id: string; name: string | null; email: string; role: string }[] | null>(null);
+  const [loadingPicUsers, setLoadingPicUsers] = useState(false);
+
+  const fetchPicUsers = useCallback(async () => {
+    if (picUsers) return;
+    setLoadingPicUsers(true);
+    try {
+      const res = await fetch("/api/users");
+      if (res.ok) setPicUsers(await res.json());
+    } catch {
+      toast.error("Failed to load users");
+    } finally {
+      setLoadingPicUsers(false);
+    }
+  }, [picUsers]);
+
+  const assignPic = useCallback(
+    async (userId: string) => {
+      setMoving(true);
+      try {
+        const res = await fetch("/api/influencers/pics", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ influencerIds: [...selectedRows], userIds: [userId] }),
+        });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        toast.success(data.message);
+        setSelectedRows(new Set());
+        onRefresh?.();
+      } catch {
+        toast.error("Failed to assign PIC");
+      } finally {
+        setMoving(false);
+      }
+    },
+    [selectedRows, onRefresh],
+  );
+
   const runAiFilter = useCallback(
     async (campaignId: string) => {
       setMoving(true);
@@ -808,6 +850,35 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                     Remove from Queue
                   </Button>
                 )}
+                {/* Assign PIC */}
+                <DropdownMenu onOpenChange={(open) => open && fetchPicUsers()}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={moving}
+                      className="gap-1.5 text-xs text-blue-700 border-blue-300 hover:bg-blue-50"
+                    >
+                      <UserPlus className="h-3 w-3" />
+                      Assign PIC ({selectedRows.size})
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
+                    {loadingPicUsers && <DropdownMenuItem disabled>Loading users...</DropdownMenuItem>}
+                    {picUsers && picUsers.length === 0 && <DropdownMenuItem disabled>No users found</DropdownMenuItem>}
+                    {picUsers?.map((u) => (
+                      <DropdownMenuItem key={u.id} onClick={() => assignPic(u.id)}>
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[8px] font-bold text-white">
+                            {(u.name ?? u.email).charAt(0).toUpperCase()}
+                          </div>
+                          <span>{u.name ?? u.email}</span>
+                          <span className="text-[10px] text-muted-foreground">{u.role}</span>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 {/* Move to Trash */}
                 <Button
                   variant="outline"
@@ -955,6 +1026,9 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                     <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Last Posted
                     </th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      PIC
+                    </th>
                     {queueFilter === "ALL" && (
                       <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         Queue
@@ -1039,6 +1113,28 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                               </span>
                             );
                           })()}
+                        </td>
+                        <td className="px-4 py-3">
+                          {inf.pics.length > 0 ? (
+                            <div className="flex -space-x-1.5">
+                              {inf.pics.slice(0, 3).map((pic) => (
+                                <div
+                                  key={pic.id}
+                                  title={pic.name ?? pic.email}
+                                  className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[9px] font-bold text-white ring-2 ring-card"
+                                >
+                                  {(pic.name ?? pic.email).charAt(0).toUpperCase()}
+                                </div>
+                              ))}
+                              {inf.pics.length > 3 && (
+                                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[9px] font-bold ring-2 ring-card">
+                                  +{inf.pics.length - 3}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          )}
                         </td>
                         {queueFilter === "ALL" && (
                           <td className="px-4 py-3">
