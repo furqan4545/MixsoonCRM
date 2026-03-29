@@ -4,8 +4,9 @@ import { prisma } from "../../lib/prisma";
 
 // POST /api/imports — Upload CSV, parse usernames, create import record
 export async function POST(request: NextRequest) {
+  let currentUser;
   try {
-    await requirePermission("imports", "write");
+    currentUser = await requirePermission("imports", "write");
   } catch {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -149,6 +150,26 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Auto-assign uploading user as PIC to existing influencers in this CSV
+    if (currentUser?.id) {
+      const existingUsernames = [...toRescrape, ...skipped].map((u) => u.toLowerCase().trim());
+      if (existingUsernames.length > 0) {
+        const existingInfluencers = await prisma.influencer.findMany({
+          where: { username: { in: existingUsernames } },
+          select: { id: true },
+        });
+        if (existingInfluencers.length > 0) {
+          await prisma.influencerPic.createMany({
+            data: existingInfluencers.map((inf) => ({
+              influencerId: inf.id,
+              userId: currentUser.id,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+    }
+
     return NextResponse.json({
       id: importRecord.id,
       sourceFilename: importRecord.sourceFilename,
@@ -173,13 +194,20 @@ export async function POST(request: NextRequest) {
 
 // GET /api/imports — List all imports
 export async function GET() {
+  let currentUser;
   try {
-    await requirePermission("imports", "read");
+    currentUser = await requirePermission("imports", "read");
   } catch {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   try {
+    const isAdmin = currentUser.role === "Admin";
+    const where = !isAdmin && currentUser.id
+      ? { influencers: { some: { pics: { some: { userId: currentUser.id } } } } }
+      : undefined;
+
     const imports = await prisma.import.findMany({
+      where,
       orderBy: { createdAt: "desc" },
       include: {
         _count: { select: { influencers: true } },
