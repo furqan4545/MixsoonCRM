@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { startSaveImport } from "@/components/save-progress-bar";
 import { ThumbnailImage } from "@/components/thumbnail-image";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +73,32 @@ export default function DataScraperPage() {
   const [refreshSkippedProfiles, setRefreshSkippedProfiles] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // PIC assignment for imports
+  const [picUsers, setPicUsers] = useState<{ id: string; name: string | null; email: string; role: string }[] | null>(null);
+  const [selectedPicId, setSelectedPicId] = useState<string | null>(null);
+  const [assigningPic, setAssigningPic] = useState(false);
+
+  useEffect(() => {
+    // Fetch users for PIC picker on mount
+    fetch("/api/users").then((r) => r.ok ? r.json() : []).then(setPicUsers).catch(() => {});
+  }, []);
+
+  // Auto-assign PIC when import is saved
+  useEffect(() => {
+    if (!saved || !selectedPicId || !importData || assigningPic) return;
+    setAssigningPic(true);
+    const ids = importData.influencers.map((i) => i.id);
+    if (ids.length === 0) { setAssigningPic(false); return; }
+    fetch("/api/influencers/pics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ influencerIds: ids, userIds: [selectedPicId] }),
+    })
+      .then((r) => { if (!r.ok) throw new Error(); })
+      .catch(() => {})
+      .finally(() => setAssigningPic(false));
+  }, [saved, selectedPicId, importData, assigningPic]);
 
   useEffect(() => {
     fetch("/api/imports/cleanup-drafts", { method: "POST" }).catch(() => {});
@@ -555,7 +581,26 @@ export default function DataScraperPage() {
                 </Badge>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            {/* PIC assignment */}
+            <div className="flex items-center gap-3 mt-3 p-3 rounded-lg border bg-muted/30">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Assign PIC</span>
+              <select
+                value={selectedPicId ?? ""}
+                onChange={(e) => setSelectedPicId(e.target.value || null)}
+                className="h-8 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">None (Admin sees all)</option>
+                {picUsers?.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name ?? u.email} ({u.role})</option>
+                ))}
+              </select>
+              {selectedPicId && (
+                <span className="text-xs text-muted-foreground">
+                  {saved ? (assigningPic ? "Assigning..." : "Assigned") : "Will assign on save"}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-3">
               {error && (
                 <span className="text-sm text-destructive">{error}</span>
               )}
