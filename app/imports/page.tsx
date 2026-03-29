@@ -10,11 +10,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { prisma } from "../lib/prisma";
+import { getCurrentUser } from "../lib/rbac";
 
 export const dynamic = "force-dynamic";
 
 export default async function ImportsPage() {
+  const user = await getCurrentUser();
+  const isAdmin = user?.role === "Admin";
+
+  // PIC isolation: only show imports containing influencers assigned to this PIC
+  const where = !isAdmin && user?.id
+    ? { influencers: { some: { pics: { some: { userId: user.id } } } } }
+    : undefined;
+
   const imports = await prisma.import.findMany({
+    where,
     orderBy: { createdAt: "desc" },
     include: {
       _count: { select: { influencers: true } },

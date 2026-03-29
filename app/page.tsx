@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { prisma } from "./lib/prisma";
+import { getCurrentUser } from "./lib/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -8,12 +9,28 @@ type Props = { searchParams: Promise<{ forbidden?: string }> };
 
 export default async function DashboardPage({ searchParams }: Props) {
   const { forbidden } = await searchParams;
+  const user = await getCurrentUser();
+
+  // PIC isolation: non-Admin only sees data for their assigned influencers
+  const isAdmin = user?.role === "Admin";
+  const picInfluencerFilter = !isAdmin && user?.id
+    ? { pics: { some: { userId: user.id } } }
+    : undefined;
+  const picImportFilter = !isAdmin && user?.id
+    ? { influencers: { some: { pics: { some: { userId: user.id } } } } }
+    : undefined;
+
   const [importCount, influencerCount, videoCount, recentImports] =
     await Promise.all([
-      prisma.import.count(),
-      prisma.influencer.count(),
-      prisma.video.count(),
+      prisma.import.count({ where: picImportFilter }),
+      prisma.influencer.count({ where: picInfluencerFilter }),
+      prisma.video.count({
+        where: picInfluencerFilter
+          ? { influencer: picInfluencerFilter }
+          : undefined,
+      }),
       prisma.import.findMany({
+        where: picImportFilter,
         take: 5,
         orderBy: { createdAt: "desc" },
         include: { _count: { select: { influencers: true } } },
