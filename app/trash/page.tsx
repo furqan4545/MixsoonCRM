@@ -79,6 +79,7 @@ interface InfluencerRow {
     influencerEthnicity: string | null;
     influencerCountry: string | null;
   } | null;
+  pics: { id: string; name: string | null; email: string }[];
   createdAt: string;
 }
 
