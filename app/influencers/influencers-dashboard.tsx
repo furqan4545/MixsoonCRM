@@ -130,7 +130,7 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-type QueueFilter = "ALL" | "APPROVED" | "OKISH" | "REJECTED" | "UNSCORED" | "TRASH";
+type QueueFilter = "ALL" | "APPROVED" | "OKISH" | "REJECTED" | "UNSCORED";
 
 const QUEUE_TABS: {
   key: QueueFilter;
@@ -167,12 +167,6 @@ const QUEUE_TABS: {
     label: "Unscored",
     color: "text-muted-foreground",
     activeColor: "bg-gray-500 text-white",
-  },
-  {
-    key: "TRASH",
-    label: "Trash",
-    color: "text-red-700",
-    activeColor: "bg-red-700 text-white",
   },
 ];
 
@@ -351,11 +345,10 @@ function Avatar({
 
 interface Props {
   influencers: InfluencerRow[];
-  onTrashToggle?: (isTrash: boolean) => void;
   onRefresh?: () => void;
 }
 
-export function InfluencersDashboard({ influencers, onTrashToggle, onRefresh }: Props) {
+export function InfluencersDashboard({ influencers, onRefresh }: Props) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -370,16 +363,6 @@ export function InfluencersDashboard({ influencers, onTrashToggle, onRefresh }: 
   const bulkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Count per queue
-  const [trashCount, setTrashCount] = useState(0);
-
-  // Fetch trash count separately (trashed influencers aren't in the main list)
-  useEffect(() => {
-    fetch("/api/influencers?trash=true&limit=1")
-      .then((r) => r.json())
-      .then((d) => setTrashCount(d.totalCount ?? 0))
-      .catch(() => {});
-  }, [influencers]);
-
   const queueCounts = useMemo(() => {
     const counts: Record<string, number> = {
       ALL: influencers.length,
@@ -387,7 +370,6 @@ export function InfluencersDashboard({ influencers, onTrashToggle, onRefresh }: 
       OKISH: 0,
       REJECTED: 0,
       UNSCORED: 0,
-      TRASH: trashCount,
     };
     for (const inf of influencers) {
       if (inf.queueBucket === "APPROVED") counts.APPROVED++;
@@ -396,7 +378,7 @@ export function InfluencersDashboard({ influencers, onTrashToggle, onRefresh }: 
       else counts.UNSCORED++;
     }
     return counts;
-  }, [influencers, trashCount]);
+  }, [influencers]);
 
   const filtered = useMemo(() => {
     let list = influencers;
@@ -723,7 +705,6 @@ export function InfluencersDashboard({ influencers, onTrashToggle, onRefresh }: 
                   onClick={() => {
                     setQueueFilter(tab.key);
                     setSelectedRows(new Set());
-                    onTrashToggle?.(tab.key === "TRASH");
                   }}
                   className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                     active
@@ -816,7 +797,7 @@ export function InfluencersDashboard({ influencers, onTrashToggle, onRefresh }: 
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
-                {selectedEvalIds.length > 0 && queueFilter !== "TRASH" && (
+                {selectedEvalIds.length > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -827,99 +808,35 @@ export function InfluencersDashboard({ influencers, onTrashToggle, onRefresh }: 
                     Remove from Queue
                   </Button>
                 )}
-                {/* Move to Trash — shown in normal views */}
-                {queueFilter !== "TRASH" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={moving}
-                    onClick={async () => {
-                      setMoving(true);
-                      try {
-                        const res = await fetch("/api/influencers/trash", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ ids: [...selectedRows] }),
-                        });
-                        if (!res.ok) throw new Error();
-                        const data = await res.json();
-                        toast.success(data.message);
-                        setSelectedRows(new Set());
-                        onRefresh?.();
-                      } catch {
-                        toast.error("Failed to trash influencers");
-                      } finally {
-                        setMoving(false);
-                      }
-                    }}
-                    className="gap-1.5 text-xs text-red-700 border-red-300 hover:bg-red-50"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    Move to Trash ({selectedRows.size})
-                  </Button>
-                )}
-                {/* Trash view actions: Restore + Permanent Delete */}
-                {queueFilter === "TRASH" && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={moving}
-                      onClick={async () => {
-                        setMoving(true);
-                        try {
-                          const res = await fetch("/api/influencers/trash", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ ids: [...selectedRows], restore: true }),
-                          });
-                          if (!res.ok) throw new Error();
-                          const data = await res.json();
-                          toast.success(data.message);
-                          setSelectedRows(new Set());
-                          onRefresh?.();
-                        } catch {
-                          toast.error("Failed to restore");
-                        } finally {
-                          setMoving(false);
-                        }
-                      }}
-                      className="gap-1.5 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50"
-                    >
-                      <ArrowRightLeft className="h-3 w-3" />
-                      Restore ({selectedRows.size})
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={moving}
-                      onClick={async () => {
-                        if (!confirm(`Permanently delete ${selectedRows.size} influencer(s)? This cannot be undone.`)) return;
-                        setMoving(true);
-                        try {
-                          const res = await fetch("/api/influencers/trash/permanent", {
-                            method: "DELETE",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ ids: [...selectedRows] }),
-                          });
-                          if (!res.ok) throw new Error();
-                          const data = await res.json();
-                          toast.success(data.message);
-                          setSelectedRows(new Set());
-                          onRefresh?.();
-                        } catch {
-                          toast.error("Failed to delete permanently");
-                        } finally {
-                          setMoving(false);
-                        }
-                      }}
-                      className="gap-1.5 text-xs text-red-700 border-red-700 hover:bg-red-50 font-semibold"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      Delete Permanently ({selectedRows.size})
-                    </Button>
-                  </>
-                )}
+                {/* Move to Trash */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={moving}
+                  onClick={async () => {
+                    setMoving(true);
+                    try {
+                      const res = await fetch("/api/influencers/trash", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ ids: [...selectedRows] }),
+                      });
+                      if (!res.ok) throw new Error();
+                      const data = await res.json();
+                      toast.success(data.message);
+                      setSelectedRows(new Set());
+                      onRefresh?.();
+                    } catch {
+                      toast.error("Failed to trash influencers");
+                    } finally {
+                      setMoving(false);
+                    }
+                  }}
+                  className="gap-1.5 text-xs text-red-700 border-red-300 hover:bg-red-50"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Move to Trash ({selectedRows.size})
+                </Button>
                 {/* Bulk Audience Analysis */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

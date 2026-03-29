@@ -10,9 +10,8 @@ export default function InfluencersPage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [trashMode, setTrashMode] = useState(false);
 
-  const fetchPage = useCallback(async (cursor?: string | null, trash?: boolean) => {
+  const fetchPage = useCallback(async (cursor?: string | null) => {
     const isFirst = !cursor;
     if (isFirst) setLoading(true);
     else setLoadingMore(true);
@@ -20,7 +19,6 @@ export default function InfluencersPage() {
     try {
       const params = new URLSearchParams({ limit: "50" });
       if (cursor) params.set("cursor", cursor);
-      if (trash) params.set("trash", "true");
       const res = await fetch(`/api/influencers?${params}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
@@ -41,8 +39,8 @@ export default function InfluencersPage() {
   }, []);
 
   useEffect(() => {
-    fetchPage(null, trashMode);
-  }, [fetchPage, trashMode]);
+    fetchPage(null);
+  }, [fetchPage]);
 
   // Silently update analytics data when analysis completes (no full page reload)
   useEffect(() => {
@@ -75,8 +73,7 @@ export default function InfluencersPage() {
     <>
       <InfluencersDashboard
         influencers={influencers}
-        onTrashToggle={(isTrash) => { setTrashMode(isTrash); }}
-        onRefresh={() => fetchPage(null, trashMode)}
+        onRefresh={() => fetchPage(null)}
       />
       {nextCursor && (
         <div className="flex justify-center px-6 pb-6">
@@ -117,7 +114,7 @@ function InfluencersLoadingSkeleton() {
 
       {/* Tabs skeleton */}
       <div className="mb-4 flex gap-2">
-        {Array.from({ length: 6 }).map((_, i) => (
+        {Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
             className="h-7 w-20 animate-pulse rounded-full bg-muted"

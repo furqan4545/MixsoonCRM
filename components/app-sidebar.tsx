@@ -13,6 +13,7 @@ import {
   Megaphone,
   ShieldCheck,
   Sparkles,
+  Trash2,
   UserCog,
   Users,
 } from "lucide-react";
@@ -51,6 +52,7 @@ const workspaceItems = [
   { title: "Approvals", href: "/approvals", icon: CheckSquare },
   { title: "Documents", href: "/contracts", icon: FileText },
   { title: "Alerts", href: "/alerts", icon: AlertTriangle },
+  { title: "Trash", href: "/trash", icon: Trash2 },
   { title: "Billing", href: "/billing", icon: CreditCard },
 ];
 
