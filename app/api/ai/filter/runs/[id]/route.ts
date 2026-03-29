@@ -36,6 +36,9 @@ export async function GET(
                 pipelineStage: true,
                 tags: true,
                 email: true,
+                bioLinkUrl: true,
+                rate: true,
+                notes: true,
                 videos: {
                   orderBy: { uploadedAt: "desc" as const },
                   take: 8,

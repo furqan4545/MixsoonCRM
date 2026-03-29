@@ -41,7 +41,11 @@ type Evaluation = {
     pipelineStage: string;
     tags: string[];
     email: string | null;
-    videos: { id: string; title: string | null; views: number | null; thumbnailUrl: string | null; videoUrl: string | null }[];
+    biolink: string | null;
+    bioLinkUrl: string | null;
+    rate: number | null;
+    notes: string | null;
+    videos: { id: string; title: string | null; views: number | null; bookmarks: number | null; thumbnailUrl: string | null; videoUrl: string | null }[];
     analytics: {
       influencerGender: string | null;
       influencerAgeRange: string | null;
@@ -355,6 +359,9 @@ export default function AiFilterRunPage() {
       const evalRow = allEvals.find((e) => e.influencer.id === selectedInfluencerId);
       if (!evalRow) return null;
       const inf = evalRow.influencer;
+      const avgViews = inf.videos.length > 0
+        ? Math.round(inf.videos.reduce((sum: number, v: { views?: number | null }) => sum + (v.views ?? 0), 0) / inf.videos.length)
+        : null;
       return (
       <div className="w-[40%] min-w-[400px] border-l overflow-y-auto bg-background">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-background px-4 py-2">
@@ -385,13 +392,23 @@ export default function AiFilterRunPage() {
                 @{inf.username} ↗
               </a>
               <div className="mt-1 flex gap-1.5 flex-wrap">
+                {inf.platform && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-700">{inf.platform}</span>}
                 {inf.analytics?.influencerGender && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">{inf.analytics.influencerGender}</span>}
                 {inf.analytics?.influencerAgeRange && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">{inf.analytics.influencerAgeRange}</span>}
                 {inf.analytics?.influencerEthnicity && <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">{inf.analytics.influencerEthnicity}</span>}
                 {inf.analytics?.influencerCountry && <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">{inf.analytics.influencerCountry}</span>}
+                {inf.language && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-700">{inf.language}</span>}
               </div>
             </div>
           </div>
+
+          {/* Bio */}
+          {inf.biolink && (
+            <div className="rounded-lg border p-3">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">Bio</p>
+              <p className="text-sm whitespace-pre-wrap">{inf.biolink}</p>
+            </div>
+          )}
 
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3">
@@ -407,7 +424,50 @@ export default function AiFilterRunPage() {
               <p className="text-xs text-muted-foreground">AI Score</p>
               <p className="text-lg font-bold">{evalRow.score ?? "—"}</p>
             </div>
+            <div className="rounded-lg border p-3 text-center">
+              <p className="text-xs text-muted-foreground">Avg Views</p>
+              <p className="text-lg font-bold">{formatNumber(avgViews)}</p>
+            </div>
+            <div className="rounded-lg border p-3 text-center">
+              <p className="text-xs text-muted-foreground">Videos</p>
+              <p className="text-lg font-bold">{inf.videos.length}</p>
+            </div>
+            {inf.rate != null && (
+              <div className="rounded-lg border p-3 text-center">
+                <p className="text-xs text-muted-foreground">Rate</p>
+                <p className="text-lg font-bold">${inf.rate}</p>
+              </div>
+            )}
           </div>
+
+          {/* Contact & Links */}
+          {(inf.email || inf.bioLinkUrl) && (
+            <div className="rounded-lg border p-3 space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">Contact & Links</p>
+              {inf.email && (
+                <a href={`mailto:${inf.email}`} className="flex items-center gap-1.5 text-sm text-blue-600 hover:underline">
+                  <span className="text-xs">✉</span> {inf.email}
+                </a>
+              )}
+              {inf.bioLinkUrl && (
+                <a href={inf.bioLinkUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-blue-600 hover:underline truncate">
+                  <span className="text-xs">🔗</span> {inf.bioLinkUrl}
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Tags */}
+          {inf.tags && inf.tags.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-1.5">Tags</p>
+              <div className="flex flex-wrap gap-1.5">
+                {inf.tags.map((tag: string) => (
+                  <span key={tag} className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">{tag}</span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* AI Reasons */}
           {evalRow.reasons && (
@@ -429,12 +489,20 @@ export default function AiFilterRunPage() {
             </div>
           )}
 
+          {/* Notes */}
+          {inf.notes && (
+            <div className="rounded-lg border p-3">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">Notes</p>
+              <p className="text-sm whitespace-pre-wrap">{inf.notes}</p>
+            </div>
+          )}
+
           {/* Videos */}
           {inf.videos.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-muted-foreground mb-2">Recent Videos ({inf.videos.length})</p>
               <div className="space-y-2">
-                {inf.videos.slice(0, 6).map((video) => (
+                {inf.videos.slice(0, 8).map((video: { id: string; videoUrl?: string | null; thumbnailUrl?: string | null; title?: string | null; views?: number | null; bookmarks?: number | null }) => (
                   <a
                     key={video.id}
                     href={video.videoUrl ?? "#"}
@@ -447,7 +515,10 @@ export default function AiFilterRunPage() {
                     )}
                     <div className="min-w-0 flex-1">
                       <p className="text-xs line-clamp-2">{video.title ?? "Untitled"}</p>
-                      <p className="text-[10px] text-muted-foreground">{formatNumber(video.views)} views</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {formatNumber(video.views)} views
+                        {video.bookmarks != null && <> · {formatNumber(video.bookmarks)} saves</>}
+                      </p>
                     </div>
                   </a>
                 ))}
