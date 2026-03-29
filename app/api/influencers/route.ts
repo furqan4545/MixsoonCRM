@@ -9,8 +9,9 @@ function fixThumbnailUrl(url: string | null): string | null {
 
 // GET /api/influencers — List influencers with cursor-based pagination
 export async function GET(request: NextRequest) {
+  let currentUser;
   try {
-    await requirePermission("influencers", "read");
+    currentUser = await requirePermission("influencers", "read");
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Forbidden" },
@@ -54,6 +55,11 @@ export async function GET(request: NextRequest) {
         { displayName: { contains: search, mode: "insensitive" } },
         { email: { contains: search, mode: "insensitive" } },
       ];
+    }
+
+    // PIC isolation: non-Admin users only see influencers assigned to them
+    if (currentUser.role !== "Admin") {
+      where.pics = { some: { userId: currentUser.id } };
     }
 
     // Minimal mode: for selects & approval dialogs
@@ -129,6 +135,10 @@ export async function GET(request: NextRequest) {
             mode: true,
             confidence: true,
           },
+        },
+        pics: {
+          include: { user: { select: { id: true, name: true, email: true } } },
+          orderBy: { assignedAt: "asc" },
         },
       },
     });
@@ -206,6 +216,11 @@ export async function GET(request: NextRequest) {
           campaignStatus: ca.campaign.status,
         })),
         analytics: inf.analytics ?? null,
+        pics: inf.pics.map((p) => ({
+          id: p.user.id,
+          name: p.user.name,
+          email: p.user.email,
+        })),
         createdAt: inf.createdAt.toISOString(),
       };
     });

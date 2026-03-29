@@ -128,6 +128,10 @@ export async function GET(
           influencerCountry: true,
         },
       },
+      pics: {
+        include: { user: { select: { id: true, name: true, email: true } } },
+        orderBy: { assignedAt: "asc" },
+      },
     },
   });
 

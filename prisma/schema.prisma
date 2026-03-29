@@ -54,6 +54,7 @@ model Influencer {
   comments            Comment[]
   analysisRuns        AnalysisRun[]
   analytics           InfluencerAnalytics?
+  pics                InfluencerPic[]
 
   @@index([username])
   @@index([importId])
@@ -273,6 +274,7 @@ model User {
   emailAccount EmailAccount?
   submittedApprovals ApprovalRequest[] @relation("SubmittedApprovals")
   reviewedApprovals  ApprovalRequest[] @relation("ReviewedApprovals")
+  picAssignments     InfluencerPic[]
 
   @@index([roleId])
   @@index([status])
@@ -401,6 +403,19 @@ model CampaignInfluencer {
 
   @@unique([campaignId, influencerId])
   @@index([campaignId])
+  @@index([influencerId])
+}
+
+model InfluencerPic {
+  id            String     @id @default(cuid())
+  influencerId  String
+  influencer    Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedAt    DateTime   @default(now())
+
+  @@unique([influencerId, userId])
+  @@index([userId])
   @@index([influencerId])
 }
 
