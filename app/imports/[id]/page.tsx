@@ -80,6 +80,7 @@ export default async function ImportDetailPage({
           importId={importRecord.id}
           status={importRecord.status}
           influencerCount={importRecord.influencers.length}
+          influencerIds={importRecord.influencers.map((i) => i.id)}
         />
       </div>
 
