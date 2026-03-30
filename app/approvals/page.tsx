@@ -349,7 +349,7 @@ export default function ApprovalsPage() {
                   <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Followers</th>
                   <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">Videos/Bundle</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Currency</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">$/Video</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Per Video</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap max-w-[200px]">PIC Notes</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Profile</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap max-w-[200px]">CEO Feedback</th>
@@ -417,7 +417,7 @@ export default function ApprovalsPage() {
 
                     {/* $/Video */}
                     <td className="px-3 py-2.5 text-right whitespace-nowrap font-mono text-xs">
-                      {row.ratePerVideo != null ? `$${row.ratePerVideo.toLocaleString()}` : "—"}
+                      {row.ratePerVideo != null ? `${row.currency} ${row.ratePerVideo.toLocaleString()}` : "—"}
                     </td>
 
 

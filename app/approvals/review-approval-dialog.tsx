@@ -44,8 +44,7 @@ const CONTRACT_STATUS_OPTIONS = [
   { value: "", label: "— Not set —" },
   { value: "NEGOTIATE", label: "Negotiate" },
   { value: "APPROVED", label: "Approved" },
-  { value: "DROP", label: "Drop" },
-  { value: "FINAL_DROP", label: "Final Drop" },
+  { value: "DROP", label: "Rejected" },
 ];
 
 export function ReviewApprovalDialog({
@@ -101,7 +100,7 @@ export function ReviewApprovalDialog({
         action: "update",
         ceoFeedback: current.ceoFeedback.trim() || "",
         contractStatus: current.contractStatus,
-        feedbackStatus: current.isSpecial ? "SPECIAL" : "CEO_REVIEWED",
+        feedbackStatus: current.isSpecial ? "SPECIAL" : undefined,
       };
       // Save counter rate if provided
       if (current.counterRate && Number(current.counterRate) > 0) {
@@ -324,9 +323,9 @@ export function ReviewApprovalDialog({
               )}
               {approval.ratePerVideo != null && (
                 <div>
-                  <p className="text-xs text-muted-foreground">$/Video (VAT incl.)</p>
+                  <p className="text-xs text-muted-foreground">Per Video (VAT incl.)</p>
                   <p className="text-lg font-bold">
-                    ${approval.ratePerVideo.toLocaleString()}
+                    {approval.currency} {approval.ratePerVideo.toLocaleString()}
                   </p>
                 </div>
               )}
@@ -405,7 +404,7 @@ export function ReviewApprovalDialog({
               {/* Counter rate */}
               <div>
                 <Label className="text-xs font-semibold">
-                  Counter Rate ({approval.currency})
+                  Counter Rate
                 </Label>
                 {isAdmin ? (
                   <Input
@@ -419,7 +418,7 @@ export function ReviewApprovalDialog({
                   />
                 ) : (
                   <p className="mt-1 text-lg font-bold">
-                    {counterRate ? `${approval.currency} ${Number(counterRate).toLocaleString()}` : "—"}
+                    {counterRate ? Number(counterRate).toLocaleString() : "—"}
                   </p>
                 )}
               </div>
