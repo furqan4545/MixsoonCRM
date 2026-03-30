@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -22,8 +22,9 @@ import {
   Globe,
   Users,
   TrendingUp,
-  Save,
   MapPin,
+  Star,
+  Loader2,
 } from "lucide-react";
 import type { ApprovalRow } from "./page";
 
@@ -39,13 +40,6 @@ function formatCurrency(amount: number, currency: string) {
   return `${currency} ${amount.toLocaleString()}`;
 }
 
-const FEEDBACK_STATUS_OPTIONS = [
-  { value: "REQUESTED", label: "Requested" },
-  { value: "CEO_REVIEWED", label: "CEO Reviewed" },
-  { value: "APPLIED", label: "Applied" },
-  { value: "SPECIAL", label: "Special" },
-];
-
 const CONTRACT_STATUS_OPTIONS = [
   { value: "NEGOTIATE", label: "Negotiate" },
   { value: "APPROVED", label: "Approved" },
@@ -60,25 +54,81 @@ export function ReviewApprovalDialog({
   approval,
   isAdmin = false,
 }: Props) {
-  const [mode, setMode] = useState<"view" | "counter">("view");
-  const [counterRate, setCounterRate] = useState("");
-  const [counterNotes, setCounterNotes] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // CEO feedback fields (editable by admin)
+  // CEO feedback — unified (feedback + counter-offer in one field)
   const [ceoFeedback, setCeoFeedback] = useState("");
-  const [feedbackStatus, setFeedbackStatus] = useState("REQUESTED");
+  const [counterRate, setCounterRate] = useState("");
   const [contractStatus, setContractStatus] = useState("NEGOTIATE");
-  const [savingFeedback, setSavingFeedback] = useState(false);
+  const [isSpecial, setIsSpecial] = useState(false);
+
+  // Auto-save debounce
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const lastSaved = useRef({ ceoFeedback: "", counterRate: "", contractStatus: "", isSpecial: false });
 
   // Reset editable fields when approval changes
   useEffect(() => {
     if (approval) {
-      setCeoFeedback(approval.ceoFeedback ?? "");
-      setFeedbackStatus(approval.feedbackStatus ?? "REQUESTED");
-      setContractStatus(approval.contractStatus ?? "NEGOTIATE");
+      const fb = approval.ceoFeedback ?? "";
+      const cr = approval.counterRate?.toString() ?? "";
+      const cs = approval.contractStatus ?? "NEGOTIATE";
+      const sp = approval.feedbackStatus === "SPECIAL";
+      setCeoFeedback(fb);
+      setCounterRate(cr);
+      setContractStatus(cs);
+      setIsSpecial(sp);
+      lastSaved.current = { ceoFeedback: fb, counterRate: cr, contractStatus: cs, isSpecial: sp };
     }
   }, [approval]);
+
+  // Auto-save function
+  const doAutoSave = useCallback(async () => {
+    if (!approval || !isAdmin) return;
+    const current = { ceoFeedback, counterRate, contractStatus, isSpecial };
+    // Skip if nothing changed
+    if (
+      current.ceoFeedback === lastSaved.current.ceoFeedback &&
+      current.counterRate === lastSaved.current.counterRate &&
+      current.contractStatus === lastSaved.current.contractStatus &&
+      current.isSpecial === lastSaved.current.isSpecial
+    ) return;
+
+    setAutoSaving(true);
+    try {
+      const payload: Record<string, unknown> = {
+        action: "update",
+        ceoFeedback: current.ceoFeedback.trim() || "",
+        contractStatus: current.contractStatus,
+        feedbackStatus: current.isSpecial ? "SPECIAL" : "CEO_REVIEWED",
+      };
+      // Save counter rate if provided
+      if (current.counterRate && Number(current.counterRate) > 0) {
+        payload.counterRate = parseFloat(current.counterRate);
+      }
+
+      const res = await fetch(`/api/approvals/${approval.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        lastSaved.current = current;
+      }
+    } catch {
+      // Silently fail auto-save
+    } finally {
+      setAutoSaving(false);
+    }
+  }, [approval, isAdmin, ceoFeedback, counterRate, contractStatus, isSpecial]);
+
+  // Trigger auto-save on changes (1.5s debounce)
+  useEffect(() => {
+    if (!isAdmin || !approval) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(doAutoSave, 1500);
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [ceoFeedback, counterRate, contractStatus, isSpecial, doAutoSave, isAdmin, approval]);
 
   if (!approval) return null;
 
@@ -86,24 +136,21 @@ export function ReviewApprovalDialog({
   const inf = approval.influencer;
 
   const handleAction = async (action: "approve" | "reject" | "counter") => {
-    if (action === "counter" && mode !== "counter") {
-      setMode("counter");
-      setCounterRate(approval.rate.toString());
-      setCounterNotes("");
-      return;
-    }
-
+    // For counter, must have a rate
     if (action === "counter" && (!counterRate || Number(counterRate) <= 0)) {
-      toast.error("Counter rate must be greater than 0");
+      toast.error("Enter a counter rate before sending counter-offer");
       return;
     }
 
     setLoading(true);
     try {
+      // Flush any pending auto-save first
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+
       const payload: Record<string, unknown> = { action };
       if (action === "counter") {
         payload.counterRate = parseFloat(counterRate);
-        payload.counterNotes = counterNotes.trim() || null;
+        payload.counterNotes = ceoFeedback.trim() || null;
       }
 
       const res = await fetch(`/api/approvals/${approval.id}`, {
@@ -123,41 +170,12 @@ export function ReviewApprovalDialog({
         counter: "Counter-offer sent",
       };
       toast.success(labels[action]);
-      setMode("view");
       onOpenChange(false);
       onSuccess();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSaveFeedback = async () => {
-    setSavingFeedback(true);
-    try {
-      const res = await fetch(`/api/approvals/${approval.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "update",
-          ceoFeedback: ceoFeedback.trim() || "",
-          feedbackStatus,
-          contractStatus,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to save");
-      }
-
-      toast.success("Feedback saved");
-      onSuccess();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setSavingFeedback(false);
     }
   };
 
@@ -172,7 +190,8 @@ export function ReviewApprovalDialog({
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        if (!v) setMode("view");
+        // Auto-save before close
+        if (!v && isAdmin) doAutoSave();
         onOpenChange(v);
       }}
     >
@@ -180,7 +199,15 @@ export function ReviewApprovalDialog({
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle>Review Approval</DialogTitle>
-            <StatusBadge status={approval.status} />
+            <div className="flex items-center gap-2">
+              {autoSaving && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Saving...
+                </span>
+              )}
+              <StatusBadge status={approval.status} />
+            </div>
           </div>
         </DialogHeader>
 
@@ -188,7 +215,6 @@ export function ReviewApprovalDialog({
           {/* ── Influencer detail card ── */}
           <div className="rounded-lg border bg-muted/30 p-4">
             <div className="flex items-start gap-4">
-              {/* Avatar */}
               <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-pink-500 text-xl font-bold text-white">
                 {inf.avatarProxied ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -202,7 +228,6 @@ export function ReviewApprovalDialog({
                 )}
               </div>
 
-              {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <h3 className="font-semibold text-base truncate">
@@ -242,7 +267,6 @@ export function ReviewApprovalDialog({
                   )}
                 </div>
 
-                {/* Profile links */}
                 <div className="mt-2 flex flex-wrap gap-2">
                   {inf.profileUrl && (
                     <a
@@ -307,9 +331,7 @@ export function ReviewApprovalDialog({
               )}
               {approval.totalPriceLocal != null && (
                 <div>
-                  <p className="text-xs text-muted-foreground">
-                    Total (Local)
-                  </p>
+                  <p className="text-xs text-muted-foreground">Total (Local)</p>
                   <p className="text-lg font-bold">
                     {approval.currency} {approval.totalPriceLocal.toLocaleString()}
                   </p>
@@ -363,60 +385,63 @@ export function ReviewApprovalDialog({
             </div>
           )}
 
-          {/* ── CEO Feedback Section (admin editable) ── */}
+          {/* ── CEO Review Section (simplified — unified feedback + counter) ── */}
           <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20 p-4 space-y-4">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">
-              CEO Review
-            </h4>
-
-            {/* CEO Feedback textarea */}
-            <div>
-              <Label className="text-xs font-semibold">
-                CEO Feedback
-              </Label>
-              {isAdmin ? (
-                <Textarea
-                  placeholder="Write your feedback for the PIC..."
-                  value={ceoFeedback}
-                  onChange={(e) => setCeoFeedback(e.target.value)}
-                  rows={3}
-                  className="mt-1 resize-none"
-                />
-              ) : (
-                <p className="mt-1 text-sm whitespace-pre-wrap rounded-md bg-background p-3 min-h-[60px]">
-                  {ceoFeedback || "—"}
-                </p>
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">
+                CEO Review
+              </h4>
+              {/* Star/Special toggle */}
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsSpecial(!isSpecial)}
+                  className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                    isSpecial
+                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  }`}
+                  title="Mark as special/important influencer"
+                >
+                  <Star className={`h-3.5 w-3.5 ${isSpecial ? "fill-amber-500 text-amber-500" : ""}`} />
+                  {isSpecial ? "Special" : "Mark Special"}
+                </button>
+              )}
+              {!isAdmin && isSpecial && (
+                <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-300">
+                  <Star className="mr-1 h-3 w-3 fill-amber-500 text-amber-500" />
+                  Special
+                </Badge>
               )}
             </div>
 
-            {/* Status dropdowns */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Feedback + Counter rate in one section */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Counter rate */}
               <div>
                 <Label className="text-xs font-semibold">
-                  Feedback Status
+                  Counter Rate ({approval.currency})
                 </Label>
                 {isAdmin ? (
-                  <select
-                    value={feedbackStatus}
-                    onChange={(e) => setFeedbackStatus(e.target.value)}
-                    className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    {FEEDBACK_STATUS_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 800"
+                    value={counterRate}
+                    onChange={(e) => setCounterRate(e.target.value)}
+                    className="mt-1"
+                    min={0}
+                    step="0.01"
+                  />
                 ) : (
-                  <p className="mt-1">
-                    <FeedbackBadge status={feedbackStatus} />
+                  <p className="mt-1 text-lg font-bold">
+                    {counterRate ? `${approval.currency} ${Number(counterRate).toLocaleString()}` : "—"}
                   </p>
                 )}
               </div>
+
+              {/* Contract status */}
               <div>
-                <Label className="text-xs font-semibold">
-                  Contract Status
-                </Label>
+                <Label className="text-xs font-semibold">Decision</Label>
                 {isAdmin ? (
                   <select
                     value={contractStatus}
@@ -437,28 +462,37 @@ export function ReviewApprovalDialog({
               </div>
             </div>
 
-            {/* Save Feedback button (admin only) */}
-            {isAdmin && (
-              <div className="flex justify-end">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleSaveFeedback}
-                  disabled={savingFeedback}
-                  className="border-purple-300 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:text-purple-300 dark:hover:bg-purple-900/30"
-                >
-                  <Save className="mr-1.5 h-3.5 w-3.5" />
-                  {savingFeedback ? "Saving..." : "Save Feedback"}
-                </Button>
-              </div>
-            )}
+            {/* CEO Feedback textarea */}
+            <div>
+              <Label className="text-xs font-semibold">
+                Feedback & Notes
+              </Label>
+              {isAdmin ? (
+                <Textarea
+                  placeholder="Write feedback, counter-offer reasoning, or notes for the PIC..."
+                  value={ceoFeedback}
+                  onChange={(e) => setCeoFeedback(e.target.value)}
+                  rows={3}
+                  className="mt-1 resize-none"
+                />
+              ) : (
+                <p className="mt-1 text-sm whitespace-pre-wrap rounded-md bg-background p-3 min-h-[60px]">
+                  {ceoFeedback || "No feedback yet."}
+                </p>
+              )}
+              {isAdmin && (
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Auto-saved as you type
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* ── Counter-offer details (if already counter-offered) ── */}
+          {/* ── Counter-offer history (if already counter-offered) ── */}
           {approval.status === "COUNTER_OFFERED" && approval.counterRate && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
               <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-                Counter-offer
+                Last Counter-offer
               </p>
               <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">
                 {formatCurrency(approval.counterRate, approval.currency)}
@@ -478,102 +512,45 @@ export function ReviewApprovalDialog({
               on {new Date(approval.reviewedAt).toLocaleDateString()}
             </div>
           )}
-
-          {/* Counter-offer form (admin, in counter mode) */}
-          {isPending && isAdmin && mode === "counter" && (
-            <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3 dark:border-amber-800 dark:bg-amber-950/20">
-              <div>
-                <Label
-                  htmlFor="counter-rate"
-                  className="text-xs font-semibold"
-                >
-                  Counter Rate *
-                </Label>
-                <Input
-                  id="counter-rate"
-                  type="number"
-                  value={counterRate}
-                  onChange={(e) => setCounterRate(e.target.value)}
-                  className="mt-1"
-                  min={0}
-                  step="0.01"
-                />
-              </div>
-              <div>
-                <Label
-                  htmlFor="counter-notes"
-                  className="text-xs font-semibold"
-                >
-                  Notes
-                </Label>
-                <Textarea
-                  id="counter-notes"
-                  placeholder="Reason for counter-offer..."
-                  value={counterNotes}
-                  onChange={(e) => setCounterNotes(e.target.value)}
-                  rows={2}
-                  className="mt-1 resize-none"
-                />
-              </div>
-            </div>
-          )}
         </div>
 
         <DialogFooter>
           {isPending && isAdmin ? (
-            mode === "counter" ? (
-              <div className="flex w-full justify-between">
-                <Button
-                  variant="outline"
-                  onClick={() => setMode("view")}
-                  disabled={loading}
-                >
-                  Back
-                </Button>
-                <Button
-                  className="bg-amber-600 text-white hover:bg-amber-700"
-                  onClick={() => handleAction("counter")}
-                  disabled={loading || !counterRate}
-                >
-                  {loading ? "Sending..." : "Send Counter-offer"}
-                </Button>
-              </div>
-            ) : (
-              <div className="flex w-full gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => onOpenChange(false)}
-                  disabled={loading}
-                >
-                  Cancel
-                </Button>
-                <div className="flex-1" />
-                <Button
-                  variant="destructive"
-                  onClick={() => handleAction("reject")}
-                  disabled={loading}
-                >
-                  <XCircle className="mr-1 h-3.5 w-3.5" />
-                  Reject
-                </Button>
-                <Button
-                  className="bg-amber-600 text-white hover:bg-amber-700"
-                  onClick={() => handleAction("counter")}
-                  disabled={loading}
-                >
-                  <ArrowLeftRight className="mr-1 h-3.5 w-3.5" />
-                  Counter
-                </Button>
-                <Button
-                  className="bg-green-600 text-white hover:bg-green-700"
-                  onClick={() => handleAction("approve")}
-                  disabled={loading}
-                >
-                  <CheckCircle className="mr-1 h-3.5 w-3.5" />
-                  Approve
-                </Button>
-              </div>
-            )
+            <div className="flex w-full gap-2">
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={loading}
+              >
+                Close
+              </Button>
+              <div className="flex-1" />
+              <Button
+                variant="destructive"
+                onClick={() => handleAction("reject")}
+                disabled={loading}
+              >
+                <XCircle className="mr-1 h-3.5 w-3.5" />
+                Reject
+              </Button>
+              <Button
+                className="bg-amber-600 text-white hover:bg-amber-700"
+                onClick={() => handleAction("counter")}
+                disabled={loading || !counterRate || Number(counterRate) <= 0}
+                title={!counterRate ? "Enter a counter rate first" : undefined}
+              >
+                <ArrowLeftRight className="mr-1 h-3.5 w-3.5" />
+                Send Counter
+              </Button>
+              <Button
+                className="bg-green-600 text-white hover:bg-green-700"
+                onClick={() => handleAction("approve")}
+                disabled={loading}
+              >
+                <CheckCircle className="mr-1 h-3.5 w-3.5" />
+                Approve
+              </Button>
+            </div>
           ) : (
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Close
@@ -614,33 +591,6 @@ function StatusBadge({ status }: { status: string }) {
     label: status,
     className: "bg-gray-100 text-gray-800 border-gray-300",
   };
-  return (
-    <Badge variant="outline" className={c.className}>
-      {c.label}
-    </Badge>
-  );
-}
-
-function FeedbackBadge({ status }: { status: string }) {
-  const config: Record<string, { label: string; className: string }> = {
-    REQUESTED: {
-      label: "Requested",
-      className: "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-200",
-    },
-    CEO_REVIEWED: {
-      label: "CEO Reviewed",
-      className: "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/30 dark:text-purple-200",
-    },
-    APPLIED: {
-      label: "Applied",
-      className: "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-200",
-    },
-    SPECIAL: {
-      label: "Special",
-      className: "bg-pink-100 text-pink-800 border-pink-300 dark:bg-pink-900/30 dark:text-pink-200",
-    },
-  };
-  const c = config[status] ?? { label: status, className: "bg-gray-100 text-gray-800" };
   return (
     <Badge variant="outline" className={c.className}>
       {c.label}

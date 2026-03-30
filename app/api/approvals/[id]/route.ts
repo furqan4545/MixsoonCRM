@@ -100,6 +100,9 @@ export async function PATCH(
       contractStatus?: string;
     };
 
+  // Normalize: "counter" action uses ceoFeedback as counterNotes if counterNotes not provided
+  const effectiveCounterNotes = counterNotes ?? (action === "counter" ? (ceoFeedback as string | undefined)?.trim() || null : null);
+
   const VALID_ACTIONS = ["approve", "reject", "counter", "update"];
   if (!action || !VALID_ACTIONS.includes(action)) {
     return NextResponse.json(
@@ -142,12 +145,16 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // "update" action — save CEO feedback / status without changing approval status
+    // "update" action — auto-save CEO feedback / status without changing approval status
     if (action === "update") {
       const updateFields: Record<string, unknown> = {};
       if (ceoFeedback !== undefined) updateFields.ceoFeedback = ceoFeedback.trim() || null;
       if (feedbackStatus) updateFields.feedbackStatus = feedbackStatus;
       if (contractStatus) updateFields.contractStatus = contractStatus;
+      // Allow saving counter rate during auto-save (before formal counter-offer)
+      if (counterRate != null && Number(counterRate) > 0) {
+        updateFields.counterRate = Number(counterRate);
+      }
 
       if (Object.keys(updateFields).length === 0) {
         return NextResponse.json({ error: "No fields to update" }, { status: 400 });
@@ -190,7 +197,7 @@ export async function PATCH(
         );
       }
       updateData.counterRate = Number(counterRate);
-      updateData.counterNotes = counterNotes?.trim() || null;
+      updateData.counterNotes = effectiveCounterNotes;
     }
 
     // Auto-set contract status on approve
