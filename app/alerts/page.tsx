@@ -12,9 +12,11 @@ import {
   Loader2,
   Mail,
   MailWarning,
+  Plus,
   RefreshCw,
   Send,
   Settings,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -429,141 +431,203 @@ function AlertRulesTab() {
     );
   }
 
+  const addEscalationLayer = (ruleId: string, rule: AlertRule) => {
+    const layers = [...(rule.escalationLayers || [])];
+    layers.push({
+      days: rule.thresholdDays * (layers.length + 2),
+      severity: layers.length === 0 ? "HIGH" : "CRITICAL",
+      notifyRole: "ADMIN",
+      action: "email",
+    });
+    updateRule(ruleId, "escalationLayers", layers);
+  };
+
+  const removeEscalationLayer = (ruleId: string, rule: AlertRule, index: number) => {
+    const layers = [...(rule.escalationLayers || [])];
+    layers.splice(index, 1);
+    updateRule(ruleId, "escalationLayers", layers);
+  };
+
+  const updateEscalationLayer = (ruleId: string, rule: AlertRule, index: number, field: string, value: unknown) => {
+    const layers = [...(rule.escalationLayers || [])];
+    layers[index] = { ...layers[index], [field]: value };
+    updateRule(ruleId, "escalationLayers", layers);
+  };
+
   return (
     <div className="space-y-4 mt-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Settings className="h-4 w-4 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            Configure alert thresholds and enable/disable alert types
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          Set when alerts trigger and how they escalate
+        </p>
         <Button size="sm" onClick={saveRules} disabled={saving || !dirty}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Save Changes
         </Button>
       </div>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[40px]"></TableHead>
-              <TableHead>Alert Type</TableHead>
-              <TableHead className="w-[120px]">Threshold (days)</TableHead>
-              <TableHead className="w-[120px]">Severity</TableHead>
-              <TableHead className="w-[180px]">Email Template</TableHead>
-              <TableHead className="w-[80px]">Escalation</TableHead>
-              <TableHead className="w-[80px]">Active</TableHead>
-              <TableHead className="w-[60px]">On</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rules.map((rule) => (
-              <TableRow key={rule.id}>
-                <TableCell>
-                  <TypeIcon type={rule.type} />
-                </TableCell>
-                <TableCell>
+      <div className="space-y-3">
+        {rules.map((rule) => (
+          <div
+            key={rule.id}
+            className={`rounded-lg border p-4 transition-colors ${
+              rule.enabled ? "bg-card" : "bg-muted/30 opacity-60"
+            }`}
+          >
+            {/* Header: icon, name, toggle */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <TypeIcon type={rule.type} />
+                <div>
+                  <p className="font-medium text-sm">{TYPE_LABEL[rule.type] ?? rule.type}</p>
+                  <p className="text-xs text-muted-foreground">{TYPE_DESCRIPTION[rule.type]}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {rule._count.events > 0 && (
+                  <Badge variant="secondary" className="text-xs">{rule._count.events} active</Badge>
+                )}
+                <Switch
+                  checked={rule.enabled}
+                  onCheckedChange={(v) => updateRule(rule.id, "enabled", v)}
+                />
+              </div>
+            </div>
+
+            {rule.enabled && (
+              <>
+                {/* Settings row */}
+                <div className="grid grid-cols-3 gap-3 mb-3">
                   <div>
-                    <p className="font-medium text-sm">
-                      {TYPE_LABEL[rule.type] ?? rule.type}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {TYPE_DESCRIPTION[rule.type]}
-                    </p>
+                    <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Trigger after
+                    </label>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={90}
+                        className="w-16 h-8 text-sm"
+                        value={rule.thresholdDays}
+                        onChange={(e) =>
+                          updateRule(rule.id, "thresholdDays", parseInt(e.target.value) || 1)
+                        }
+                      />
+                      <span className="text-xs text-muted-foreground">days</span>
+                    </div>
                   </div>
-                </TableCell>
-                <TableCell>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={90}
-                    className="w-20 h-8"
-                    value={rule.thresholdDays}
-                    onChange={(e) =>
-                      updateRule(
-                        rule.id,
-                        "thresholdDays",
-                        parseInt(e.target.value) || 1,
-                      )
-                    }
-                  />
-                </TableCell>
-                <TableCell>
-                  <Select
-                    value={rule.severity}
-                    onValueChange={(v) => updateRule(rule.id, "severity", v)}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((s) => (
-                        <SelectItem key={s} value={s}>
-                          <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium border ${SEVERITY_COLORS[s]}`}>
-                            {s}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-                <TableCell>
-                  <Select
-                    value={rule.templateId ?? "none"}
-                    onValueChange={(v) =>
-                      updateRule(
-                        rule.id,
-                        "templateId",
-                        v === "none" ? null : v,
-                      )
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="None" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {templates.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="text-[10px] cursor-pointer" onClick={() => {
-                    const layers = [...(rule.escalationLayers || [])];
-                    layers.push({
-                      days: rule.thresholdDays * 2,
-                      severity: "HIGH",
-                      notifyRole: "ADMIN",
-                      action: "email",
-                    });
-                    updateRule(rule.id, "escalationLayers", layers);
-                  }}>
-                    {(rule.escalationLayers?.length || 0)} layers +
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary" className="text-xs">
-                    {rule._count.events}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Switch
-                    checked={rule.enabled}
-                    onCheckedChange={(v) =>
-                      updateRule(rule.id, "enabled", v)
-                    }
-                  />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                  <div>
+                    <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Severity
+                    </label>
+                    <Select
+                      value={rule.severity}
+                      onValueChange={(v) => updateRule(rule.id, "severity", v)}
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((s) => (
+                          <SelectItem key={s} value={s}>
+                            <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium border ${SEVERITY_COLORS[s]}`}>
+                              {s}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Auto-send email
+                    </label>
+                    <Select
+                      value={rule.templateId ?? "none"}
+                      onValueChange={(v) =>
+                        updateRule(rule.id, "templateId", v === "none" ? null : v)
+                      }
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-1">
+                        <SelectValue placeholder="None" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None (notify only)</SelectItem>
+                        {templates.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Escalation layers */}
+                {(rule.escalationLayers?.length ?? 0) > 0 && (
+                  <div className="space-y-2 mb-2">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Escalation Steps
+                    </p>
+                    {rule.escalationLayers!.map((layer: { days: number; severity: string; notifyRole: string; action: string }, idx: number) => (
+                      <div key={idx} className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-1.5">
+                        <span className="text-[10px] text-muted-foreground shrink-0">If still open after</span>
+                        <Input
+                          type="number"
+                          min={1}
+                          className="w-14 h-6 text-xs"
+                          value={layer.days}
+                          onChange={(e) =>
+                            updateEscalationLayer(rule.id, rule, idx, "days", parseInt(e.target.value) || 1)
+                          }
+                        />
+                        <span className="text-[10px] text-muted-foreground shrink-0">days →</span>
+                        <Select
+                          value={layer.severity}
+                          onValueChange={(v) => updateEscalationLayer(rule.id, rule, idx, "severity", v)}
+                        >
+                          <SelectTrigger className="h-6 text-[10px] w-24">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {["MEDIUM", "HIGH", "CRITICAL"].map((s) => (
+                              <SelectItem key={s} value={s}>{s}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <span className="text-[10px] text-muted-foreground shrink-0">notify</span>
+                        <Select
+                          value={layer.notifyRole}
+                          onValueChange={(v) => updateEscalationLayer(rule.id, rule, idx, "notifyRole", v)}
+                        >
+                          <SelectTrigger className="h-6 text-[10px] w-20">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PIC">PIC</SelectItem>
+                            <SelectItem value="ADMIN">Admin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <button
+                          onClick={() => removeEscalationLayer(rule.id, rule, idx)}
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  onClick={() => addEscalationLayer(rule.id, rule)}
+                  className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add escalation step
+                </button>
+              </>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
