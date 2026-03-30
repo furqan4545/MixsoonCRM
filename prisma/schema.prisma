@@ -277,6 +277,7 @@ model User {
   reviewedApprovals  ApprovalRequest[] @relation("ReviewedApprovals")
   picAssignments     InfluencerPic[]
   adminSignedContracts Contract[]      @relation("AdminSignedContracts")
+  contractComments     ContractComment[] @relation("ContractComments")
 
   @@index([roleId])
   @@index([status])
@@ -509,6 +510,16 @@ enum AlertType {
   APPROVAL_PENDING          // Approval not reviewed in X days
   EMAIL_NO_REPLY_INFLUENCER // Influencer hasn't replied in X days
   EMAIL_NO_REPLY_US         // We haven't replied to influencer in X days
+  CONTRACT_EXPIRING         // Contract ending within X days
+  CONTENT_OVERDUE           // Content submission not received in X days
+  FOLLOW_UP_REMINDER        // General follow-up reminder
+}
+
+enum AlertSeverity {
+  LOW       // Info level — sidebar only
+  MEDIUM    // Warning — sidebar + badge
+  HIGH      // Urgent — sidebar + badge + in-app notification
+  CRITICAL  // Critical — all above + email to admin
 }
 
 enum AlertEventStatus {
@@ -524,6 +535,14 @@ model AlertRule {
   enabled       Boolean   @default(true)
   templateId    String?
   template      EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  severity      AlertSeverity  @default(MEDIUM)
+
+  // Multi-layer escalation: JSON array of { days: number, severity: string, notifyRole: string, action: string }
+  // e.g. [{ "days": 3, "severity": "LOW", "notifyRole": "PIC", "action": "badge" },
+  //       { "days": 7, "severity": "HIGH", "notifyRole": "ADMIN", "action": "email" },
+  //       { "days": 14, "severity": "CRITICAL", "notifyRole": "ADMIN", "action": "email+badge" }]
+  escalationLayers Json   @default("[]")
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -537,11 +556,14 @@ model AlertEvent {
   ruleId       String
   rule         AlertRule        @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   status       AlertEventStatus @default(ACTIVE)
+  severity     AlertSeverity    @default(MEDIUM)
+  escalationLevel Int           @default(0) // which layer triggered (0 = base rule)
 
   // Polymorphic reference — exactly one is set
   approvalId   String?
   emailId      String?          // EmailMessage id
   influencerId String?          // For quick lookups
+  contractId   String?          // For contract-related alerts
 
   title        String
   message      String?
@@ -556,6 +578,7 @@ model AlertEvent {
   @@index([status])
   @@index([ruleId])
   @@index([createdAt])
+  @@index([severity])
 }
 
 model EmailTemplate {
@@ -725,9 +748,25 @@ model Contract {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  comments  ContractComment[]
+
   @@index([influencerId])
   @@index([campaignId])
   @@index([status])
+}
+
+model ContractComment {
+  id         String   @id @default(cuid())
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation("ContractComments", fields: [userId], references: [id], onDelete: Cascade)
+  body       String   // Comment text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([contractId])
+  @@index([userId])
 }
 
 // ─── CONTENT SUBMISSIONS ─────────────────────────────────
