@@ -1,12 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { CampaignStatus } from "@prisma/client";
+import { getCurrentUser } from "@/app/lib/rbac";
+import { CampaignStatus, Prisma } from "@prisma/client";
 
 const VALID_STATUSES = Object.values(CampaignStatus);
 
 export async function GET() {
   try {
+    const currentUser = await getCurrentUser();
+    const isAdmin = currentUser?.role === "Admin";
+
+    // For PICs, only return campaigns that contain influencers assigned to them
+    const where: Prisma.MarketingCampaignWhereInput = {};
+    if (!isAdmin && currentUser) {
+      where.influencers = {
+        some: {
+          influencer: {
+            pics: { some: { userId: currentUser.id } },
+          },
+        },
+      };
+    }
+
     const campaigns = await prisma.marketingCampaign.findMany({
+      where,
       orderBy: { createdAt: "desc" },
       include: {
         _count: { select: { influencers: true } },

@@ -51,6 +51,7 @@ export interface CampaignRow {
   endDate: string | null;
   status: string;
   influencerCount: number;
+  isMyCampaign?: boolean;
   influencers: CampaignInfluencerRow[];
   createdAt: string;
 }
@@ -222,16 +223,20 @@ function AvatarStack({
 
 /* ───────────── main component ───────────── */
 
+type OwnershipFilter = "MY" | "ALL_CAMPAIGNS";
+
 interface Props {
   campaigns: CampaignRow[];
   approvedInfluencers: AssignableInfluencer[];
   okishInfluencers: AssignableInfluencer[];
+  isAdmin?: boolean;
 }
 
 export function CampaignsDashboard({
   campaigns,
   approvedInfluencers,
   okishInfluencers,
+  isAdmin = false,
 }: Props) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -240,25 +245,38 @@ export function CampaignsDashboard({
     searchParams.get("selected") ?? null,
   );
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>("MY");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+
+  const myCampaigns = useMemo(
+    () => campaigns.filter((c) => c.isMyCampaign),
+    [campaigns],
+  );
+
+  // Which list to use based on ownership filter (admins always see all)
+  const baseCampaigns = isAdmin
+    ? campaigns
+    : ownershipFilter === "MY"
+      ? myCampaigns
+      : campaigns;
 
   // Count per status
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {
-      ALL: campaigns.length,
+      ALL: baseCampaigns.length,
       PLANNING: 0,
       ACTIVE: 0,
       PAUSED: 0,
       COMPLETED: 0,
     };
-    for (const c of campaigns) {
+    for (const c of baseCampaigns) {
       if (counts[c.status] !== undefined) counts[c.status]++;
     }
     return counts;
-  }, [campaigns]);
+  }, [baseCampaigns]);
 
   const filtered = useMemo(() => {
-    let list = campaigns;
+    let list = baseCampaigns;
 
     // Status filter
     if (statusFilter !== "ALL") {
@@ -276,7 +294,7 @@ export function CampaignsDashboard({
     }
 
     return list;
-  }, [campaigns, search, statusFilter]);
+  }, [baseCampaigns, search, statusFilter]);
 
   const selected = selectedId
     ? campaigns.find((c) => c.id === selectedId) ?? null
@@ -299,7 +317,7 @@ export function CampaignsDashboard({
                 Marketing Campaigns
               </h1>
               <p className="text-sm text-muted-foreground">
-                {campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""}
+                {baseCampaigns.length} campaign{baseCampaigns.length !== 1 ? "s" : ""}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -321,6 +339,32 @@ export function CampaignsDashboard({
               </Button>
             </div>
           </div>
+
+          {/* Ownership toggle (PIC only) */}
+          {!isAdmin && (
+            <div className="mb-3 flex items-center gap-1 rounded-lg bg-muted p-1">
+              <button
+                onClick={() => setOwnershipFilter("MY")}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  ownershipFilter === "MY"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                My Campaigns ({myCampaigns.length})
+              </button>
+              <button
+                onClick={() => setOwnershipFilter("ALL_CAMPAIGNS")}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  ownershipFilter === "ALL_CAMPAIGNS"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                All Campaigns ({campaigns.length})
+              </button>
+            </div>
+          )}
 
           {/* Status filter tabs */}
           <div className="mb-4 flex items-center gap-1.5">
