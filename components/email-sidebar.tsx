@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-const AUTO_SYNC_INTERVAL_MS = 60_000; // Auto-sync every 60 seconds
+// Removed — polling now at 15s inline
 
 const folders = [
   { title: "Inbox", href: "/email/inbox", icon: Inbox, countKey: "INBOX" },
@@ -122,52 +122,16 @@ export function EmailSidebar() {
     [fetchCounts, router],
   );
 
-  // SSE connection for real-time email updates
+  // Auto-sync: poll every 15s, skip if sync already in flight
   useEffect(() => {
-    let es: EventSource | null = null;
-    let retryTimer: ReturnType<typeof setTimeout>;
-
-    const connect = () => {
-      es = new EventSource("/api/email/stream");
-
-      es.addEventListener("new_emails", (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          if (data.count > 0) {
-            fetchCounts();
-            emitEmailRefresh();
-            router.refresh();
-          }
-        } catch {}
-      });
-
-      es.addEventListener("counts", (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          setCounts(data);
-        } catch {}
-      });
-
-      es.addEventListener("timeout", () => {
-        // Reconnect after SSE timeout
-        es?.close();
-        retryTimer = setTimeout(connect, 2000);
-      });
-
-      es.onerror = () => {
-        es?.close();
-        // Retry after 5s on error
-        retryTimer = setTimeout(connect, 5000);
-      };
-    };
-
-    connect();
-
-    return () => {
-      es?.close();
-      clearTimeout(retryTimer);
-    };
-  }, [fetchCounts, router]);
+    // Initial sync on mount
+    void runSync(true);
+    const interval = window.setInterval(() => {
+      void runSync(true);
+    }, 15_000);
+    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSync = () => {
     void runSync(false);
