@@ -509,6 +509,7 @@ export default function ApprovalsPage() {
         onSuccess={load}
         approval={selectedApproval}
         isAdmin={isAdmin}
+        onResubmit={(row) => openResubmit(row)}
       />
     </div>
   );
