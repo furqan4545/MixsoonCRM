@@ -203,13 +203,21 @@ async function doSync(account: Awaited<ReturnType<typeof prisma.emailAccount.fin
       }
 
       if (toInsert.length > 0) {
-        // --- Auto-match influencer by sender email (POP3) ---
-        const senderEmails = [
-          ...new Set(toInsert.map((item) => item.from.toLowerCase()).filter(Boolean)),
-        ];
-        if (senderEmails.length > 0) {
+        // --- Auto-match influencer by from AND to emails (POP3) ---
+        const allEmailsPop = new Set<string>();
+        for (const item of toInsert) {
+          if (item.from) allEmailsPop.add(item.from.toLowerCase());
+          if (item.to) {
+            for (const addr of item.to.split(",")) {
+              const trimmed = addr.trim().toLowerCase();
+              if (trimmed) allEmailsPop.add(trimmed);
+            }
+          }
+        }
+        const emailArrayPop = [...allEmailsPop].filter(Boolean);
+        if (emailArrayPop.length > 0) {
           const matchedInfluencers = await prisma.influencer.findMany({
-            where: { email: { in: senderEmails, mode: "insensitive" } },
+            where: { email: { in: emailArrayPop, mode: "insensitive" } },
             select: { id: true, email: true },
           });
           const emailToInfluencer = new Map<string, string>();
@@ -217,7 +225,14 @@ async function doSync(account: Awaited<ReturnType<typeof prisma.emailAccount.fin
             if (inf.email) emailToInfluencer.set(inf.email.toLowerCase(), inf.id);
           }
           for (const item of toInsert) {
-            const influencerId = emailToInfluencer.get(item.from.toLowerCase());
+            let influencerId = emailToInfluencer.get(item.from.toLowerCase());
+            if (!influencerId && item.to) {
+              for (const addr of item.to.split(",")) {
+                const trimmed = addr.trim().toLowerCase();
+                const match = emailToInfluencer.get(trimmed);
+                if (match) { influencerId = match; break; }
+              }
+            }
             if (influencerId) item.influencerId = influencerId;
           }
         }
@@ -347,13 +362,22 @@ async function doSync(account: Awaited<ReturnType<typeof prisma.emailAccount.fin
   }
 
   if (toInsert.length > 0) {
-    // --- Auto-match influencer by sender email ---
-    const senderEmails = [
-      ...new Set(toInsert.map((item) => item.from.toLowerCase()).filter(Boolean)),
-    ];
-    if (senderEmails.length > 0) {
+    // --- Auto-match influencer by from AND to emails ---
+    const allEmails = new Set<string>();
+    for (const item of toInsert) {
+      if (item.from) allEmails.add(item.from.toLowerCase());
+      if (item.to) {
+        // to can be comma-separated
+        for (const addr of item.to.split(",")) {
+          const trimmed = addr.trim().toLowerCase();
+          if (trimmed) allEmails.add(trimmed);
+        }
+      }
+    }
+    const emailArray = [...allEmails].filter(Boolean);
+    if (emailArray.length > 0) {
       const matchedInfluencers = await prisma.influencer.findMany({
-        where: { email: { in: senderEmails, mode: "insensitive" } },
+        where: { email: { in: emailArray, mode: "insensitive" } },
         select: { id: true, email: true },
       });
       const emailToInfluencer = new Map<string, string>();
@@ -361,7 +385,16 @@ async function doSync(account: Awaited<ReturnType<typeof prisma.emailAccount.fin
         if (inf.email) emailToInfluencer.set(inf.email.toLowerCase(), inf.id);
       }
       for (const item of toInsert) {
-        const influencerId = emailToInfluencer.get(item.from.toLowerCase());
+        // Check from first (received email from influencer)
+        let influencerId = emailToInfluencer.get(item.from.toLowerCase());
+        // Then check to (sent email to influencer)
+        if (!influencerId && item.to) {
+          for (const addr of item.to.split(",")) {
+            const trimmed = addr.trim().toLowerCase();
+            const match = emailToInfluencer.get(trimmed);
+            if (match) { influencerId = match; break; }
+          }
+        }
         if (influencerId) item.influencerId = influencerId;
       }
     }
@@ -378,17 +411,25 @@ async function doSync(account: Awaited<ReturnType<typeof prisma.emailAccount.fin
           accountId: account.id,
           messageId: { in: inReplyToValues },
         },
-        select: { messageId: true, threadId: true },
+        select: { messageId: true, threadId: true, influencerId: true },
       });
       const threadIdMap = new Map<string, string>();
+      const threadInfluencerMap = new Map<string, string>();
       for (const parent of parentEmails) {
         if (parent.messageId && parent.threadId) {
           threadIdMap.set(parent.messageId, parent.threadId);
+        }
+        if (parent.messageId && parent.influencerId) {
+          threadInfluencerMap.set(parent.messageId, parent.influencerId);
         }
       }
       for (const item of toInsert) {
         if (item.inReplyTo && threadIdMap.has(item.inReplyTo)) {
           item.threadId = threadIdMap.get(item.inReplyTo)!;
+        }
+        // Inherit influencerId from parent if not already matched
+        if (!item.influencerId && item.inReplyTo && threadInfluencerMap.has(item.inReplyTo)) {
+          item.influencerId = threadInfluencerMap.get(item.inReplyTo)!;
         }
       }
     }
