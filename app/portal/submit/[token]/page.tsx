@@ -104,6 +104,8 @@ export default async function ContentSubmitPage({
         influencerName={influencerName}
         showVideoLinks={isContentType}
         showPayment={showPayment}
+        requireScode={record.requireScode}
+        submissionLabel={record.submissionLabel ?? undefined}
       />
     </div>
   );

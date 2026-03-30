@@ -631,6 +631,8 @@ model OnboardingToken {
   contractId   String?   // For CONTRACT type tokens
   contentSubmissionId String?  // For CONTENT type tokens
   includePayment Boolean @default(false) // Whether to include payment form with content submission
+  requireScode   Boolean @default(false) // Whether S-code field is required
+  submissionLabel String? // Pre-set label for this submission (e.g. "1st video")
   expiresAt    DateTime
   usedAt       DateTime?
   openedAt     DateTime?  // When the influencer first opened the link
@@ -745,6 +747,8 @@ model ContentSubmission {
 
   videoLinks     Json     @default("[]") // string[] of video URLs
   notes          String?
+  sCode          String?  // Internal tracking code (S-code)
+  submissionLabel String? // e.g. "1st video", "Week 3", manual label
 
   // Payment details (optional — only when payment form is included)
   includePayment  Boolean @default(false)

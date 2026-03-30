@@ -7,7 +7,7 @@ import { getSmtpTransport } from "@/app/lib/email";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { token, videoLinks, notes, bankDetails } = body;
+    const { token, videoLinks, notes, bankDetails, sCode, submissionLabel } = body;
 
     if (!token) {
       return NextResponse.json({ error: "Token is required" }, { status: 400 });
@@ -123,6 +123,8 @@ export async function POST(request: Request) {
         data: {
           videoLinks: cleanVideoLinks,
           notes: notes || null,
+          sCode: sCode?.trim() || null,
+          submissionLabel: submissionLabel?.trim() || tokenRecord.submissionLabel || null,
           includePayment: shouldIncludePayment,
           status: "SUBMITTED",
           submittedAt: now,
@@ -142,6 +144,8 @@ export async function POST(request: Request) {
           influencerId: tokenRecord.influencerId,
           videoLinks: cleanVideoLinks,
           notes: notes || null,
+          sCode: sCode?.trim() || null,
+          submissionLabel: submissionLabel?.trim() || tokenRecord.submissionLabel || null,
           includePayment: shouldIncludePayment,
           status: "SUBMITTED",
           submittedAt: now,
