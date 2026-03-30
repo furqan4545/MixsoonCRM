@@ -132,16 +132,21 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const statusFilter = searchParams.get("status");
+    const influencerIdFilter = searchParams.get("influencerId");
 
     const where: Record<string, unknown> = {};
 
-    // PIC sees only their own submissions
+    // PIC sees only their own submissions (unless filtering by influencerId for history)
     if (user.role !== "Admin") {
       where.submittedById = user.id;
     }
 
     if (statusFilter) {
       where.status = statusFilter;
+    }
+
+    if (influencerIdFilter) {
+      where.influencerId = influencerIdFilter;
     }
 
     const approvals = await prisma.approvalRequest.findMany({
