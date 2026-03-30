@@ -69,6 +69,12 @@ export function ReviewApprovalDialog({
   const [autoSaving, setAutoSaving] = useState(false);
   const lastSaved = useRef({ ceoFeedback: "", counterRate: "", contractStatus: "", isSpecial: false });
 
+  // Inline resubmit state (PIC)
+  const [resubmitMode, setResubmitMode] = useState(false);
+  const [resubmitRate, setResubmitRate] = useState("");
+  const [resubmitNotes, setResubmitNotes] = useState("");
+  const [submittingResubmit, setSubmittingResubmit] = useState(false);
+
   // Reset editable fields when approval changes
   useEffect(() => {
     if (approval) {
@@ -131,6 +137,37 @@ export function ReviewApprovalDialog({
     autoSaveTimer.current = setTimeout(doAutoSave, 1500);
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
   }, [ceoFeedback, counterRate, contractStatus, isSpecial, doAutoSave, isAdmin, approval]);
+
+  const handleInlineResubmit = async () => {
+    if (!approval || !resubmitRate) return;
+    setSubmittingResubmit(true);
+    try {
+      const res = await fetch("/api/approvals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          influencerId: approval.influencer.id,
+          rate: parseFloat(resubmitRate),
+          currency: approval.currency,
+          deliverables: approval.deliverables,
+          notes: resubmitNotes.trim() || `Re-negotiated from ${approval.currency} ${approval.counterRate}`,
+          campaignId: approval.campaign?.id || undefined,
+          videosPerBundle: approval.videosPerBundle,
+          ratePerVideo: approval.ratePerVideo,
+          profileLink: approval.profileLink,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to submit");
+      toast.success("Re-submitted for approval");
+      setResubmitMode(false);
+      onOpenChange(false);
+      onSuccess();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to re-submit");
+    } finally {
+      setSubmittingResubmit(false);
+    }
+  };
 
   if (!approval) return null;
 
@@ -474,9 +511,9 @@ export function ReviewApprovalDialog({
             </div>
           </div>
 
-          {/* ── Counter-offer history (if already counter-offered) ── */}
+          {/* ── Counter-offer from CEO + inline resubmit ── */}
           {approval.status === "COUNTER_OFFERED" && approval.counterRate && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3 dark:border-amber-800 dark:bg-amber-950/30">
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
@@ -491,21 +528,71 @@ export function ReviewApprovalDialog({
                     </p>
                   )}
                 </div>
-                {!isAdmin && onResubmit && (
+                {!isAdmin && !resubmitMode && (
                   <Button
                     size="sm"
                     variant="outline"
                     className="shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100"
                     onClick={() => {
-                      onOpenChange(false);
-                      onResubmit(approval);
+                      setResubmitRate(approval.counterRate?.toString() ?? approval.rate.toString());
+                      setResubmitNotes("");
+                      setResubmitMode(true);
                     }}
                   >
                     <ArrowLeftRight className="mr-1 h-3.5 w-3.5" />
-                    Re-submit
+                    Re-negotiate
                   </Button>
                 )}
               </div>
+
+              {/* Inline resubmit form */}
+              {!isAdmin && resubmitMode && (
+                <div className="border-t border-amber-200 pt-3 space-y-2">
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                    Your counter-proposal
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs font-semibold text-amber-800">New Rate</Label>
+                      <Input
+                        type="number"
+                        value={resubmitRate}
+                        onChange={(e) => setResubmitRate(e.target.value)}
+                        className="mt-1 border-amber-300 bg-white"
+                        min={0}
+                        step="0.01"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-semibold text-amber-800">Notes</Label>
+                      <Input
+                        value={resubmitNotes}
+                        onChange={(e) => setResubmitNotes(e.target.value)}
+                        placeholder="e.g. Negotiated down to..."
+                        className="mt-1 border-amber-300 bg-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setResubmitMode(false)}
+                      disabled={submittingResubmit}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-amber-600 text-white hover:bg-amber-700"
+                      onClick={handleInlineResubmit}
+                      disabled={submittingResubmit || !resubmitRate || Number(resubmitRate) <= 0}
+                    >
+                      {submittingResubmit ? "Submitting..." : "Submit for Approval"}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
