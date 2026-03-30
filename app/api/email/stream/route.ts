@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/app/lib/rbac";
 
 export const dynamic = "force-dynamic";
 
-const SYNC_INTERVAL_MS = 15_000;
+const SYNC_INTERVAL_MS = 30_000; // 30s — Gmail limits IMAP connections
 const KEEPALIVE_INTERVAL_MS = 30_000;
 const MAX_DURATION_MS = 10 * 60 * 1000; // 10 minutes
 
