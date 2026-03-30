@@ -497,7 +497,7 @@ function AlertRulesTab() {
             {rule.enabled && (
               <>
                 {/* Settings row */}
-                <div className="grid grid-cols-3 gap-3 mb-3">
+                <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                       Trigger after
@@ -515,28 +515,6 @@ function AlertRulesTab() {
                       />
                       <span className="text-xs text-muted-foreground">days</span>
                     </div>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                      Severity
-                    </label>
-                    <Select
-                      value={rule.severity}
-                      onValueChange={(v) => updateRule(rule.id, "severity", v)}
-                    >
-                      <SelectTrigger className="h-8 text-xs mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((s) => (
-                          <SelectItem key={s} value={s}>
-                            <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium border ${SEVERITY_COLORS[s]}`}>
-                              {s}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
                   </div>
                   <div>
                     <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -579,21 +557,7 @@ function AlertRulesTab() {
                             updateEscalationLayer(rule.id, rule, idx, "days", parseInt(e.target.value) || 1)
                           }
                         />
-                        <span className="text-[10px] text-muted-foreground shrink-0">days →</span>
-                        <Select
-                          value={layer.severity}
-                          onValueChange={(v) => updateEscalationLayer(rule.id, rule, idx, "severity", v)}
-                        >
-                          <SelectTrigger className="h-6 text-[10px] w-24">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {["MEDIUM", "HIGH", "CRITICAL"].map((s) => (
-                              <SelectItem key={s} value={s}>{s}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <span className="text-[10px] text-muted-foreground shrink-0">notify</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">days → send another reminder &amp; notify</span>
                         <Select
                           value={layer.notifyRole}
                           onValueChange={(v) => updateEscalationLayer(rule.id, rule, idx, "notifyRole", v)}
