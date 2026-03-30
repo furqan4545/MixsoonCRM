@@ -79,6 +79,9 @@ export function ReviewApprovalDialog({
   const [history, setHistory] = useState<ApprovalRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // Allow admin to edit feedback even after decision
+  const [editingFeedback, setEditingFeedback] = useState(false);
+
   // Reset editable fields when approval changes
   useEffect(() => {
     if (approval) {
@@ -91,6 +94,7 @@ export function ReviewApprovalDialog({
       setContractStatus(cs);
       setIsSpecial(sp);
       setResubmitMode(false);
+      setEditingFeedback(false);
       lastSaved.current = { ceoFeedback: fb, counterRate: cr, contractStatus: cs, isSpecial: sp };
     }
   }, [approval]);
@@ -485,86 +489,102 @@ export function ReviewApprovalDialog({
             </div>
           )}
 
-          {/* ── CEO Review Section (simplified — unified feedback + counter) ── */}
-          <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20 p-4 space-y-4">
-            <div className="flex items-center justify-between">
+          {/* ── CEO Review Section ── */}
+          {(isPending || editingFeedback) ? (
+            /* Editable form when pending */
+            <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20 p-4 space-y-4">
               <h4 className="text-xs font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">
                 CEO Review
               </h4>
-            </div>
 
-            {/* Feedback + Counter rate in one section */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Counter rate */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs font-semibold">Counter Rate</Label>
+                  {isAdmin ? (
+                    <Input
+                      type="number"
+                      placeholder="e.g. 800"
+                      value={counterRate}
+                      onChange={(e) => setCounterRate(e.target.value)}
+                      className="mt-1"
+                      min={0}
+                      step="0.01"
+                    />
+                  ) : (
+                    <p className="mt-1 text-lg font-bold">
+                      {counterRate ? Number(counterRate).toLocaleString() : "—"}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold">Decision</Label>
+                  {isAdmin ? (
+                    <select
+                      value={contractStatus}
+                      onChange={(e) => setContractStatus(e.target.value)}
+                      className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      {CONTRACT_STATUS_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="mt-1">
+                      <ContractBadge status={contractStatus} />
+                    </p>
+                  )}
+                </div>
+              </div>
+
               <div>
-                <Label className="text-xs font-semibold">
-                  Counter Rate
-                </Label>
+                <Label className="text-xs font-semibold">Feedback & Notes</Label>
                 {isAdmin ? (
-                  <Input
-                    type="number"
-                    placeholder="e.g. 800"
-                    value={counterRate}
-                    onChange={(e) => setCounterRate(e.target.value)}
-                    className="mt-1"
-                    min={0}
-                    step="0.01"
+                  <Textarea
+                    placeholder="Write feedback, counter-offer reasoning, or notes for the PIC..."
+                    value={ceoFeedback}
+                    onChange={(e) => setCeoFeedback(e.target.value)}
+                    rows={3}
+                    className="mt-1 resize-none"
                   />
                 ) : (
-                  <p className="mt-1 text-lg font-bold">
-                    {counterRate ? Number(counterRate).toLocaleString() : "—"}
+                  <p className="mt-1 text-sm whitespace-pre-wrap rounded-md bg-background p-3 min-h-[60px]">
+                    {ceoFeedback || "No feedback yet."}
+                  </p>
+                )}
+                {isAdmin && (
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    Auto-saved as you type
                   </p>
                 )}
               </div>
-
-              {/* Contract status */}
-              <div>
-                <Label className="text-xs font-semibold">Decision</Label>
-                {isAdmin ? (
-                  <select
-                    value={contractStatus}
-                    onChange={(e) => setContractStatus(e.target.value)}
-                    className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            </div>
+          ) : (
+            /* Read-only summary when already decided */
+            <div className="rounded-lg border p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 text-sm">
+                  {ceoFeedback && (
+                    <span className="text-muted-foreground">CEO: <span className="text-foreground">{ceoFeedback}</span></span>
+                  )}
+                  {counterRate && (
+                    <span className="text-muted-foreground">Rate: <span className="font-semibold">{Number(counterRate).toLocaleString()}</span></span>
+                  )}
+                </div>
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-muted-foreground"
+                    onClick={() => setEditingFeedback(true)}
                   >
-                    {CONTRACT_STATUS_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <p className="mt-1">
-                    <ContractBadge status={contractStatus} />
-                  </p>
+                    Edit
+                  </Button>
                 )}
               </div>
             </div>
-
-            {/* CEO Feedback textarea */}
-            <div>
-              <Label className="text-xs font-semibold">
-                Feedback & Notes
-              </Label>
-              {isAdmin ? (
-                <Textarea
-                  placeholder="Write feedback, counter-offer reasoning, or notes for the PIC..."
-                  value={ceoFeedback}
-                  onChange={(e) => setCeoFeedback(e.target.value)}
-                  rows={3}
-                  className="mt-1 resize-none"
-                />
-              ) : (
-                <p className="mt-1 text-sm whitespace-pre-wrap rounded-md bg-background p-3 min-h-[60px]">
-                  {ceoFeedback || "No feedback yet."}
-                </p>
-              )}
-              {isAdmin && (
-                <p className="mt-1 text-[10px] text-muted-foreground">
-                  Auto-saved as you type
-                </p>
-              )}
-            </div>
-          </div>
+          )}
 
           {/* ── Counter-offer from CEO + inline resubmit ── */}
           {approval.status === "COUNTER_OFFERED" && approval.counterRate && (
