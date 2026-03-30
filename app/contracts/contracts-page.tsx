@@ -54,6 +54,8 @@ interface SubmissionRow {
   id: string;
   videoLinks: string[];
   notes: string | null;
+  sCode: string | null;
+  submissionLabel: string | null;
   includePayment: boolean;
   bankName: string | null;
   accountHolder: string | null;
@@ -410,8 +412,15 @@ export function ContractsPage({
                   <div className="flex items-center gap-2.5">
                     <ClipboardCheck className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span className="text-sm font-medium">
-                      {s.videoLinks.length > 0 ? "Content Submission" : "Payment Form"}
+                      {s.submissionLabel
+                        ? s.submissionLabel
+                        : s.videoLinks.length > 0 ? "Content Submission" : "Payment Form"}
                     </span>
+                    {s.sCode && (
+                      <span className="inline-flex items-center rounded bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 text-[9px] font-medium text-indigo-600">
+                        S-Code: {s.sCode}
+                      </span>
+                    )}
                     {s.includePayment && s.videoLinks.length > 0 && (
                       <span className="inline-flex items-center rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-medium text-amber-600">
                         + Payment

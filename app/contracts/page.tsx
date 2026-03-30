@@ -67,6 +67,8 @@ export default async function ContractsPageWrapper() {
     id: s.id,
     videoLinks: s.videoLinks as string[],
     notes: s.notes,
+    sCode: s.sCode,
+    submissionLabel: s.submissionLabel,
     includePayment: s.includePayment,
     bankName: s.bankName,
     accountHolder: s.accountHolder,

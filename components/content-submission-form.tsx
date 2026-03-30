@@ -19,6 +19,8 @@ interface ContentSubmissionFormProps {
   influencerName: string;
   showVideoLinks: boolean;
   showPayment: boolean;
+  requireScode?: boolean;
+  submissionLabel?: string;
 }
 
 interface BankDetails {
@@ -40,9 +42,13 @@ export function ContentSubmissionForm({
   influencerName,
   showVideoLinks,
   showPayment,
+  requireScode = false,
+  submissionLabel: initialLabel,
 }: ContentSubmissionFormProps) {
   const [videoLinks, setVideoLinks] = useState<string[]>([""]);
   const [notes, setNotes] = useState("");
+  const [sCode, setSCode] = useState("");
+  const [submissionLabel, setSubmissionLabel] = useState(initialLabel ?? "");
   const [bank, setBank] = useState<BankDetails>(defaultBank);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -125,6 +131,7 @@ export function ContentSubmissionForm({
       const validLinks = videoLinks.filter((l) => l.trim());
       if (validLinks.length === 0) return false;
     }
+    if (requireScode && !sCode.trim()) return false;
     if (showPayment) {
       if (!bank.bankName || !bank.accountNumber || !bank.accountHolder) return false;
     }
@@ -142,6 +149,12 @@ export function ContentSubmissionForm({
       }
       if (notes.trim()) {
         payload.notes = notes.trim();
+      }
+      if (sCode.trim()) {
+        payload.sCode = sCode.trim();
+      }
+      if (submissionLabel.trim()) {
+        payload.submissionLabel = submissionLabel.trim();
       }
       if (showPayment) {
         payload.bankDetails = {
@@ -251,6 +264,40 @@ export function ContentSubmissionForm({
           </div>
         </div>
       )}
+
+      {/* S-Code & Submission Label */}
+      <div className="rounded-lg border border-border p-6 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="submissionLabel">Submission Label</Label>
+            <Input
+              id="submissionLabel"
+              type="text"
+              placeholder="e.g. 1st video, Week 3"
+              value={submissionLabel}
+              onChange={(e) => setSubmissionLabel(e.target.value)}
+              className="mt-1.5"
+            />
+            <p className="mt-1 text-[10px] text-muted-foreground">Label to identify this submission</p>
+          </div>
+          <div>
+            <Label htmlFor="sCode">
+              S-Code {requireScode && <span className="text-destructive">*</span>}
+            </Label>
+            <Input
+              id="sCode"
+              type="text"
+              placeholder="Enter S-code"
+              value={sCode}
+              onChange={(e) => setSCode(e.target.value)}
+              className="mt-1.5"
+            />
+            {requireScode && (
+              <p className="mt-1 text-[10px] text-destructive">Required — you must enter an S-code to submit</p>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Payment Details Section */}
       {showPayment && (

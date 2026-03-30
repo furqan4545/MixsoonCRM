@@ -21,6 +21,8 @@ export async function POST(request: Request) {
       type = "ONBOARDING",
       contractId = null,
       includePayment = false,
+      requireScode = false,
+      submissionLabel = null,
     } = body;
 
     if (!influencerId) {
@@ -66,6 +68,8 @@ export async function POST(request: Request) {
         contractId: type === "CONTRACT" ? contractId : null,
         contentSubmissionId,
         includePayment: type === "PAYMENT" || includePayment,
+        requireScode: requireScode,
+        submissionLabel: submissionLabel || null,
         expiresAt,
       },
     });
