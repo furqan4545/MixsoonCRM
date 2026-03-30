@@ -493,9 +493,21 @@ export function ReviewApprovalDialog({
           {(isPending || editingFeedback) ? (
             /* Editable form when pending */
             <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20 p-4 space-y-4">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">
-                CEO Review
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">
+                  CEO Review
+                </h4>
+                {!isPending && isAdmin && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-[10px] text-muted-foreground"
+                    onClick={() => setEditingFeedback(false)}
+                  >
+                    Collapse
+                  </Button>
+                )}
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
