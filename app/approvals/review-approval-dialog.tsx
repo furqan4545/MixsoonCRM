@@ -34,6 +34,7 @@ interface Props {
   onSuccess: () => void;
   approval: ApprovalRow | null;
   isAdmin?: boolean;
+  onResubmit?: (approval: ApprovalRow) => void;
 }
 
 function formatCurrency(amount: number, currency: string) {
@@ -53,6 +54,7 @@ export function ReviewApprovalDialog({
   onSuccess,
   approval,
   isAdmin = false,
+  onResubmit,
 }: Props) {
   const [loading, setLoading] = useState(false);
 
@@ -475,17 +477,35 @@ export function ReviewApprovalDialog({
           {/* ── Counter-offer history (if already counter-offered) ── */}
           {approval.status === "COUNTER_OFFERED" && approval.counterRate && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
-              <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-                Last Counter-offer
-              </p>
-              <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">
-                {formatCurrency(approval.counterRate, approval.currency)}
-              </p>
-              {approval.counterNotes && (
-                <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
-                  {approval.counterNotes}
-                </p>
-              )}
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                    Counter-offer from CEO
+                  </p>
+                  <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">
+                    {formatCurrency(approval.counterRate, approval.currency)}
+                  </p>
+                  {approval.counterNotes && (
+                    <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
+                      {approval.counterNotes}
+                    </p>
+                  )}
+                </div>
+                {!isAdmin && onResubmit && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100"
+                    onClick={() => {
+                      onOpenChange(false);
+                      onResubmit(approval);
+                    }}
+                  >
+                    <ArrowLeftRight className="mr-1 h-3.5 w-3.5" />
+                    Re-submit
+                  </Button>
+                )}
+              </div>
             </div>
           )}
 
