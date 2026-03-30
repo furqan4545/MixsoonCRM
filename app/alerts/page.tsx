@@ -60,6 +60,13 @@ type AlertEvent = {
   rule: { type: string; thresholdDays: number };
 };
 
+type EscalationLayer = {
+  days: number;
+  severity: string;
+  notifyRole: string;
+  action: string;
+};
+
 type AlertRule = {
   id: string;
   type: string;
@@ -67,6 +74,8 @@ type AlertRule = {
   enabled: boolean;
   templateId: string | null;
   template: { id: string; name: string } | null;
+  severity: string;
+  escalationLayers: EscalationLayer[];
   _count: { events: number };
 };
 
@@ -75,7 +84,7 @@ type EmailTemplate = {
   name: string;
 };
 
-type FilterType = "ALL" | "APPROVAL_PENDING" | "EMAIL_NO_REPLY_INFLUENCER" | "EMAIL_NO_REPLY_US";
+type FilterType = "ALL" | "APPROVAL_PENDING" | "EMAIL_NO_REPLY_INFLUENCER" | "EMAIL_NO_REPLY_US" | "CONTRACT_EXPIRING" | "CONTENT_OVERDUE" | "FOLLOW_UP_REMINDER";
 
 // ── Alert Type Labels & Icons ──────────────────────────────
 
@@ -83,12 +92,25 @@ const TYPE_LABEL: Record<string, string> = {
   APPROVAL_PENDING: "Approval Pending",
   EMAIL_NO_REPLY_INFLUENCER: "No Reply (Influencer)",
   EMAIL_NO_REPLY_US: "No Reply (Us)",
+  CONTRACT_EXPIRING: "Contract Expiring",
+  CONTENT_OVERDUE: "Content Overdue",
+  FOLLOW_UP_REMINDER: "Follow-up Reminder",
 };
 
 const TYPE_DESCRIPTION: Record<string, string> = {
   APPROVAL_PENDING: "Alert when an approval request stays unreviewed",
   EMAIL_NO_REPLY_INFLUENCER: "Alert when an influencer hasn't replied to our email",
   EMAIL_NO_REPLY_US: "Alert when we haven't replied to an influencer's email",
+  CONTRACT_EXPIRING: "Alert when a contract is about to expire",
+  CONTENT_OVERDUE: "Alert when content submission hasn't been received",
+  FOLLOW_UP_REMINDER: "General follow-up reminder for influencer interactions",
+};
+
+const SEVERITY_COLORS: Record<string, string> = {
+  LOW: "bg-blue-100 text-blue-700 border-blue-200",
+  MEDIUM: "bg-amber-100 text-amber-700 border-amber-200",
+  HIGH: "bg-orange-100 text-orange-700 border-orange-200",
+  CRITICAL: "bg-red-100 text-red-700 border-red-200",
 };
 
 function TypeIcon({ type }: { type: string }) {
@@ -99,6 +121,12 @@ function TypeIcon({ type }: { type: string }) {
       return <MailWarning className="h-4 w-4 text-red-500" />;
     case "EMAIL_NO_REPLY_US":
       return <Send className="h-4 w-4 text-blue-500" />;
+    case "CONTRACT_EXPIRING":
+      return <AlertTriangle className="h-4 w-4 text-orange-500" />;
+    case "CONTENT_OVERDUE":
+      return <Clock className="h-4 w-4 text-purple-500" />;
+    case "FOLLOW_UP_REMINDER":
+      return <Bell className="h-4 w-4 text-green-500" />;
     default:
       return <Bell className="h-4 w-4" />;
   }
@@ -220,7 +248,7 @@ function ActiveAlertsTab() {
       {/* Controls */}
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
-          {(["ALL", "APPROVAL_PENDING", "EMAIL_NO_REPLY_INFLUENCER", "EMAIL_NO_REPLY_US"] as FilterType[]).map((f) => (
+          {(["ALL", "APPROVAL_PENDING", "EMAIL_NO_REPLY_INFLUENCER", "EMAIL_NO_REPLY_US", "CONTRACT_EXPIRING", "CONTENT_OVERDUE", "FOLLOW_UP_REMINDER"] as FilterType[]).map((f) => (
             <Button
               key={f}
               size="sm"
@@ -371,6 +399,8 @@ function AlertRulesTab() {
             thresholdDays: r.thresholdDays,
             enabled: r.enabled,
             templateId: r.templateId,
+            severity: r.severity,
+            escalationLayers: r.escalationLayers,
           })),
         }),
       });
@@ -420,10 +450,12 @@ function AlertRulesTab() {
             <TableRow>
               <TableHead className="w-[40px]"></TableHead>
               <TableHead>Alert Type</TableHead>
-              <TableHead className="w-[150px]">Threshold (days)</TableHead>
-              <TableHead className="w-[200px]">Email Template</TableHead>
-              <TableHead className="w-[100px]">Active Alerts</TableHead>
-              <TableHead className="w-[80px]">Enabled</TableHead>
+              <TableHead className="w-[120px]">Threshold (days)</TableHead>
+              <TableHead className="w-[120px]">Severity</TableHead>
+              <TableHead className="w-[180px]">Email Template</TableHead>
+              <TableHead className="w-[80px]">Escalation</TableHead>
+              <TableHead className="w-[80px]">Active</TableHead>
+              <TableHead className="w-[60px]">On</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -460,6 +492,25 @@ function AlertRulesTab() {
                 </TableCell>
                 <TableCell>
                   <Select
+                    value={rule.severity}
+                    onValueChange={(v) => updateRule(rule.id, "severity", v)}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((s) => (
+                        <SelectItem key={s} value={s}>
+                          <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium border ${SEVERITY_COLORS[s]}`}>
+                            {s}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </TableCell>
+                <TableCell>
+                  <Select
                     value={rule.templateId ?? "none"}
                     onValueChange={(v) =>
                       updateRule(
@@ -481,6 +532,20 @@ function AlertRulesTab() {
                       ))}
                     </SelectContent>
                   </Select>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline" className="text-[10px] cursor-pointer" onClick={() => {
+                    const layers = [...(rule.escalationLayers || [])];
+                    layers.push({
+                      days: rule.thresholdDays * 2,
+                      severity: "HIGH",
+                      notifyRole: "ADMIN",
+                      action: "email",
+                    });
+                    updateRule(rule.id, "escalationLayers", layers);
+                  }}>
+                    {(rule.escalationLayers?.length || 0)} layers +
+                  </Badge>
                 </TableCell>
                 <TableCell>
                   <Badge variant="secondary" className="text-xs">

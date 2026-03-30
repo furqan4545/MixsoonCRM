@@ -104,10 +104,15 @@ async function withTimeout<T>(
   }
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Parse syncMonths from query string (0 = normal, 1 or 2 = deep history sync)
+  const { searchParams } = new URL(request.url);
+  const syncMonthsRaw = Number(searchParams.get("syncMonths") ?? "0");
+  const syncMonths = [0, 1, 2].includes(syncMonthsRaw) ? syncMonthsRaw : 0;
 
   const account = await prisma.emailAccount.findUnique({
     where: { userId: user.id },
@@ -121,11 +126,17 @@ export async function POST() {
     });
   }
 
-  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-  const since =
-    account.lastSyncAt && account.lastSyncAt > threeDaysAgo
-      ? account.lastSyncAt
-      : threeDaysAgo;
+  let since: Date;
+  if (syncMonths > 0) {
+    // Deep sync: go back N months (N * 30 days)
+    since = new Date(Date.now() - syncMonths * 30 * 24 * 60 * 60 * 1000);
+  } else {
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    since =
+      account.lastSyncAt && account.lastSyncAt > threeDaysAgo
+        ? account.lastSyncAt
+        : threeDaysAgo;
+  }
   let totalSynced = 0;
 
   const isHiworksPop3 =

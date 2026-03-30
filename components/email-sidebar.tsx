@@ -2,9 +2,11 @@
 
 import {
   AlertTriangle,
+  ChevronDown,
   Clock,
   FileEdit,
   FileText,
+  History,
   Inbox,
   PenSquare,
   RefreshCw,
@@ -17,6 +19,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { emitEmailRefresh, useEmailRefresh } from "@/app/lib/email-events";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 const AUTO_SYNC_INTERVAL_MS = 60_000; // Auto-sync every 60 seconds
@@ -49,6 +57,7 @@ export function EmailSidebar() {
   const router = useRouter();
   const [counts, setCounts] = useState<FolderCounts>({});
   const [syncing, setSyncing] = useState(false);
+  const [deepSyncing, setDeepSyncing] = useState(false);
   const syncInFlightRef = useRef(false);
 
   const fetchCounts = useCallback(async () => {
@@ -65,14 +74,21 @@ export function EmailSidebar() {
   useEmailRefresh(fetchCounts);
 
   const runSync = useCallback(
-    async (silent = false) => {
+    async (silent = false, syncMonths = 0) => {
       if (syncInFlightRef.current) return;
       syncInFlightRef.current = true;
+      const isDeep = syncMonths > 0;
       if (!silent) setSyncing(true);
+      if (isDeep) setDeepSyncing(true);
       const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 120000);
+      // Allow more time for deep syncs (5 minutes vs 2 minutes)
+      const timeoutMs = isDeep ? 300000 : 120000;
+      const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const res = await fetch("/api/email/sync", {
+        const url = isDeep
+          ? `/api/email/sync?syncMonths=${syncMonths}`
+          : "/api/email/sync";
+        const res = await fetch(url, {
           method: "POST",
           cache: "no-store",
           signal: controller.signal,
@@ -100,6 +116,7 @@ export function EmailSidebar() {
         window.clearTimeout(timeout);
         syncInFlightRef.current = false;
         if (!silent) setSyncing(false);
+        if (isDeep) setDeepSyncing(false);
       }
     },
     [fetchCounts, router],
@@ -140,8 +157,40 @@ export function EmailSidebar() {
           onClick={handleSync}
         >
           <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
-          {syncing ? "Syncing..." : "Sync Mail"}
+          {syncing
+            ? deepSyncing
+              ? "Deep Syncing..."
+              : "Syncing..."
+            : "Sync Mail"}
         </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+              disabled={syncing}
+            >
+              <History className="h-4 w-4" />
+              <span className="flex-1 text-left">Sync History</span>
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[188px]">
+            <DropdownMenuItem
+              onClick={() => void runSync(false, 1)}
+              disabled={syncing}
+            >
+              Last 1 month
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => void runSync(false, 2)}
+              disabled={syncing}
+            >
+              Last 2 months
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {syncing && (
           <div className="h-1 w-full overflow-hidden rounded bg-muted">
             <div className="email-sync-bar h-full w-1/3 rounded bg-primary" />
