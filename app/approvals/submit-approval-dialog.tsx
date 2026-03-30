@@ -528,43 +528,6 @@ export function SubmitApprovalDialog({
             </div>
           </div>
 
-          {/* Total prices row */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label
-                htmlFor="approval-local"
-                className="text-xs font-semibold"
-              >
-                Total Price (Local Currency)
-              </Label>
-              <Input
-                id="approval-local"
-                type="number"
-                placeholder="0.00"
-                value={totalPriceLocal}
-                onChange={(e) => setTotalPriceLocal(e.target.value)}
-                className="mt-1"
-                min={0}
-                step="0.01"
-              />
-            </div>
-            <div>
-              <Label htmlFor="approval-usd" className="text-xs font-semibold">
-                Total Price (USD)
-              </Label>
-              <Input
-                id="approval-usd"
-                type="number"
-                placeholder="0.00"
-                value={totalPriceUsd}
-                onChange={(e) => setTotalPriceUsd(e.target.value)}
-                className="mt-1"
-                min={0}
-                step="0.01"
-              />
-            </div>
-          </div>
-
           {/* Profile Link */}
           <div>
             <Label
