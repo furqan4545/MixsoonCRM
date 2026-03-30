@@ -27,6 +27,8 @@ export interface AssignableInfluencer {
   platform: string | null;
   email: string | null;
   engagementRate: number | null;
+  country: string | null;
+  language: string | null;
 }
 
 export interface CampaignInfluencerRow {

@@ -371,6 +371,15 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
   const [bulkAnalyzing, setBulkAnalyzing] = useState(false);
   const bulkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Advanced filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterCountry, setFilterCountry] = useState("");
+  const [filterLanguage, setFilterLanguage] = useState("");
+  const [filterPlatform, setFilterPlatform] = useState("");
+  const [filterMinFollowers, setFilterMinFollowers] = useState("");
+  const [filterMaxFollowers, setFilterMaxFollowers] = useState("");
+  const activeFilterCount = [filterCountry, filterLanguage, filterPlatform, filterMinFollowers, filterMaxFollowers].filter(Boolean).length;
+
   // Count per queue
   const queueCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -389,6 +398,23 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
       else counts.UNSCORED++;
     }
     return counts;
+  }, [influencers]);
+
+  // Unique filter options
+  const filterOptions = useMemo(() => {
+    const countries = new Set<string>();
+    const languages = new Set<string>();
+    const platforms = new Set<string>();
+    for (const inf of influencers) {
+      if (inf.country) countries.add(inf.country);
+      if (inf.language) languages.add(inf.language);
+      if (inf.platform) platforms.add(inf.platform);
+    }
+    return {
+      countries: [...countries].sort(),
+      languages: [...languages].sort(),
+      platforms: [...platforms].sort(),
+    };
   }, [influencers]);
 
   const filtered = useMemo(() => {
@@ -418,8 +444,27 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
       );
     }
 
+    // Advanced filters
+    if (filterCountry) {
+      list = list.filter((inf) => inf.country === filterCountry);
+    }
+    if (filterLanguage) {
+      list = list.filter((inf) => inf.language === filterLanguage);
+    }
+    if (filterPlatform) {
+      list = list.filter((inf) => inf.platform === filterPlatform);
+    }
+    if (filterMinFollowers) {
+      const min = parseInt(filterMinFollowers, 10);
+      if (!isNaN(min)) list = list.filter((inf) => (inf.followers ?? 0) >= min);
+    }
+    if (filterMaxFollowers) {
+      const max = parseInt(filterMaxFollowers, 10);
+      if (!isNaN(max)) list = list.filter((inf) => (inf.followers ?? 0) <= max);
+    }
+
     return list;
-  }, [influencers, search, queueFilter]);
+  }, [influencers, search, queueFilter, filterCountry, filterLanguage, filterPlatform, filterMinFollowers, filterMaxFollowers]);
 
   const selected = selectedId
     ? influencers.find((i) => i.id === selectedId) ?? null
@@ -734,9 +779,19 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                   className="w-64 pl-9"
                 />
               </div>
-              <Button variant="outline" size="default" className="gap-2">
+              <Button
+                variant={activeFilterCount > 0 ? "default" : "outline"}
+                size="default"
+                className="gap-2"
+                onClick={() => setShowFilters(!showFilters)}
+              >
                 <SlidersHorizontal className="h-4 w-4" />
                 Filter
+                {activeFilterCount > 0 && (
+                  <span className="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-bold text-foreground">
+                    {activeFilterCount}
+                  </span>
+                )}
               </Button>
               <Button asChild className="gap-2">
                 <Link href="/data-scraper">
@@ -746,6 +801,91 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
               </Button>
             </div>
           </div>
+
+          {/* Advanced filter panel */}
+          {showFilters && (
+            <div className="mb-4 rounded-lg border bg-muted/30 p-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="min-w-[140px]">
+                  <label className="text-xs font-semibold text-muted-foreground">Country</label>
+                  <select
+                    value={filterCountry}
+                    onChange={(e) => setFilterCountry(e.target.value)}
+                    className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                  >
+                    <option value="">All countries</option>
+                    {filterOptions.countries.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="min-w-[140px]">
+                  <label className="text-xs font-semibold text-muted-foreground">Language</label>
+                  <select
+                    value={filterLanguage}
+                    onChange={(e) => setFilterLanguage(e.target.value)}
+                    className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                  >
+                    <option value="">All languages</option>
+                    {filterOptions.languages.map((l) => (
+                      <option key={l} value={l}>{l}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="min-w-[140px]">
+                  <label className="text-xs font-semibold text-muted-foreground">Platform</label>
+                  <select
+                    value={filterPlatform}
+                    onChange={(e) => setFilterPlatform(e.target.value)}
+                    className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                  >
+                    <option value="">All platforms</option>
+                    {filterOptions.platforms.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="min-w-[120px]">
+                  <label className="text-xs font-semibold text-muted-foreground">Min Followers</label>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 10000"
+                    value={filterMinFollowers}
+                    onChange={(e) => setFilterMinFollowers(e.target.value)}
+                    className="mt-1 h-9"
+                    min={0}
+                  />
+                </div>
+                <div className="min-w-[120px]">
+                  <label className="text-xs font-semibold text-muted-foreground">Max Followers</label>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 1000000"
+                    value={filterMaxFollowers}
+                    onChange={(e) => setFilterMaxFollowers(e.target.value)}
+                    className="mt-1 h-9"
+                    min={0}
+                  />
+                </div>
+                {activeFilterCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 text-xs text-muted-foreground"
+                    onClick={() => {
+                      setFilterCountry("");
+                      setFilterLanguage("");
+                      setFilterPlatform("");
+                      setFilterMinFollowers("");
+                      setFilterMaxFollowers("");
+                    }}
+                  >
+                    Clear all
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Queue filter tabs */}
           <div className="mb-4 flex items-center gap-1.5">
