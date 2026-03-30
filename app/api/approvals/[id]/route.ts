@@ -150,7 +150,7 @@ export async function PATCH(
       const updateFields: Record<string, unknown> = {};
       if (ceoFeedback !== undefined) updateFields.ceoFeedback = ceoFeedback.trim() || null;
       if (feedbackStatus) updateFields.feedbackStatus = feedbackStatus;
-      if (contractStatus) updateFields.contractStatus = contractStatus;
+      if (contractStatus !== undefined && contractStatus !== "") updateFields.contractStatus = contractStatus;
       // Allow saving counter rate during auto-save (before formal counter-offer)
       if (counterRate != null && Number(counterRate) > 0) {
         updateFields.counterRate = Number(counterRate);

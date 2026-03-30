@@ -41,6 +41,7 @@ function formatCurrency(amount: number, currency: string) {
 }
 
 const CONTRACT_STATUS_OPTIONS = [
+  { value: "", label: "— Not set —" },
   { value: "NEGOTIATE", label: "Negotiate" },
   { value: "APPROVED", label: "Approved" },
   { value: "DROP", label: "Drop" },
@@ -72,7 +73,7 @@ export function ReviewApprovalDialog({
     if (approval) {
       const fb = approval.ceoFeedback ?? "";
       const cr = approval.counterRate?.toString() ?? "";
-      const cs = approval.contractStatus ?? "NEGOTIATE";
+      const cs = approval.contractStatus ?? "";
       const sp = approval.feedbackStatus === "SPECIAL";
       setCeoFeedback(fb);
       setCounterRate(cr);
@@ -326,22 +327,6 @@ export function ReviewApprovalDialog({
                   <p className="text-xs text-muted-foreground">$/Video (VAT incl.)</p>
                   <p className="text-lg font-bold">
                     ${approval.ratePerVideo.toLocaleString()}
-                  </p>
-                </div>
-              )}
-              {approval.totalPriceLocal != null && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Total (Local)</p>
-                  <p className="text-lg font-bold">
-                    {approval.currency} {approval.totalPriceLocal.toLocaleString()}
-                  </p>
-                </div>
-              )}
-              {approval.totalPriceUsd != null && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Total (USD)</p>
-                  <p className="text-lg font-bold">
-                    ${approval.totalPriceUsd.toLocaleString()}
                   </p>
                 </div>
               )}

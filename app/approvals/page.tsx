@@ -350,8 +350,6 @@ export default function ApprovalsPage() {
                   <th className="px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap">Videos/Bundle</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Currency</th>
                   <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">$/Video</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Total (Local)</th>
-                  <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Total (USD)</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap max-w-[200px]">PIC Notes</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Profile</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap max-w-[200px]">CEO Feedback</th>
@@ -422,19 +420,6 @@ export default function ApprovalsPage() {
                       {row.ratePerVideo != null ? `$${row.ratePerVideo.toLocaleString()}` : "—"}
                     </td>
 
-                    {/* Total Local */}
-                    <td className="px-3 py-2.5 text-right whitespace-nowrap font-mono text-xs">
-                      {row.totalPriceLocal != null
-                        ? `${row.currency} ${row.totalPriceLocal.toLocaleString()}`
-                        : "—"}
-                    </td>
-
-                    {/* Total USD */}
-                    <td className="px-3 py-2.5 text-right whitespace-nowrap font-mono text-xs">
-                      {row.totalPriceUsd != null
-                        ? `$${row.totalPriceUsd.toLocaleString()}`
-                        : "—"}
-                    </td>
 
                     {/* PIC Feedback */}
                     <td className="px-3 py-2.5 max-w-[200px]">
