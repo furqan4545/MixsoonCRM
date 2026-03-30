@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { processEmailAlerts } from "@/app/lib/alert-checker";
 import {
   type FetchedEmail,
+  fetchAllFoldersImap,
   fetchEmailsFromImap,
   fetchEmailsFromPop3,
 } from "@/app/lib/email";
@@ -208,7 +209,7 @@ async function doSync(account: Awaited<ReturnType<typeof prisma.emailAccount.fin
         for (const item of toInsert) {
           if (item.from) allEmailsPop.add(item.from.toLowerCase());
           if (item.to) {
-            for (const addr of item.to.split(",")) {
+            for (const addr of (Array.isArray(item.to) ? item.to : [item.to])) {
               const trimmed = addr.trim().toLowerCase();
               if (trimmed) allEmailsPop.add(trimmed);
             }
@@ -227,7 +228,7 @@ async function doSync(account: Awaited<ReturnType<typeof prisma.emailAccount.fin
           for (const item of toInsert) {
             let influencerId = emailToInfluencer.get(item.from.toLowerCase());
             if (!influencerId && item.to) {
-              for (const addr of item.to.split(",")) {
+              for (const addr of (Array.isArray(item.to) ? item.to : [item.to])) {
                 const trimmed = addr.trim().toLowerCase();
                 const match = emailToInfluencer.get(trimmed);
                 if (match) { influencerId = match; break; }
@@ -288,21 +289,17 @@ async function doSync(account: Awaited<ReturnType<typeof prisma.emailAccount.fin
     return NextResponse.json({ synced: totalSynced, protocol: "POP3" });
   }
 
-  // Serialize folder syncs — Gmail limits simultaneous IMAP connections
+  // Single IMAP connection for all folders — avoids Gmail connection limits
+  const remoteFolders = SYNC_FOLDERS.map((f) => f.remote);
+  const folderMap = await withTimeout(
+    fetchAllFoldersImap(account, remoteFolders, since),
+    IMAP_FETCH_TIMEOUT_MS * SYNC_FOLDERS.length,
+    new Map<string, FetchedEmail[]>(),
+    "IMAP all folders",
+  );
   const folderResults: Array<{ local: EmailFolder; emails: FetchedEmail[] }> = [];
   for (const { remote, local } of SYNC_FOLDERS) {
-    try {
-      const emails = await withTimeout(
-        fetchEmailsFromImap(account, remote, since),
-        IMAP_FETCH_TIMEOUT_MS,
-        [],
-        `IMAP ${remote}`,
-      );
-      folderResults.push({ local, emails });
-    } catch (err) {
-      console.error(`[email] IMAP fetch error for ${remote}:`, err);
-      folderResults.push({ local, emails: [] as FetchedEmail[] });
-    }
+    folderResults.push({ local, emails: folderMap.get(remote) ?? [] });
   }
 
   const candidates: Array<{ folder: EmailFolder; email: FetchedEmail }> = [];
@@ -367,9 +364,9 @@ async function doSync(account: Awaited<ReturnType<typeof prisma.emailAccount.fin
     for (const item of toInsert) {
       if (item.from) allEmails.add(item.from.toLowerCase());
       if (item.to) {
-        // to can be comma-separated
-        for (const addr of item.to.split(",")) {
-          const trimmed = addr.trim().toLowerCase();
+        const toArr = Array.isArray(item.to) ? item.to : [item.to];
+        for (const addr of toArr) {
+          const trimmed = String(addr).trim().toLowerCase();
           if (trimmed) allEmails.add(trimmed);
         }
       }
