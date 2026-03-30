@@ -513,7 +513,7 @@ export function SubmitApprovalDialog({
             </div>
             <div>
               <Label htmlFor="approval-rpv" className="text-xs font-semibold">
-                $ per Video (VAT incl.)
+                Per Video (VAT incl.)
               </Label>
               <Input
                 id="approval-rpv"
