@@ -571,6 +571,8 @@ interface ContentSubmissionItem {
   id: string;
   videoLinks: string[];
   notes: string | null;
+  sCode: string | null;
+  submissionLabel: string | null;
   includePayment: boolean;
   bankName: string | null;
   accountHolder: string | null;
@@ -606,6 +608,8 @@ function DocumentsTab({
   const [formPreview, setFormPreview] = useState<{
     type: "content" | "payment";
     includePayment: boolean;
+    requireScode: boolean;
+    submissionLabel: string;
   } | null>(null);
 
   // Editor state (contract only)
@@ -781,11 +785,11 @@ function DocumentsTab({
   const openFormPreview = (formType: FormType) => {
     setShowNewMenu(false);
     if (formType === "content") {
-      setFormPreview({ type: "content", includePayment: false });
+      setFormPreview({ type: "content", includePayment: false, requireScode: false, submissionLabel: "" });
     } else if (formType === "content_payment") {
-      setFormPreview({ type: "content", includePayment: true });
+      setFormPreview({ type: "content", includePayment: true, requireScode: false, submissionLabel: "" });
     } else if (formType === "payment") {
-      setFormPreview({ type: "payment", includePayment: true });
+      setFormPreview({ type: "payment", includePayment: true, requireScode: false, submissionLabel: "" });
     }
   };
 
@@ -804,7 +808,13 @@ function DocumentsTab({
       const res = await fetch("/api/onboarding/generate-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ influencerId, type, includePayment }),
+        body: JSON.stringify({
+          influencerId,
+          type,
+          includePayment,
+          requireScode: formPreview.requireScode,
+          submissionLabel: formPreview.submissionLabel || null,
+        }),
       });
       if (!res.ok) throw new Error("Failed to generate form link");
       const data = await res.json();
@@ -1068,6 +1078,52 @@ function DocumentsTab({
                 </div>
               </div>
             )}
+            {/* S-Code & Submission Label */}
+            <div className="rounded-lg border bg-background p-4 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Submission Settings</p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium" htmlFor="preview-label">Submission Label</label>
+                  <input
+                    id="preview-label"
+                    type="text"
+                    placeholder="e.g. 1st video, Week 3, Draft 2"
+                    value={formPreview.submissionLabel}
+                    onChange={(e) =>
+                      setFormPreview((prev) =>
+                        prev ? { ...prev, submissionLabel: e.target.value } : prev
+                      )
+                    }
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Pre-set a label to identify this submission</p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium">Require S-Code</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      Influencer must enter an S-code to submit
+                    </p>
+                  </div>
+                  <button
+                    onClick={() =>
+                      setFormPreview((prev) =>
+                        prev ? { ...prev, requireScode: !prev.requireScode } : prev
+                      )
+                    }
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                      formPreview.requireScode ? "bg-foreground" : "bg-muted-foreground/30"
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
+                        formPreview.requireScode ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Send button */}
@@ -1248,8 +1304,13 @@ function DocumentsTab({
                 <div className="flex items-center gap-2">
                   <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">
-                    {s.videoLinks.length > 0 ? "Content Submission" : "Payment Form"}
+                    {s.submissionLabel || (s.videoLinks.length > 0 ? "Content Submission" : "Payment Form")}
                   </span>
+                  {s.sCode && (
+                    <span className="inline-flex items-center rounded bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 text-[9px] font-medium text-indigo-600">
+                      S-Code: {s.sCode}
+                    </span>
+                  )}
                   {s.includePayment && s.videoLinks.length > 0 && (
                     <span className="inline-flex items-center rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-medium text-amber-600">
                       + Payment
