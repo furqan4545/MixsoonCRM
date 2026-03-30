@@ -60,6 +60,8 @@ export default async function CampaignsPage() {
       platform: true,
       email: true,
       engagementRate: true,
+      country: true,
+      language: true,
     },
     orderBy: { createdAt: "desc" },
   });
@@ -81,6 +83,8 @@ export default async function CampaignsPage() {
       platform: true,
       email: true,
       engagementRate: true,
+      country: true,
+      language: true,
     },
     orderBy: { createdAt: "desc" },
   });
@@ -130,6 +134,8 @@ export default async function CampaignsPage() {
     platform: inf.platform,
     email: inf.email,
     engagementRate: inf.engagementRate,
+    country: inf.country,
+    language: inf.language,
   }));
 
   const serializedOkish = okishInfluencers.map((inf) => ({
@@ -141,6 +147,8 @@ export default async function CampaignsPage() {
     platform: inf.platform,
     email: inf.email,
     engagementRate: inf.engagementRate,
+    country: inf.country,
+    language: inf.language,
   }));
 
   return (

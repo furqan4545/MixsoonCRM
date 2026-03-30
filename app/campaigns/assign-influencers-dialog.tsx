@@ -92,6 +92,8 @@ export function AssignInfluencersDialog({
   const [queueTab, setQueueTab] = useState<QueueTab>("APPROVED");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [filterCountry, setFilterCountry] = useState("");
+  const [filterLanguage, setFilterLanguage] = useState("");
 
   // Merge lists for "ALL" tab (deduplicate by id)
   const allInfluencers = useMemo(() => {
@@ -108,16 +110,36 @@ export function AssignInfluencersDialog({
         ? okishInfluencers
         : allInfluencers;
 
+  // Unique filter options
+  const filterOpts = useMemo(() => {
+    const countries = new Set<string>();
+    const languages = new Set<string>();
+    for (const inf of allInfluencers) {
+      if (inf.country) countries.add(inf.country);
+      if (inf.language) languages.add(inf.language);
+    }
+    return { countries: [...countries].sort(), languages: [...languages].sort() };
+  }, [allInfluencers]);
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return sourceList;
-    const q = search.toLowerCase();
-    return sourceList.filter(
-      (inf) =>
-        inf.username.toLowerCase().includes(q) ||
-        (inf.displayName?.toLowerCase().includes(q) ?? false) ||
-        (inf.email?.toLowerCase().includes(q) ?? false),
-    );
-  }, [sourceList, search]);
+    let list = sourceList;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (inf) =>
+          inf.username.toLowerCase().includes(q) ||
+          (inf.displayName?.toLowerCase().includes(q) ?? false) ||
+          (inf.email?.toLowerCase().includes(q) ?? false),
+      );
+    }
+    if (filterCountry) {
+      list = list.filter((inf) => inf.country === filterCountry);
+    }
+    if (filterLanguage) {
+      list = list.filter((inf) => inf.language === filterLanguage);
+    }
+    return list;
+  }, [sourceList, search, filterCountry, filterLanguage]);
 
   const toggleSelect = useCallback((id: string) => {
     setSelected((prev) => {
@@ -178,6 +200,32 @@ export function AssignInfluencersDialog({
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
             />
+          </div>
+          <div className="flex items-center gap-2">
+            {filterOpts.countries.length > 0 && (
+              <select
+                value={filterCountry}
+                onChange={(e) => setFilterCountry(e.target.value)}
+                className="h-8 rounded-md border bg-background px-2 text-xs"
+              >
+                <option value="">All countries</option>
+                {filterOpts.countries.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            )}
+            {filterOpts.languages.length > 0 && (
+              <select
+                value={filterLanguage}
+                onChange={(e) => setFilterLanguage(e.target.value)}
+                className="h-8 rounded-md border bg-background px-2 text-xs"
+              >
+                <option value="">All languages</option>
+                {filterOpts.languages.map((l) => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </select>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             {QUEUE_TABS.map((tab) => {
