@@ -221,6 +221,7 @@ export async function GET(request: NextRequest) {
           name: p.user.name,
           email: p.user.email,
         })),
+        savedAt: inf.savedAt?.toISOString() ?? null,
         createdAt: inf.createdAt.toISOString(),
       };
     });

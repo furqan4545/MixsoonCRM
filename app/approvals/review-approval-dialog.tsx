@@ -491,28 +491,6 @@ export function ReviewApprovalDialog({
               <h4 className="text-xs font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">
                 CEO Review
               </h4>
-              {/* Star/Special toggle */}
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => setIsSpecial(!isSpecial)}
-                  className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                    isSpecial
-                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-                      : "bg-muted text-muted-foreground hover:bg-muted/80"
-                  }`}
-                  title="Mark as special/important influencer"
-                >
-                  <Star className={`h-3.5 w-3.5 ${isSpecial ? "fill-amber-500 text-amber-500" : ""}`} />
-                  {isSpecial ? "Special" : "Mark Special"}
-                </button>
-              )}
-              {!isAdmin && isSpecial && (
-                <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-300">
-                  <Star className="mr-1 h-3 w-3 fill-amber-500 text-amber-500" />
-                  Special
-                </Badge>
-              )}
             </div>
 
             {/* Feedback + Counter rate in one section */}

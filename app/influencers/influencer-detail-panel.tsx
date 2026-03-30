@@ -49,6 +49,7 @@ import {
   Download,
   Maximize2,
   Minimize2,
+  Star,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -218,6 +219,40 @@ function EditableField({
     >
       {display || <span className="text-muted-foreground/50">{placeholder ?? `Add ${label}`}</span>}
     </span>
+  );
+}
+
+/* ── Save/Star button ── */
+function SaveStarButton({ influencerId, savedAt }: { influencerId: string; savedAt: string | null }) {
+  const [saved, setSaved] = useState(!!savedAt);
+  const [toggling, setToggling] = useState(false);
+
+  useEffect(() => { setSaved(!!savedAt); }, [savedAt]);
+
+  const toggle = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setToggling(true);
+    try {
+      const res = await fetch(`/api/influencers/${influencerId}/save`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setSaved(data.saved);
+      }
+    } catch {} finally {
+      setToggling(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={toggling}
+      className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-background border border-border shadow-sm hover:scale-110 transition-transform"
+      title={saved ? "Remove from saved" : "Save influencer"}
+    >
+      <Star className={`h-3.5 w-3.5 ${saved ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
+    </button>
   );
 }
 
@@ -1493,20 +1528,23 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
       {/* Profile header */}
       <div className="px-6 pt-6 pb-4">
         <div className="flex items-start gap-4">
-          {influencer.avatarProxied ? (
-            <ThumbnailImage
-              src={influencer.avatarProxied}
-              alt={influencer.username}
-              className="h-16 w-16 shrink-0 rounded-full object-cover border-2 border-border"
-              fallbackText={getInitials(influencer.displayName, influencer.username)}
-            />
-          ) : (
-            <div
-              className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-xl font-bold ${getAvatarColor(influencer.username)}`}
-            >
-              {getInitials(influencer.displayName, influencer.username)}
-            </div>
-          )}
+          <div className="relative shrink-0">
+            {influencer.avatarProxied ? (
+              <ThumbnailImage
+                src={influencer.avatarProxied}
+                alt={influencer.username}
+                className="h-16 w-16 rounded-full object-cover border-2 border-border"
+                fallbackText={getInitials(influencer.displayName, influencer.username)}
+              />
+            ) : (
+              <div
+                className={`flex h-16 w-16 items-center justify-center rounded-full text-xl font-bold ${getAvatarColor(influencer.username)}`}
+              >
+                {getInitials(influencer.displayName, influencer.username)}
+              </div>
+            )}
+            <SaveStarButton influencerId={influencer.id} savedAt={influencer.savedAt} />
+          </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold truncate">
