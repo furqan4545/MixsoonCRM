@@ -21,6 +21,9 @@ const DEDUPE_WINDOW_MS = 2 * 60 * 1000;
 const POP3_FETCH_TIMEOUT_MS = 12000;
 const IMAP_FETCH_TIMEOUT_MS = 15000;
 
+// Prevent overlapping syncs per account
+const activeSyncs = new Map<string, Promise<NextResponse>>();
+
 async function emailExists(
   accountId: string,
   folder: EmailFolder,
@@ -118,13 +121,30 @@ export async function POST(request: Request) {
     where: { userId: user.id },
   });
   if (!account) {
-    // Avoid noisy 404s from sidebar auto-sync before account is connected.
     return NextResponse.json({
       synced: 0,
       skipped: true,
       reason: "NO_ACCOUNT",
     });
   }
+
+  // Prevent overlapping syncs for the same account
+  const existingSync = activeSyncs.get(account.id);
+  if (existingSync && syncMonths === 0) {
+    // For regular syncs, just wait for the existing one
+    return existingSync;
+  }
+
+  const syncPromise = doSync(account, syncMonths);
+  activeSyncs.set(account.id, syncPromise);
+  try {
+    return await syncPromise;
+  } finally {
+    activeSyncs.delete(account.id);
+  }
+}
+
+async function doSync(account: Awaited<ReturnType<typeof prisma.emailAccount.findUnique>> & {}, syncMonths: number): Promise<NextResponse> {
 
   let since: Date;
   if (syncMonths > 0) {
@@ -253,22 +273,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ synced: totalSynced, protocol: "POP3" });
   }
 
-  const folderResults = await Promise.all(
-    SYNC_FOLDERS.map(async ({ remote, local }) => {
-      try {
-        const emails = await withTimeout(
-          fetchEmailsFromImap(account, remote, since),
-          IMAP_FETCH_TIMEOUT_MS,
-          [],
-          `IMAP ${remote}`,
-        );
-        return { local, emails };
-      } catch (err) {
-        console.error(`[email-sync] Error syncing ${remote}:`, err);
-        return { local, emails: [] as FetchedEmail[] };
-      }
-    }),
-  );
+  // Serialize folder syncs — Gmail limits simultaneous IMAP connections
+  const folderResults: Array<{ local: EmailFolder; emails: FetchedEmail[] }> = [];
+  for (const { remote, local } of SYNC_FOLDERS) {
+    try {
+      const emails = await withTimeout(
+        fetchEmailsFromImap(account, remote, since),
+        IMAP_FETCH_TIMEOUT_MS,
+        [],
+        `IMAP ${remote}`,
+      );
+      folderResults.push({ local, emails });
+    } catch (err) {
+      console.error(`[email] IMAP fetch error for ${remote}:`, err);
+      folderResults.push({ local, emails: [] as FetchedEmail[] });
+    }
+  }
 
   const candidates: Array<{ folder: EmailFolder; email: FetchedEmail }> = [];
   for (const result of folderResults) {

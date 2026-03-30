@@ -23,7 +23,7 @@ type NotificationRow = {
   createdAt: string;
 };
 
-const POLL_INTERVAL = 3000;
+const POLL_INTERVAL = 30_000; // 30s — reduce server load
 
 export function NotificationBell() {
   const router = useRouter();
