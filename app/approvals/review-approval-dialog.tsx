@@ -75,6 +75,10 @@ export function ReviewApprovalDialog({
   const [resubmitNotes, setResubmitNotes] = useState("");
   const [submittingResubmit, setSubmittingResubmit] = useState(false);
 
+  // Negotiation history
+  const [history, setHistory] = useState<ApprovalRow[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
   // Reset editable fields when approval changes
   useEffect(() => {
     if (approval) {
@@ -86,9 +90,30 @@ export function ReviewApprovalDialog({
       setCounterRate(cr);
       setContractStatus(cs);
       setIsSpecial(sp);
+      setResubmitMode(false);
       lastSaved.current = { ceoFeedback: fb, counterRate: cr, contractStatus: cs, isSpecial: sp };
     }
   }, [approval]);
+
+  // Fetch negotiation history for this influencer
+  useEffect(() => {
+    if (!approval || !open) return;
+    let cancelled = false;
+    setLoadingHistory(true);
+    fetch(`/api/approvals?influencerId=${approval.influencer.id}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (cancelled || !data) return;
+        // All approvals for this influencer except current, sorted oldest first
+        const others = (data.approvals as ApprovalRow[])
+          .filter((a) => a.id !== approval.id)
+          .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        setHistory(others);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingHistory(false); });
+    return () => { cancelled = true; };
+  }, [approval, open]);
 
   // Auto-save function
   const doAutoSave = useCallback(async () => {
@@ -408,6 +433,58 @@ export function ReviewApprovalDialog({
             </div>
           )}
 
+          {/* ── Negotiation History ── */}
+          {history.length > 0 && (
+            <div className="rounded-lg border p-4 space-y-3">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Negotiation History
+              </h4>
+              <div className="space-y-2.5">
+                {history.map((h) => (
+                  <div key={h.id} className="relative pl-4 border-l-2 border-muted pb-2 last:pb-0">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-medium">{h.submittedBy.name || h.submittedBy.email}</span>
+                      <span className="text-muted-foreground">proposed</span>
+                      <span className="font-bold">{h.currency} {h.rate.toLocaleString()}</span>
+                      <StatusDot status={h.status} />
+                      <span className="text-muted-foreground ml-auto">
+                        {new Date(h.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    {h.notes && (
+                      <p className="text-xs text-muted-foreground mt-0.5">{h.notes}</p>
+                    )}
+                    {h.counterRate && (
+                      <div className="mt-1 text-xs">
+                        <span className="text-amber-700 font-medium">
+                          CEO countered: {h.currency} {h.counterRate.toLocaleString()}
+                        </span>
+                        {h.counterNotes && (
+                          <span className="text-muted-foreground ml-1">— {h.counterNotes}</span>
+                        )}
+                      </div>
+                    )}
+                    {h.ceoFeedback && (
+                      <p className="text-xs text-purple-700 mt-0.5">CEO: {h.ceoFeedback}</p>
+                    )}
+                  </div>
+                ))}
+                {/* Current round */}
+                <div className="relative pl-4 border-l-2 border-primary">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-medium">{approval.submittedBy.name || approval.submittedBy.email}</span>
+                    <span className="text-muted-foreground">proposed</span>
+                    <span className="font-bold">{approval.currency} {approval.rate.toLocaleString()}</span>
+                    <StatusDot status={approval.status} />
+                    <span className="text-muted-foreground ml-auto">
+                      {new Date(approval.createdAt).toLocaleDateString()} (current)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── CEO Review Section (simplified — unified feedback + counter) ── */}
           <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20 p-4 space-y-4">
             <div className="flex items-center justify-between">
@@ -713,5 +790,26 @@ function ContractBadge({ status }: { status: string }) {
     <Badge variant="outline" className={c.className}>
       {c.label}
     </Badge>
+  );
+}
+
+function StatusDot({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    PENDING: "bg-yellow-400",
+    APPROVED: "bg-green-500",
+    REJECTED: "bg-red-500",
+    COUNTER_OFFERED: "bg-amber-500",
+  };
+  const labels: Record<string, string> = {
+    PENDING: "Pending",
+    APPROVED: "Approved",
+    REJECTED: "Rejected",
+    COUNTER_OFFERED: "Countered",
+  };
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+      <span className={`inline-block h-1.5 w-1.5 rounded-full ${colors[status] ?? "bg-gray-400"}`} />
+      {labels[status] ?? status}
+    </span>
   );
 }
