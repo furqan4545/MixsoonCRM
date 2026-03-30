@@ -507,3 +507,93 @@ export async function fetchEmailsFromImap(
 
   return results;
 }
+
+/**
+ * Fetch emails from MULTIPLE folders using a SINGLE IMAP connection.
+ * Avoids "Too many simultaneous connections" from Gmail.
+ */
+export async function fetchAllFoldersImap(
+  account: EmailAccount,
+  folders: string[],
+  since?: Date,
+): Promise<Map<string, FetchedEmail[]>> {
+  const client = getImapClient(account);
+  const resultMap = new Map<string, FetchedEmail[]>();
+  for (const f of folders) resultMap.set(f, []);
+
+  try {
+    await client.connect();
+
+    for (const folder of folders) {
+      try {
+        const mailbox = await resolveMailbox(client, folder);
+        if (!mailbox) continue;
+
+        const lock = await client.getMailboxLock(mailbox);
+        try {
+          const allUids = await client.search(since ? { since } : { all: true });
+          const targetUids = allUids.slice(-20);
+          if (targetUids.length === 0) continue;
+
+          const messages = client.fetch(targetUids, {
+            envelope: true,
+            source: true,
+            uid: true,
+          });
+
+          const folderEmails: FetchedEmail[] = [];
+          for await (const msg of messages) {
+            try {
+              const envelope = msg.envelope as {
+                messageId?: string | null;
+                inReplyTo?: string | null;
+                from?: unknown;
+                to?: unknown;
+                cc?: unknown;
+                subject?: string | null;
+                date?: Date | null;
+              } | null;
+              const fromList = envelopeAddressesToStrings(envelope?.from);
+              const inReplyToValue = envelope?.inReplyTo;
+
+              let bodyHtml: string | undefined;
+              let bodyText: string | undefined;
+              if (msg.source) {
+                try {
+                  const parsed = await simpleParser(msg.source);
+                  bodyHtml = parsed.html || undefined;
+                  bodyText = parsed.text || undefined;
+                } catch {}
+              }
+
+              folderEmails.push({
+                messageId: envelope?.messageId ?? undefined,
+                inReplyTo: typeof inReplyToValue === "string" ? inReplyToValue : undefined,
+                from: fromList[0] ?? "",
+                to: envelopeAddressesToStrings(envelope?.to),
+                cc: envelopeAddressesToStrings(envelope?.cc),
+                subject: envelope?.subject ?? "(no subject)",
+                bodyHtml,
+                bodyText,
+                date: envelope?.date ?? undefined,
+                uid: msg.uid,
+              });
+            } catch {}
+          }
+          resultMap.set(folder, folderEmails);
+        } finally {
+          lock.release();
+        }
+      } catch (err) {
+        console.error(`[email] IMAP folder ${folder} error:`, err);
+      }
+    }
+
+    await client.logout();
+  } catch (err) {
+    console.error("[email] IMAP connection error:", err);
+    try { await client.logout(); } catch {}
+  }
+
+  return resultMap;
+}
