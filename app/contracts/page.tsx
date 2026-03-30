@@ -1,9 +1,16 @@
 import { prisma } from "../lib/prisma";
+import { getCurrentUser } from "../lib/rbac";
 import { ContractsPage } from "./contracts-page";
 
 export const dynamic = "force-dynamic";
 
 export default async function ContractsPageWrapper() {
+  let isAdmin = false;
+  try {
+    const user = await getCurrentUser();
+    if (user?.role === "Admin") isAdmin = true;
+  } catch {}
+
   const [contracts, submissions] = await Promise.all([
     prisma.contract.findMany({
       orderBy: { createdAt: "desc" },
@@ -20,6 +27,9 @@ export default async function ContractsPageWrapper() {
         },
         template: {
           select: { id: true, name: true },
+        },
+        adminSignedBy: {
+          select: { id: true, name: true, email: true },
         },
       },
     }),
@@ -43,6 +53,9 @@ export default async function ContractsPageWrapper() {
     pdfUrl: c.pdfUrl,
     signedPdfUrl: c.signedPdfUrl,
     signedAt: c.signedAt?.toISOString() ?? null,
+    adminSignatureUrl: c.adminSignatureUrl,
+    adminSignedAt: c.adminSignedAt?.toISOString() ?? null,
+    adminSignedBy: c.adminSignedBy,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
     influencer: c.influencer,
@@ -69,6 +82,7 @@ export default async function ContractsPageWrapper() {
     <ContractsPage
       contracts={serializedContracts}
       submissions={serializedSubmissions}
+      isAdmin={isAdmin}
     />
   );
 }

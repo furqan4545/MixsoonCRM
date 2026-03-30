@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import {
   ArrowDownAZ,
@@ -12,13 +13,26 @@ import {
   FileText,
   Loader2,
   Mail,
+  PenLine,
   RefreshCw,
   Search,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
+
+const SignaturePadLazy = dynamic(
+  () => import("@/components/signature-pad").then((m) => m.SignaturePad),
+  { ssr: false, loading: () => <div className="flex items-center justify-center py-12"><Loader2 className="h-5 w-5 animate-spin" /></div> },
+);
 
 interface ContractRow {
   id: string;
@@ -26,6 +40,9 @@ interface ContractRow {
   pdfUrl: string | null;
   signedPdfUrl: string | null;
   signedAt: string | null;
+  adminSignatureUrl: string | null;
+  adminSignedAt: string | null;
+  adminSignedBy: { id: string; name: string | null; email: string } | null;
   createdAt: string;
   updatedAt: string;
   influencer: { id: string; username: string; displayName: string | null };
@@ -80,9 +97,11 @@ const statusColors: Record<string, string> = {
 export function ContractsPage({
   contracts: initialContracts,
   submissions: initialSubmissions,
+  isAdmin = false,
 }: {
   contracts: ContractRow[];
   submissions: SubmissionRow[];
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const [contracts] = useState(initialContracts);
@@ -93,6 +112,41 @@ export function ContractsPage({
   const [sortNewest, setSortNewest] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+
+  // Admin counter-sign
+  const [signDialogOpen, setSignDialogOpen] = useState(false);
+  const [signingContractId, setSigningContractId] = useState<string | null>(null);
+  const [adminSignature, setAdminSignature] = useState<string | null>(null);
+  const [submittingSign, setSubmittingSign] = useState(false);
+
+  const openCounterSign = (contractId: string) => {
+    setSigningContractId(contractId);
+    setAdminSignature(null);
+    setSignDialogOpen(true);
+  };
+
+  const submitCounterSign = async () => {
+    if (!signingContractId || !adminSignature) return;
+    setSubmittingSign(true);
+    try {
+      const res = await fetch(`/api/contracts/${signingContractId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminSignatureUrl: adminSignature }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to counter-sign");
+      }
+      toast.success("Contract counter-signed successfully");
+      setSignDialogOpen(false);
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to counter-sign");
+    } finally {
+      setSubmittingSign(false);
+    }
+  };
 
   const totalCount = contracts.length + submissions.length;
 
@@ -320,6 +374,24 @@ export function ContractsPage({
                         </a>
                       </>
                     )}
+                    {/* Admin counter-sign button — show when influencer signed but admin hasn't */}
+                    {isAdmin && c.status === "SIGNED" && c.signedAt && !c.adminSignedAt && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => openCounterSign(c.id)}
+                      >
+                        <PenLine className="mr-1 h-3 w-3" />
+                        Counter-sign
+                      </Button>
+                    )}
+                    {c.adminSignedAt && (
+                      <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-1">
+                        <Check className="h-3 w-3" />
+                        Admin signed {c.adminSignedBy?.name || ""}
+                      </span>
+                    )}
                     <Link href={`/influencers?selected=${c.influencer.id}&tab=contracts`} className="ml-auto">
                       <Button variant="ghost" size="sm" className="h-7 text-xs">
                         Open in Influencer
@@ -427,6 +499,40 @@ export function ContractsPage({
           })}
         </div>
       )}
+
+      {/* Admin Counter-sign Dialog */}
+      <Dialog open={signDialogOpen} onOpenChange={setSignDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Counter-sign Contract</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Add your signature or stamp to counter-sign this contract on behalf of the company.
+          </p>
+          <div className="py-4">
+            <SignaturePadLazy
+              onSignatureChange={(data) => setAdminSignature(data)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSignDialogOpen(false)} disabled={submittingSign}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              onClick={submitCounterSign}
+              disabled={!adminSignature || submittingSign}
+            >
+              {submittingSign ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <PenLine className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {submittingSign ? "Signing..." : "Counter-sign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

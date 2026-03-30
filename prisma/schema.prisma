@@ -275,6 +275,7 @@ model User {
   submittedApprovals ApprovalRequest[] @relation("SubmittedApprovals")
   reviewedApprovals  ApprovalRequest[] @relation("ReviewedApprovals")
   picAssignments     InfluencerPic[]
+  adminSignedContracts Contract[]      @relation("AdminSignedContracts")
 
   @@index([roleId])
   @@index([status])
@@ -706,9 +707,16 @@ model Contract {
   requireBankDetails     Boolean @default(false)
   requireShippingAddress Boolean @default(false)
 
-  signatureDataUrl String?  // base64 of drawn/uploaded signature
+  signatureDataUrl String?  // base64 of drawn/uploaded signature (influencer side)
   signedPdfUrl     String?  // GCS path of signed PDF
   signedAt         DateTime?
+
+  // Admin counter-signature
+  adminSignatureUrl String?  // base64 of admin drawn/uploaded signature or stamp
+  adminSignedById   String?
+  adminSignedBy     User?    @relation("AdminSignedContracts", fields: [adminSignedById], references: [id], onDelete: SetNull)
+  adminSignedAt     DateTime?
+
   status           ContractDocStatus @default(DRAFT)
 
   createdAt DateTime @default(now())
