@@ -94,6 +94,7 @@ export interface InfluencerRow {
     influencerCountry: string | null;
   } | null;
   pics: { id: string; name: string | null; email: string }[];
+  savedAt: string | null;
   createdAt: string;
 }
 
@@ -132,7 +133,7 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-type QueueFilter = "ALL" | "APPROVED" | "OKISH" | "REJECTED" | "UNSCORED";
+type QueueFilter = "ALL" | "APPROVED" | "OKISH" | "REJECTED" | "UNSCORED" | "SAVED";
 
 const QUEUE_TABS: {
   key: QueueFilter;
@@ -169,6 +170,12 @@ const QUEUE_TABS: {
     label: "Unscored",
     color: "text-muted-foreground",
     activeColor: "bg-gray-500 text-white",
+  },
+  {
+    key: "SAVED",
+    label: "Saved",
+    color: "text-amber-600",
+    activeColor: "bg-amber-500 text-white",
   },
 ];
 
@@ -372,8 +379,10 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
       OKISH: 0,
       REJECTED: 0,
       UNSCORED: 0,
+      SAVED: 0,
     };
     for (const inf of influencers) {
+      if (inf.savedAt) counts.SAVED++;
       if (inf.queueBucket === "APPROVED") counts.APPROVED++;
       else if (inf.queueBucket === "OKISH") counts.OKISH++;
       else if (inf.queueBucket === "REJECTED") counts.REJECTED++;
@@ -387,7 +396,9 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
 
     // Queue filter
     if (queueFilter !== "ALL") {
-      if (queueFilter === "UNSCORED") {
+      if (queueFilter === "SAVED") {
+        list = list.filter((inf) => !!inf.savedAt);
+      } else if (queueFilter === "UNSCORED") {
         list = list.filter((inf) => !inf.queueBucket);
       } else {
         list = list.filter((inf) => inf.queueBucket === queueFilter);

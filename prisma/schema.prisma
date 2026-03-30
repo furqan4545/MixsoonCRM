@@ -34,6 +34,7 @@ model Influencer {
   notes          String?          // internal notes
   aiScore        Int?             // 0-100 AI relevance score
 
+  savedAt        DateTime?              // when set, influencer is starred/saved by CEO
   trashedAt      DateTime?              // soft-delete: when set, influencer is in Trash queue
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
