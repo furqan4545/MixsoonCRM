@@ -137,8 +137,20 @@ export function EmailSidebar() {
       es = new EventSource("/api/email/stream");
 
       es.addEventListener("new_email", () => {
-        // IMAP IDLE detected new email — trigger a quick sync
-        void runSync(true);
+        // IMAP IDLE detected new email — fast INBOX-only sync
+        (async () => {
+          try {
+            const res = await fetch("/api/email/sync-inbox", { method: "POST" });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.synced > 0) {
+                fetchCounts();
+                emitEmailRefresh();
+                router.refresh();
+              }
+            }
+          } catch {}
+        })();
       });
 
       es.addEventListener("timeout", () => {
