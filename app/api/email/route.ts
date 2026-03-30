@@ -32,12 +32,14 @@ export async function GET(req: NextRequest) {
     folder,
   };
 
+  // Sort by createdAt (when we stored it) as primary — receivedAt from email
+  // headers can be stale (e.g. old emails re-synced get wrong sort position)
   const orderBy =
     folder === "SENT"
       ? [{ sentAt: "desc" as const }, { createdAt: "desc" as const }]
       : folder === "DRAFTS"
         ? [{ updatedAt: "desc" as const }, { createdAt: "desc" as const }]
-        : [{ receivedAt: "desc" as const }, { createdAt: "desc" as const }];
+        : [{ createdAt: "desc" as const }];
 
   if (influencerId) {
     where.influencerId = influencerId;
