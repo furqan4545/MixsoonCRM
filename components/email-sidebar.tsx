@@ -122,14 +122,42 @@ export function EmailSidebar() {
     [fetchCounts, router],
   );
 
-  // Auto-sync: poll every 15s, skip if sync already in flight
+  // Initial sync on mount
   useEffect(() => {
-    // Initial sync on mount
     void runSync(true);
-    const interval = window.setInterval(() => {
-      void runSync(true);
-    }, 15_000);
-    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // SSE for real-time IDLE notifications (no polling — IMAP IDLE pushes)
+  useEffect(() => {
+    let es: EventSource | null = null;
+    let retryTimer: ReturnType<typeof setTimeout>;
+
+    const connect = () => {
+      es = new EventSource("/api/email/stream");
+
+      es.addEventListener("new_email", () => {
+        // IMAP IDLE detected new email — trigger a quick sync
+        void runSync(true);
+      });
+
+      es.addEventListener("timeout", () => {
+        es?.close();
+        retryTimer = setTimeout(connect, 2000);
+      });
+
+      es.onerror = () => {
+        es?.close();
+        retryTimer = setTimeout(connect, 5000);
+      };
+    };
+
+    connect();
+
+    return () => {
+      es?.close();
+      clearTimeout(retryTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
