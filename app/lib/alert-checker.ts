@@ -417,6 +417,7 @@ async function checkEmailNoReplyUs(
     distinct: ["influencerId"],
     include: {
       influencer: { select: { username: true, displayName: true, email: true } },
+      account: { select: { emailAddress: true, smtpHost: true, smtpPort: true, smtpUser: true, smtpPass: true } },
     },
   });
 
@@ -453,6 +454,30 @@ async function checkEmailNoReplyUs(
         },
       });
       count++;
+
+      // Auto-send reminder email to ourselves
+      if (inbox.account?.emailAddress && inbox.account?.smtpHost) {
+        try {
+          const transport = getSmtpTransport({
+            host: inbox.account.smtpHost,
+            port: inbox.account.smtpPort ?? 587,
+            user: inbox.account.smtpUser ?? inbox.account.emailAddress,
+            pass: inbox.account.smtpPass ?? "",
+          });
+          await transport.sendMail({
+            from: inbox.account.emailAddress,
+            to: inbox.account.emailAddress,
+            subject: `[REMINDER] Reply to ${name} — ${inbox.subject}`,
+            html: `<p>You haven't replied to <strong>${name}</strong> for <strong>${daysSince} days</strong>.</p>
+<p><strong>Subject:</strong> ${inbox.subject}</p>
+<p><strong>From:</strong> ${inbox.from}</p>
+<p style="color:#666;font-size:12px;">This is an automated reminder from MIXSOON.</p>`,
+          });
+          transport.close();
+        } catch (emailErr) {
+          console.error(`[alert-checker] Failed to send self-reminder for ${name}:`, emailErr);
+        }
+      }
     } catch (err: unknown) {
       if (isPrismaUniqueError(err)) continue;
       throw err;
