@@ -386,7 +386,7 @@ async function doSync(account: Awaited<ReturnType<typeof prisma.emailAccount.fin
         let influencerId = emailToInfluencer.get(item.from.toLowerCase());
         // Then check to (sent email to influencer)
         if (!influencerId && item.to) {
-          for (const addr of item.to.split(",")) {
+          for (const addr of item.to) {
             const trimmed = addr.trim().toLowerCase();
             const match = emailToInfluencer.get(trimmed);
             if (match) { influencerId = match; break; }
