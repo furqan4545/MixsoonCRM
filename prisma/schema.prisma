@@ -56,6 +56,7 @@ model Influencer {
   analysisRuns        AnalysisRun[]
   analytics           InfluencerAnalytics?
   pics                InfluencerPic[]
+  shipments           Shipment[]
 
   @@index([username])
   @@index([importId])
@@ -278,6 +279,7 @@ model User {
   picAssignments     InfluencerPic[]
   adminSignedContracts Contract[]      @relation("AdminSignedContracts")
   contractComments     ContractComment[] @relation("ContractComments")
+  shipmentsCreated     Shipment[]       @relation("ShipmentCreator")
 
   @@index([roleId])
   @@index([status])
@@ -391,6 +393,7 @@ model MarketingCampaign {
   influencers      CampaignInfluencer[]
   approvalRequests ApprovalRequest[]
   contracts        Contract[]
+  shipments        Shipment[]
 
   @@index([status])
   @@index([name])
@@ -943,4 +946,75 @@ model ApiUsageLog {
   @@index([influencerId])
   @@index([createdAt])
   @@index([service, createdAt])
+}
+
+// ─── INVENTORY & SHIPPING ─────────────────────────────────
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  sku         String   @unique
+  description String?
+  category    String?
+  imageUrl    String?
+  quantity    Int      @default(0)   // total stock
+  reserved    Int      @default(0)   // assigned but not yet delivered
+  unitCost    Float?                 // cost per unit in USD
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shipments   Shipment[]
+
+  @@index([sku])
+  @@index([category])
+}
+
+enum ShippingCarrier {
+  DHL
+  UPS
+  FEDEX
+  EMS
+  OTHER
+}
+
+enum ShipmentStatus {
+  PENDING      // product assigned, not shipped yet
+  SHIPPED      // carrier picked up
+  IN_TRANSIT   // in transit
+  DELIVERED    // delivered to influencer
+  RETURNED     // returned/undeliverable
+  FAILED       // shipment failed
+}
+
+model Shipment {
+  id               String          @id @default(cuid())
+  productId        String
+  product          Product         @relation(fields: [productId], references: [id])
+  influencerId     String
+  influencer       Influencer      @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  campaignId       String?
+  campaign         MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  carrier          ShippingCarrier @default(OTHER)
+  trackingNumber   String?
+  trackingUrl      String?         // auto-generated clickable link
+  status           ShipmentStatus  @default(PENDING)
+  shippingAddress  Json?           // snapshot of influencer address at creation
+  lastTrackingData Json?           // cached carrier API response
+  lastTrackedAt    DateTime?
+  notes            String?
+
+  shippedAt        DateTime?
+  deliveredAt      DateTime?
+
+  createdById      String?
+  createdBy        User?           @relation("ShipmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([influencerId])
+  @@index([productId])
+  @@index([campaignId])
+  @@index([status])
+  @@index([trackingNumber])
 }
