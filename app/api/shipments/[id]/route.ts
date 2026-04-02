@@ -84,12 +84,12 @@ export async function PATCH(
 
       if (newStatus === "DELIVERED") {
         data.deliveredAt = new Date();
-        // Decrement both quantity and reserved
+        // Decrement both quantity and reserved by shipment quantity
         await tx.product.update({
           where: { id: shipment.productId },
           data: {
-            quantity: { decrement: 1 },
-            reserved: { decrement: 1 },
+            quantity: { decrement: shipment.quantity },
+            reserved: { decrement: shipment.quantity },
           },
         });
       }
@@ -99,7 +99,7 @@ export async function PATCH(
         if (oldStatus !== "DELIVERED") {
           await tx.product.update({
             where: { id: shipment.productId },
-            data: { reserved: { decrement: 1 } },
+            data: { reserved: { decrement: shipment.quantity } },
           });
         }
       }
@@ -164,7 +164,7 @@ export async function DELETE(
     await prisma.$transaction([
       prisma.product.update({
         where: { id: shipment.productId },
-        data: { reserved: { decrement: 1 } },
+        data: { reserved: { decrement: shipment.quantity } },
       }),
       prisma.shipment.delete({ where: { id } }),
     ]);
