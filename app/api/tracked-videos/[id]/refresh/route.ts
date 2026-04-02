@@ -7,9 +7,9 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  await requirePermission("tracking", "read");
+  const user = await requirePermission("tracking", "read");
   const { id } = await params;
 
-  const result = await refreshTrackedVideos([id]);
+  const result = await refreshTrackedVideos([id], user.id);
   return NextResponse.json(result);
 }
