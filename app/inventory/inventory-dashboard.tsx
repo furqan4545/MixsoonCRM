@@ -637,9 +637,40 @@ export function InventoryDashboard() {
                 </Select>
               </div>
 
+              {/* Selected influencer preview */}
+              {assignData.influencerId && (() => {
+                const sel = influencers.find((i) => i.id === assignData.influencerId);
+                if (!sel) return null;
+                return (
+                  <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      {(sel.avatarProxied || sel.avatarUrl) ? (
+                        <img src={sel.avatarProxied || sel.avatarUrl || ""} alt="" className="h-9 w-9 rounded-full object-cover" />
+                      ) : (
+                        <div className="h-9 w-9 rounded-full bg-green-100 flex items-center justify-center text-sm font-medium text-green-700">
+                          {(sel.displayName || sel.username)?.[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-semibold text-sm text-green-900">{sel.displayName || sel.username}</p>
+                        <p className="text-xs text-green-700">@{sel.username}</p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-green-700 hover:text-red-600 hover:bg-red-50"
+                      onClick={() => setAssignData({ ...assignData, influencerId: "" })}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })()}
+
               {/* Influencer — searchable list */}
               <div>
-                <Label>Influencer *</Label>
+                <Label>Influencer {assignData.influencerId ? "" : "*"}</Label>
                 <div className="relative mt-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
