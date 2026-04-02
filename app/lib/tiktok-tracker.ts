@@ -299,14 +299,12 @@ export async function refreshTrackedVideos(
         { metric: "shares", value: stats.shares, threshold: config.sharesThreshold },
       ];
 
+      const newAlerts: { metric: string; value: number; threshold: number }[] = [];
+
       for (const check of checks) {
         if (check.value >= check.threshold && check.threshold > 0) {
-          // Check if we already alerted for this metric on this video
           const existing = await prisma.viralAlert.findFirst({
-            where: {
-              trackedVideoId: video.id,
-              metric: check.metric,
-            },
+            where: { trackedVideoId: video.id, metric: check.metric },
           });
 
           if (!existing) {
@@ -320,15 +318,18 @@ export async function refreshTrackedVideos(
               },
             });
             viralAlertCount++;
-
-            // Send viral alert email to connected account
-            try {
-              await sendViralAlertEmail(video.videoUrl, video.influencerId, check.metric, check.value, check.threshold, stats.title, triggeredByUserId);
-            } catch (emailErr) {
-              console.error("[tracker-email] FAILED:", emailErr instanceof Error ? emailErr.message : emailErr);
-              console.error("[tracker-email] Stack:", emailErr instanceof Error ? emailErr.stack : "no stack");
-            }
+            newAlerts.push(check);
           }
+        }
+      }
+
+      // Send ONE email with all triggered metrics
+      if (newAlerts.length > 0) {
+        try {
+          await sendViralAlertEmail(video.videoUrl, video.influencerId, newAlerts, stats, triggeredByUserId);
+        } catch (emailErr) {
+          console.error("[tracker-email] FAILED:", emailErr instanceof Error ? emailErr.message : emailErr);
+          console.error("[tracker-email] Stack:", emailErr instanceof Error ? emailErr.stack : "no stack");
         }
       }
     }
@@ -348,23 +349,16 @@ function fmtNum(n: number): string {
 async function sendViralAlertEmail(
   videoUrl: string,
   influencerId: string,
-  metric: string,
-  value: number,
-  threshold: number,
-  title?: string,
+  alerts: { metric: string; value: number; threshold: number }[],
+  allStats: { views: number; likes: number; comments: number; saves: number; shares: number; title?: string },
   triggeredByUserId?: string,
 ) {
-  // Send email to the user who triggered the refresh
-  // If triggered by cron (no user), send to admin users' accounts
-  console.log("[tracker-email] Looking for email account...");
+  // Find email account: current user's, or fallback to admin
   let account;
   if (triggeredByUserId) {
-    account = await prisma.emailAccount.findUnique({
-      where: { userId: triggeredByUserId },
-    });
+    account = await prisma.emailAccount.findUnique({ where: { userId: triggeredByUserId } });
   }
   if (!account) {
-    // Fallback: find account of an admin user
     const adminUser = await prisma.user.findFirst({
       where: { role: { name: "Admin" }, status: "ACTIVE" },
       include: { emailAccount: true },
@@ -372,72 +366,78 @@ async function sendViralAlertEmail(
     account = adminUser?.emailAccount ?? null;
   }
   if (!account) {
-    console.warn("[tracker-email] No email account found for this user or any admin.");
+    console.warn("[tracker-email] No email account found.");
     return;
   }
-  console.log(`[tracker-email] Using account: ${account.emailAddress}`);
-  const accounts = [account];
 
-  // Get influencer info
   const influencer = await prisma.influencer.findUnique({
     where: { id: influencerId },
     select: { username: true, displayName: true },
   });
 
   const influencerName = influencer?.displayName || influencer?.username || "Unknown";
-  const videoTitle = title || "Untitled Video";
+  const videoTitle = allStats.title || "Untitled Video";
+  const triggeredMetrics = alerts.map((a) => `${fmtNum(a.value)} ${a.metric}`).join(", ");
 
-  for (const account of accounts) {
-  console.log(`[tracker-email] Sending to ${account.emailAddress} — @${influencer?.username} ${metric}: ${fmtNum(value)}`);
+  const statsRows = [
+    { label: "Views", value: allStats.views, color: "#2563eb" },
+    { label: "Likes", value: allStats.likes, color: "#dc2626" },
+    { label: "Saves", value: allStats.saves, color: "#d97706" },
+    ...(allStats.comments > 0 ? [{ label: "Comments", value: allStats.comments, color: "#16a34a" }] : []),
+    ...(allStats.shares > 0 ? [{ label: "Shares", value: allStats.shares, color: "#7c3aed" }] : []),
+  ].map((s) => `
+    <tr>
+      <td style="padding: 10px 0; border-bottom: 1px solid #eee; color: #666;">${s.label}</td>
+      <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-weight: 700; text-align: right; color: ${s.color}; font-size: 16px;">${fmtNum(s.value)}</td>
+    </tr>
+  `).join("");
+
+  const alertRows = alerts.map((a) => `
+    <div style="display: inline-block; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 4px 10px; margin: 2px; font-size: 13px;">
+      <strong style="text-transform: capitalize;">${a.metric}</strong>: ${fmtNum(a.value)} (threshold: ${fmtNum(a.threshold)})
+    </div>
+  `).join("");
+
+  console.log(`[tracker-email] Sending to ${account.emailAddress} — @${influencer?.username} triggered: ${triggeredMetrics}`);
   const transport = getSmtpTransport(account);
   try {
-  await transport.sendMail({
-    from: `"MIXSOON Tracker" <${account.emailAddress}>`,
-    to: account.emailAddress,
-    subject: `🔥 Viral Alert: @${influencer?.username}'s video hit ${fmtNum(value)} ${metric}!`,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background: linear-gradient(135deg, #ff6b35, #f7c948); padding: 24px; border-radius: 12px; color: white; text-align: center; margin-bottom: 24px;">
-          <h1 style="margin: 0 0 8px 0; font-size: 28px;">🔥 Video Going Viral!</h1>
-          <p style="margin: 0; font-size: 16px; opacity: 0.9;">A tracked video just crossed your ${metric} threshold</p>
+    await transport.sendMail({
+      from: `"MIXSOON Tracker" <${account.emailAddress}>`,
+      to: account.emailAddress,
+      subject: `🔥 Viral Alert: @${influencer?.username}'s video — ${triggeredMetrics}`,
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: linear-gradient(135deg, #ff6b35, #f7c948); padding: 24px; border-radius: 12px; color: white; text-align: center; margin-bottom: 24px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 28px;">🔥 Video Going Viral!</h1>
+            <p style="margin: 0; font-size: 14px; opacity: 0.9;">${videoTitle}</p>
+          </div>
+
+          <div style="background: #f9f9f9; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
+            <p style="margin: 0 0 4px 0; font-size: 14px; color: #666;">Influencer</p>
+            <h2 style="margin: 0 0 16px 0; font-size: 20px;">@${influencer?.username} — ${influencerName}</h2>
+
+            <p style="margin: 0 0 8px 0; font-size: 13px; color: #666; text-transform: uppercase; letter-spacing: 1px;">Thresholds Crossed</p>
+            <div style="margin-bottom: 16px;">${alertRows}</div>
+
+            <p style="margin: 0 0 8px 0; font-size: 13px; color: #666; text-transform: uppercase; letter-spacing: 1px;">All Stats</p>
+            <table style="width: 100%; border-collapse: collapse;">${statsRows}</table>
+          </div>
+
+          <div style="text-align: center; margin-top: 20px;">
+            <a href="${videoUrl}" style="display: inline-block; background: #333; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+              Watch on TikTok →
+            </a>
+          </div>
+
+          <p style="text-align: center; color: #999; font-size: 12px; margin-top: 24px;">
+            MIXSOON Influencer OS — Performance Tracking
+          </p>
         </div>
-
-        <div style="background: #f9f9f9; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
-          <h2 style="margin: 0 0 4px 0; font-size: 18px;">${videoTitle}</h2>
-          <p style="margin: 0 0 12px 0; color: #666;">@${influencer?.username} — ${influencerName}</p>
-
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #666;">Metric</td>
-              <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-weight: 600; text-align: right; text-transform: capitalize;">${metric}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #666;">Current Value</td>
-              <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-weight: 600; text-align: right; color: #e63946;">${fmtNum(value)}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #666;">Threshold</td>
-              <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-weight: 600; text-align: right;">${fmtNum(threshold)}</td>
-            </tr>
-          </table>
-        </div>
-
-        <div style="text-align: center; margin-top: 20px;">
-          <a href="${videoUrl}" style="display: inline-block; background: #333; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-            Watch on TikTok →
-          </a>
-        </div>
-
-        <p style="text-align: center; color: #999; font-size: 12px; margin-top: 24px;">
-          Sent by MIXSOON Influencer OS — Performance Tracking
-        </p>
-      </div>
-    `,
-  });
-  transport.close();
-  console.log(`[tracker-email] Sent to ${account.emailAddress} for @${influencer?.username} (${metric}: ${fmtNum(value)})`);
+      `,
+    });
+    transport.close();
+    console.log(`[tracker-email] Sent to ${account.emailAddress}`);
   } catch (sendErr) {
-    console.error(`[tracker-email] Failed sending to ${account.emailAddress}:`, sendErr instanceof Error ? sendErr.message : sendErr);
+    console.error(`[tracker-email] Failed:`, sendErr instanceof Error ? sendErr.message : sendErr);
   }
-  } // end for accounts loop
 }
