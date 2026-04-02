@@ -10,22 +10,43 @@ const APIFY_ACTOR_ID = "ssOXktOBaQQiYfhc4";
 const MAX_WAIT_MS = 5 * 60 * 1000; // 5 min timeout per Apify run
 
 interface ApifyVideoResult {
+  // Stats - various field names across different Apify actors
   views?: number;
-  bookmarks?: number;
-  likes?: number;
-  diggCount?: number; // TikTok internal name for likes
-  commentCount?: number;
-  shareCount?: number;
   playCount?: number;
+  play_count?: number;
+  bookmarks?: number;
   collectCount?: number;
+  collect_count?: number;
+  likes?: number;
+  diggCount?: number;
+  digg_count?: number;
+  likeCount?: number;
+  commentCount?: number;
+  comment_count?: number;
+  shareCount?: number;
+  share_count?: number;
+  // Metadata
   title?: string;
-  video?: { cover?: string };
+  desc?: string;
+  signature?: string;
+  video?: { cover?: string; dynamicCover?: string };
+  // URL identification
   webVideoUrl?: string;
   videoUrl?: string;
   url?: string;
   id?: string;
   itemId?: string;
   aweme_id?: string;
+  // Nested stats object (some actors)
+  stats?: {
+    playCount?: number;
+    diggCount?: number;
+    commentCount?: number;
+    shareCount?: number;
+    collectCount?: number;
+  };
+  // Alternative nesting
+  authorStats?: Record<string, number>;
 }
 
 function sleep(ms: number) {
@@ -109,32 +130,59 @@ export async function fetchVideoStats(
     if (!dataRes.ok) return new Map();
 
     const items = (await dataRes.json()) as ApifyVideoResult[];
+    console.log(`[tracker] Apify returned ${items.length} items`);
 
-    // Map results by video URL
+    // Build a map of video ID → our URL for matching
+    const idToUrl = new Map<string, string>();
+    const urlSet = new Set<string>();
+    for (const url of videoUrls) {
+      urlSet.add(normalizeUrl(url));
+      const idMatch = url.match(/\/video\/(\d+)/);
+      if (idMatch) idToUrl.set(idMatch[1], url);
+    }
+
     const resultMap = new Map<string, { views: number; likes: number; comments: number; saves: number; shares: number; title?: string; thumbnail?: string }>();
-    const urlSet = new Set(videoUrls.map((u) => normalizeUrl(u)));
 
     for (const item of items) {
+      // Try to match by video ID first (most reliable)
+      const itemId = item.id || item.itemId || item.aweme_id || "";
       const itemUrl = item.webVideoUrl || item.videoUrl || item.url || "";
-      const normalized = normalizeUrl(itemUrl);
 
-      if (urlSet.has(normalized)) {
-        resultMap.set(
-          // Find original URL that matches
-          videoUrls.find((u) => normalizeUrl(u) === normalized) || normalized,
-          {
-            views: item.views ?? item.playCount ?? 0,
-            likes: item.likes ?? item.diggCount ?? 0,
-            comments: item.commentCount ?? 0,
-            saves: item.bookmarks ?? item.collectCount ?? 0,
-            shares: item.shareCount ?? 0,
-            title: item.title,
-            thumbnail: item.video?.cover,
-          },
-        );
+      // Also try to extract ID from item URL
+      const itemUrlIdMatch = itemUrl.match(/\/video\/(\d+)/);
+      const extractedId = itemUrlIdMatch ? itemUrlIdMatch[1] : itemId;
+
+      let matchedUrl: string | undefined;
+
+      // Match by video ID
+      if (extractedId && idToUrl.has(extractedId)) {
+        matchedUrl = idToUrl.get(extractedId);
+      }
+      // Fallback: match by normalized URL
+      if (!matchedUrl) {
+        const normalized = normalizeUrl(itemUrl);
+        if (urlSet.has(normalized)) {
+          matchedUrl = videoUrls.find((u) => normalizeUrl(u) === normalized);
+        }
+      }
+
+      if (matchedUrl) {
+        const s = item.stats;
+        const stats = {
+          views: item.views ?? item.playCount ?? item.play_count ?? s?.playCount ?? 0,
+          likes: item.likes ?? item.diggCount ?? item.digg_count ?? item.likeCount ?? s?.diggCount ?? 0,
+          comments: item.commentCount ?? item.comment_count ?? s?.commentCount ?? 0,
+          saves: item.bookmarks ?? item.collectCount ?? item.collect_count ?? s?.collectCount ?? 0,
+          shares: item.shareCount ?? item.share_count ?? s?.shareCount ?? 0,
+          title: item.title || item.desc || item.signature || undefined,
+          thumbnail: item.video?.cover || item.video?.dynamicCover || undefined,
+        };
+        console.log(`[tracker] Matched ${matchedUrl}: ${stats.views} views, ${stats.likes} likes`);
+        resultMap.set(matchedUrl, stats);
       }
     }
 
+    console.log(`[tracker] Matched ${resultMap.size}/${videoUrls.length} videos`);
     return resultMap;
   } catch (err) {
     console.error("[tracker] fetchVideoStats error:", err);
