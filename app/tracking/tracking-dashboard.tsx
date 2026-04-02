@@ -510,10 +510,10 @@ export function TrackingDashboard() {
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => refreshVideo(v.id)}
-                        disabled={refreshingId === v.id}
+                        disabled={refreshingId === v.id || refreshingAll}
                         title="Refresh stats"
                       >
-                        <RefreshCw className={`h-3.5 w-3.5 ${refreshingId === v.id ? "animate-spin" : ""}`} />
+                        <RefreshCw className={`h-3.5 w-3.5 ${refreshingId === v.id || refreshingAll ? "animate-spin" : ""}`} />
                       </Button>
                       <Button
                         variant="ghost"
