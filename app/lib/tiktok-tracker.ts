@@ -352,14 +352,14 @@ async function sendViralAlertEmail(
   threshold: number,
   title?: string,
 ) {
-  // Find first connected email account to send from
-  console.log("[tracker-email] Looking for email account...");
-  const account = await prisma.emailAccount.findFirst();
-  if (!account) {
-    console.warn("[tracker-email] No email account found in database. Connect an email in Settings first.");
+  // Send to ALL connected email accounts
+  console.log("[tracker-email] Looking for email accounts...");
+  const accounts = await prisma.emailAccount.findMany();
+  if (accounts.length === 0) {
+    console.warn("[tracker-email] No email accounts found. Connect an email in Settings first.");
     return;
   }
-  console.log(`[tracker-email] Found account: ${account.emailAddress} (SMTP: ${account.smtpHost}:${account.smtpPort})`);
+  console.log(`[tracker-email] Found ${accounts.length} account(s): ${accounts.map(a => a.emailAddress).join(", ")}`);
 
   // Get influencer info
   const influencer = await prisma.influencer.findUnique({
@@ -370,8 +370,10 @@ async function sendViralAlertEmail(
   const influencerName = influencer?.displayName || influencer?.username || "Unknown";
   const videoTitle = title || "Untitled Video";
 
+  for (const account of accounts) {
   console.log(`[tracker-email] Sending to ${account.emailAddress} — @${influencer?.username} ${metric}: ${fmtNum(value)}`);
   const transport = getSmtpTransport(account);
+  try {
   await transport.sendMail({
     from: `"MIXSOON Tracker" <${account.emailAddress}>`,
     to: account.emailAddress,
@@ -416,5 +418,9 @@ async function sendViralAlertEmail(
     `,
   });
   transport.close();
-  console.log(`[tracker] Viral alert email sent for @${influencer?.username} (${metric}: ${fmtNum(value)})`);
+  console.log(`[tracker-email] Sent to ${account.emailAddress} for @${influencer?.username} (${metric}: ${fmtNum(value)})`);
+  } catch (sendErr) {
+    console.error(`[tracker-email] Failed sending to ${account.emailAddress}:`, sendErr instanceof Error ? sendErr.message : sendErr);
+  }
+  } // end for accounts loop
 }
