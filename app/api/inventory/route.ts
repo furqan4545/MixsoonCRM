@@ -34,6 +34,18 @@ export async function GET(request: NextRequest) {
       where,
       include: {
         _count: { select: { shipments: true } },
+        shipments: {
+          where: { status: { not: "FAILED" } },
+          select: {
+            id: true,
+            status: true,
+            influencer: {
+              select: { id: true, username: true, displayName: true, avatarUrl: true },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        },
       },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
