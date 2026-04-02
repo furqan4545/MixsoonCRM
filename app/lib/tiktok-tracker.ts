@@ -131,6 +131,15 @@ export async function fetchVideoStats(
 
     const items = (await dataRes.json()) as ApifyVideoResult[];
     console.log(`[tracker] Apify returned ${items.length} items`);
+    // Debug: log first item's keys and URL fields
+    if (items.length > 0) {
+      const first = items[0];
+      console.log(`[tracker] First item keys: ${Object.keys(first).join(", ")}`);
+      console.log(`[tracker] First item URLs: webVideoUrl=${first.webVideoUrl}, videoUrl=${first.videoUrl}, url=${first.url}, id=${first.id}, itemId=${first.itemId}, aweme_id=${first.aweme_id}`);
+      console.log(`[tracker] First item stats: views=${first.views}, playCount=${first.playCount}, bookmarks=${first.bookmarks}, likes=${first.likes}, diggCount=${first.diggCount}`);
+      if (first.stats) console.log(`[tracker] First item stats obj:`, JSON.stringify(first.stats));
+    }
+    console.log(`[tracker] Looking for URLs: ${videoUrls.join(", ")}`);
 
     // Build a map of video ID → our URL for matching
     const idToUrl = new Map<string, string>();
