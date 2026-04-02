@@ -20,7 +20,7 @@ export default async function CampaignsPage() {
   const campaigns = await prisma.marketingCampaign.findMany({
     orderBy: { createdAt: "desc" },
     include: {
-      _count: { select: { influencers: true } },
+      _count: { select: { influencers: true, shipments: true } },
       influencers: {
         include: {
           influencer: {
@@ -108,6 +108,7 @@ export default async function CampaignsPage() {
       endDate: c.endDate?.toISOString() ?? null,
       status: c.status,
       influencerCount: c._count.influencers,
+      shipmentCount: c._count.shipments,
       isMyCampaign,
       influencers: c.influencers.map((ci) => ({
         id: ci.influencer.id,

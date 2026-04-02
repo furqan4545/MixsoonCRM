@@ -16,6 +16,8 @@ export const FEATURES = {
   CAMPAIGNS: "campaigns",
   APPROVALS: "approvals",
   ALERTS: "alerts",
+  INVENTORY: "inventory",
+  SHIPPING: "shipping",
 } as const;
 
 /** Sidebar nav: path → required permission (read). null = no requirement (e.g. Dashboard). */
@@ -36,4 +38,6 @@ export const NAV_FEATURE_MAP: Record<
   "/approvals": { feature: FEATURES.APPROVALS, action: "read" },
   "/contracts": { feature: FEATURES.INFLUENCERS, action: "read" },
   "/alerts": { feature: FEATURES.ALERTS, action: "read" },
+  "/inventory": { feature: FEATURES.INVENTORY, action: "read" },
+  "/shipping": { feature: FEATURES.SHIPPING, action: "read" },
 };
