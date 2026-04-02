@@ -352,11 +352,13 @@ async function sendViralAlertEmail(
   title?: string,
 ) {
   // Find first connected email account to send from
+  console.log("[tracker-email] Looking for email account...");
   const account = await prisma.emailAccount.findFirst();
   if (!account) {
-    console.warn("[tracker] No active email account for viral alert email");
+    console.warn("[tracker-email] No email account found in database. Connect an email in Settings first.");
     return;
   }
+  console.log(`[tracker-email] Found account: ${account.emailAddress} (SMTP: ${account.smtpHost}:${account.smtpPort})`);
 
   // Get influencer info
   const influencer = await prisma.influencer.findUnique({
@@ -367,6 +369,7 @@ async function sendViralAlertEmail(
   const influencerName = influencer?.displayName || influencer?.username || "Unknown";
   const videoTitle = title || "Untitled Video";
 
+  console.log(`[tracker-email] Sending to ${account.emailAddress} — @${influencer?.username} ${metric}: ${fmtNum(value)}`);
   const transport = getSmtpTransport(account);
   await transport.sendMail({
     from: `"MIXSOON Tracker" <${account.emailAddress}>`,

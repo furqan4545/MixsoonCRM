@@ -17,6 +17,11 @@ export async function PATCH(
     if (body.status === "DISMISSED") data.dismissedAt = new Date();
   }
 
-  const updated = await prisma.viralAlert.update({ where: { id }, data });
-  return NextResponse.json(updated);
+  try {
+    const updated = await prisma.viralAlert.update({ where: { id }, data });
+    return NextResponse.json(updated);
+  } catch {
+    // Alert may have been cascade-deleted already
+    return NextResponse.json({ dismissed: true });
+  }
 }
