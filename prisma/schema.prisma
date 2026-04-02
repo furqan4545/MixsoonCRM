@@ -57,6 +57,8 @@ model Influencer {
   analytics           InfluencerAnalytics?
   pics                InfluencerPic[]
   shipments           Shipment[]
+  trackedVideos       TrackedVideo[]
+  viralAlerts         ViralAlert[]
 
   @@index([username])
   @@index([importId])
@@ -394,6 +396,7 @@ model MarketingCampaign {
   approvalRequests ApprovalRequest[]
   contracts        Contract[]
   shipments        Shipment[]
+  trackedVideos    TrackedVideo[]
 
   @@index([status])
   @@index([name])
@@ -516,6 +519,7 @@ enum AlertType {
   CONTRACT_EXPIRING         // Contract ending within X days
   CONTENT_OVERDUE           // Content submission not received in X days
   FOLLOW_UP_REMINDER        // General follow-up reminder
+  VIRAL_VIDEO               // Video crossed viral threshold
 }
 
 enum AlertSeverity {
@@ -1018,4 +1022,94 @@ model Shipment {
   @@index([campaignId])
   @@index([status])
   @@index([trackingNumber])
+}
+
+// ─── TIKTOK PERFORMANCE TRACKING ──────────────────────────
+
+model TrackedVideo {
+  id                  String   @id @default(cuid())
+  videoUrl            String   @unique  // TikTok video URL
+  tiktokId            String?           // extracted video ID
+  influencerId        String
+  influencer          Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  campaignId          String?
+  campaign            MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  contentSubmissionId String?
+
+  title               String?
+  thumbnailUrl        String?
+
+  // Current stats (updated on each refresh)
+  currentViews        Int      @default(0)
+  currentLikes        Int      @default(0)
+  currentComments     Int      @default(0)
+  currentSaves        Int      @default(0)
+  currentShares       Int      @default(0)
+
+  isTracking          Boolean  @default(true)
+  lastTrackedAt       DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  snapshots           VideoSnapshot[]
+  viralAlerts         ViralAlert[]
+
+  @@index([influencerId])
+  @@index([isTracking])
+  @@index([campaignId])
+}
+
+model VideoSnapshot {
+  id             String   @id @default(cuid())
+  trackedVideoId String
+  trackedVideo   TrackedVideo @relation(fields: [trackedVideoId], references: [id], onDelete: Cascade)
+
+  views          Int      @default(0)
+  likes          Int      @default(0)
+  comments       Int      @default(0)
+  saves          Int      @default(0)
+  shares         Int      @default(0)
+
+  recordedAt     DateTime // date of this snapshot
+
+  @@unique([trackedVideoId, recordedAt])
+  @@index([trackedVideoId])
+  @@index([recordedAt])
+}
+
+enum ViralAlertStatus {
+  ACTIVE
+  DISMISSED
+  ACKNOWLEDGED
+}
+
+model ViralAlert {
+  id             String   @id @default(cuid())
+  trackedVideoId String
+  trackedVideo   TrackedVideo @relation(fields: [trackedVideoId], references: [id], onDelete: Cascade)
+  influencerId   String
+  influencer     Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+
+  metric         String   // "views", "likes", "comments", "saves", "shares"
+  threshold      Int      // what threshold was crossed
+  valueAtAlert   Int      // actual value when alert fired
+  status         ViralAlertStatus @default(ACTIVE)
+
+  createdAt      DateTime @default(now())
+  dismissedAt    DateTime?
+
+  @@index([trackedVideoId])
+  @@index([influencerId])
+  @@index([status])
+}
+
+model ViralAlertConfig {
+  id               String   @id @default("default")
+  viewsThreshold   Int      @default(100000)
+  likesThreshold   Int      @default(10000)
+  commentsThreshold Int     @default(5000)
+  savesThreshold   Int      @default(5000)
+  sharesThreshold  Int      @default(5000)
+  enabled          Boolean  @default(true)
+  updatedAt        DateTime @updatedAt
 }
