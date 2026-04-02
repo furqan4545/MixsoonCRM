@@ -324,7 +324,8 @@ export async function refreshTrackedVideos(
             try {
               await sendViralAlertEmail(video.videoUrl, video.influencerId, check.metric, check.value, check.threshold, stats.title);
             } catch (emailErr) {
-              console.error("[tracker] Failed to send viral alert email:", emailErr);
+              console.error("[tracker-email] FAILED:", emailErr instanceof Error ? emailErr.message : emailErr);
+              console.error("[tracker-email] Stack:", emailErr instanceof Error ? emailErr.stack : "no stack");
             }
           }
         }
