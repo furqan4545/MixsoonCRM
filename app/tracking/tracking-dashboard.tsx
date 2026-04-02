@@ -686,11 +686,97 @@ export function TrackingDashboard() {
               <Label>TikTok Video URL(s) — one per line</Label>
               <Textarea
                 value={addUrls}
-                onChange={(e) => setAddUrls(e.target.value)}
-                placeholder={"https://www.tiktok.com/@username/video/1234567890\nhttps://www.tiktok.com/@username/video/0987654321"}
-                rows={4}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setAddUrls(val);
+                  // Auto-detect influencer from URL
+                  const lines = val.split("\n").map((l) => l.trim()).filter(Boolean);
+                  const usernames = new Set<string>();
+                  for (const line of lines) {
+                    const match = line.match(/@([^/]+)/);
+                    if (match) usernames.add(match[1].toLowerCase());
+                  }
+                  if (usernames.size === 1) {
+                    const username = [...usernames][0];
+                    const found = influencers.find((i) => i.username.toLowerCase() === username);
+                    if (found) {
+                      setAddInfluencerId(found.id);
+                    } else {
+                      setAddInfluencerId("");
+                    }
+                  }
+                }}
+                placeholder={"https://www.tiktok.com/@username/video/1234567890"}
+                rows={3}
               />
             </div>
+
+            {/* Auto-detected or manual influencer */}
+            {(() => {
+              const sel = influencers.find((i) => i.id === addInfluencerId);
+              if (sel) {
+                return (
+                  <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      {(sel.avatarProxied || sel.avatarUrl) ? (
+                        <img src={sel.avatarProxied || sel.avatarUrl || ""} alt="" className="h-8 w-8 rounded-full object-cover" />
+                      ) : (
+                        <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center text-xs font-bold text-green-700">
+                          {(sel.displayName || sel.username)?.[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-sm font-medium text-green-900">{sel.displayName || sel.username}</p>
+                        <p className="text-[11px] text-green-700">@{sel.username} — auto-detected from URL</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setAddInfluencerId("")} className="text-green-700 hover:text-red-600">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                );
+              }
+              // Extract username from URL to show what we're looking for
+              const lines = addUrls.split("\n").map((l) => l.trim()).filter(Boolean);
+              const usernames = new Set<string>();
+              for (const line of lines) {
+                const match = line.match(/@([^/]+)/);
+                if (match) usernames.add(match[1]);
+              }
+              if (usernames.size > 0 && !addInfluencerId) {
+                return (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-sm text-amber-800">
+                      <AlertTriangle className="h-3.5 w-3.5 inline mr-1" />
+                      @{[...usernames].join(", @")} not found in your influencers. Select manually:
+                    </p>
+                    <div className="relative mt-2">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Search influencer..."
+                        value={infSearch}
+                        onChange={(e) => setInfSearch(e.target.value)}
+                        className="pl-9 text-sm"
+                      />
+                    </div>
+                    <div className="mt-1 border rounded-lg max-h-32 overflow-y-auto bg-white">
+                      {filteredInfluencers.map((inf) => (
+                        <button
+                          key={inf.id}
+                          type="button"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/50"
+                          onClick={() => setAddInfluencerId(inf.id)}
+                        >
+                          <span className="font-medium truncate">{inf.displayName || inf.username}</span>
+                          <span className="text-[11px] text-muted-foreground">@{inf.username}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             <div>
               <Label>Campaign (optional)</Label>
@@ -705,53 +791,6 @@ export function TrackingDashboard() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            <div>
-              <Label>Influencer *</Label>
-              <div className="relative mt-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search influencer..."
-                  value={infSearch}
-                  onChange={(e) => setInfSearch(e.target.value)}
-                  className="pl-9 text-sm"
-                />
-              </div>
-              {addInfluencerId && (() => {
-                const sel = influencers.find((i) => i.id === addInfluencerId);
-                if (!sel) return null;
-                return (
-                  <div className="flex items-center justify-between p-2 bg-green-50 border border-green-200 rounded-lg mt-2">
-                    <div className="flex items-center gap-2">
-                      <div className="h-6 w-6 rounded-full bg-green-100 flex items-center justify-center text-[10px] font-bold text-green-700">
-                        {(sel.displayName || sel.username)?.[0]?.toUpperCase()}
-                      </div>
-                      <span className="text-sm font-medium text-green-900">{sel.displayName || sel.username}</span>
-                    </div>
-                    <button onClick={() => setAddInfluencerId("")} className="text-green-700 hover:text-red-600">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                );
-              })()}
-              <div className="mt-1 border rounded-lg max-h-36 overflow-y-auto">
-                {filteredInfluencers.length === 0 ? (
-                  <p className="p-2 text-xs text-muted-foreground text-center">No influencers found</p>
-                ) : (
-                  filteredInfluencers.map((inf) => (
-                    <button
-                      key={inf.id}
-                      type="button"
-                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/50 ${addInfluencerId === inf.id ? "bg-primary/10" : ""}`}
-                      onClick={() => setAddInfluencerId(inf.id)}
-                    >
-                      <span className="font-medium truncate">{inf.displayName || inf.username}</span>
-                      <span className="text-[11px] text-muted-foreground">@{inf.username}</span>
-                    </button>
-                  ))
-                )}
-              </div>
             </div>
           </div>
           <DialogFooter>
