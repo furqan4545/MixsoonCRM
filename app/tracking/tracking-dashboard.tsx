@@ -441,7 +441,7 @@ export function TrackingDashboard() {
                   <div className="flex items-center gap-4">
                     {/* Thumbnail */}
                     {v.thumbnailUrl ? (
-                      <img src={v.thumbnailUrl} alt="" className="h-16 w-12 rounded object-cover shrink-0" />
+                      <img src={`/api/thumbnail?url=${encodeURIComponent(v.thumbnailUrl)}`} alt="" className="h-16 w-12 rounded object-cover shrink-0" />
                     ) : (
                       <div className="h-16 w-12 rounded bg-muted flex items-center justify-center shrink-0">
                         <BarChart3 className="h-5 w-5 text-muted-foreground" />
@@ -474,10 +474,12 @@ export function TrackingDashboard() {
                           <Heart className="h-3 w-3 text-muted-foreground" />
                           {fmtNum(v.currentLikes)}
                         </span>
-                        <span className="flex items-center gap-1 text-xs">
-                          <MessageCircle className="h-3 w-3 text-muted-foreground" />
-                          {fmtNum(v.currentComments)}
-                        </span>
+                        {v.currentComments > 0 && (
+                          <span className="flex items-center gap-1 text-xs">
+                            <MessageCircle className="h-3 w-3 text-muted-foreground" />
+                            {fmtNum(v.currentComments)}
+                          </span>
+                        )}
                         <span className="flex items-center gap-1 text-xs">
                           <Bookmark className="h-3 w-3 text-muted-foreground" />
                           {fmtNum(v.currentSaves)}
@@ -558,13 +560,17 @@ export function TrackingDashboard() {
                   </div>
 
                   {/* Stats cards */}
-                  <div className="grid grid-cols-5 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {[
                       { icon: Eye, label: "Views", value: detail.currentViews, color: "text-blue-600" },
                       { icon: Heart, label: "Likes", value: detail.currentLikes, color: "text-red-500" },
-                      { icon: MessageCircle, label: "Comments", value: detail.currentComments, color: "text-green-600" },
                       { icon: Bookmark, label: "Saves", value: detail.currentSaves, color: "text-amber-600" },
-                      { icon: Share2, label: "Shares", value: detail.currentShares, color: "text-purple-600" },
+                      ...(detail.currentComments > 0
+                        ? [{ icon: MessageCircle, label: "Comments", value: detail.currentComments, color: "text-green-600" }]
+                        : []),
+                      ...(detail.currentShares > 0
+                        ? [{ icon: Share2, label: "Shares", value: detail.currentShares, color: "text-purple-600" }]
+                        : []),
                     ].map((stat) => (
                       <div key={stat.label} className="text-center p-2 bg-muted/50 rounded-lg">
                         <stat.icon className={`h-4 w-4 mx-auto mb-1 ${stat.color}`} />
