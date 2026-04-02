@@ -995,6 +995,7 @@ model Shipment {
   campaignId       String?
   campaign         MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
+  quantity         Int             @default(1)  // number of units in this shipment
   carrier          ShippingCarrier @default(OTHER)
   trackingNumber   String?
   trackingUrl      String?         // auto-generated clickable link
