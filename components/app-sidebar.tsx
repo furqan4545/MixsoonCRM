@@ -147,6 +147,32 @@ function useAlertCount(canSee: boolean) {
   return count;
 }
 
+function useViralAlertCount(canSee: boolean) {
+  const [count, setCount] = useState(0);
+
+  const fetchCount = useCallback(async () => {
+    if (!canSee) return;
+    try {
+      const res = await fetch("/api/viral-alerts?status=ACTIVE");
+      if (res.ok) {
+        const data = await res.json();
+        setCount(Array.isArray(data) ? data.length : 0);
+      }
+    } catch {
+      // silent
+    }
+  }, [canSee]);
+
+  useEffect(() => {
+    fetchCount();
+    if (!canSee) return;
+    const id = setInterval(fetchCount, 30_000);
+    return () => clearInterval(id);
+  }, [fetchCount, canSee]);
+
+  return count;
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
   const { isMobile } = useSidebar();
@@ -157,6 +183,8 @@ export function AppSidebar() {
   const pendingApprovalCount = useApprovalCount(canSeeApprovals);
   const canSeeAlerts = canSeeNavItem("/alerts", permissions);
   const activeAlertCount = useAlertCount(canSeeAlerts);
+  const canSeeTracking = canSeeNavItem("/tracking", permissions);
+  const viralAlertCount = useViralAlertCount(canSeeTracking);
 
   return (
     <Sidebar collapsible="icon">
@@ -204,6 +232,15 @@ export function AppSidebar() {
                             className="ml-auto h-5 min-w-5 rounded-full px-1.5 text-[10px] font-semibold"
                           >
                             {pendingApprovalCount}
+                          </Badge>
+                        ) : null}
+                        {item.href === "/tracking" &&
+                        viralAlertCount > 0 ? (
+                          <Badge
+                            variant="destructive"
+                            className="ml-auto h-5 min-w-5 rounded-full px-1.5 text-[10px] font-semibold"
+                          >
+                            {viralAlertCount}
                           </Badge>
                         ) : null}
                         {item.href === "/alerts" &&

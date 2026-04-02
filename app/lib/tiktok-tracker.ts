@@ -4,6 +4,7 @@
  */
 
 import { prisma } from "@/app/lib/prisma";
+import { getSmtpTransport } from "@/app/lib/email";
 
 const APIFY_API_KEY = process.env.APIFY_API_KEY!;
 const APIFY_ACTOR_ID = "ssOXktOBaQQiYfhc4";
@@ -318,6 +319,13 @@ export async function refreshTrackedVideos(
               },
             });
             viralAlertCount++;
+
+            // Send viral alert email to connected account
+            try {
+              await sendViralAlertEmail(video.videoUrl, video.influencerId, check.metric, check.value, check.threshold, stats.title);
+            } catch (emailErr) {
+              console.error("[tracker] Failed to send viral alert email:", emailErr);
+            }
           }
         }
       }
@@ -325,4 +333,86 @@ export async function refreshTrackedVideos(
   }
 
   return { refreshed, viralAlerts: viralAlertCount };
+}
+
+// ─── VIRAL ALERT EMAIL ────────────────────────────────────
+
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
+}
+
+async function sendViralAlertEmail(
+  videoUrl: string,
+  influencerId: string,
+  metric: string,
+  value: number,
+  threshold: number,
+  title?: string,
+) {
+  // Find first connected email account to send from
+  const account = await prisma.emailAccount.findFirst({
+    where: { isActive: true },
+  });
+  if (!account) {
+    console.warn("[tracker] No active email account for viral alert email");
+    return;
+  }
+
+  // Get influencer info
+  const influencer = await prisma.influencer.findUnique({
+    where: { id: influencerId },
+    select: { username: true, displayName: true },
+  });
+
+  const influencerName = influencer?.displayName || influencer?.username || "Unknown";
+  const videoTitle = title || "Untitled Video";
+
+  const transport = getSmtpTransport(account);
+  await transport.sendMail({
+    from: `"MIXSOON Tracker" <${account.emailAddress}>`,
+    to: account.emailAddress,
+    subject: `🔥 Viral Alert: @${influencer?.username}'s video hit ${fmtNum(value)} ${metric}!`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #ff6b35, #f7c948); padding: 24px; border-radius: 12px; color: white; text-align: center; margin-bottom: 24px;">
+          <h1 style="margin: 0 0 8px 0; font-size: 28px;">🔥 Video Going Viral!</h1>
+          <p style="margin: 0; font-size: 16px; opacity: 0.9;">A tracked video just crossed your ${metric} threshold</p>
+        </div>
+
+        <div style="background: #f9f9f9; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
+          <h2 style="margin: 0 0 4px 0; font-size: 18px;">${videoTitle}</h2>
+          <p style="margin: 0 0 12px 0; color: #666;">@${influencer?.username} — ${influencerName}</p>
+
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #666;">Metric</td>
+              <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-weight: 600; text-align: right; text-transform: capitalize;">${metric}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #666;">Current Value</td>
+              <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-weight: 600; text-align: right; color: #e63946;">${fmtNum(value)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #666;">Threshold</td>
+              <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-weight: 600; text-align: right;">${fmtNum(threshold)}</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="text-align: center; margin-top: 20px;">
+          <a href="${videoUrl}" style="display: inline-block; background: #333; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+            Watch on TikTok →
+          </a>
+        </div>
+
+        <p style="text-align: center; color: #999; font-size: 12px; margin-top: 24px;">
+          Sent by MIXSOON Influencer OS — Performance Tracking
+        </p>
+      </div>
+    `,
+  });
+  transport.close();
+  console.log(`[tracker] Viral alert email sent for @${influencer?.username} (${metric}: ${fmtNum(value)})`);
 }
