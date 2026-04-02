@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Calendar,
   DollarSign,
+  Package,
   Users,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -53,6 +54,7 @@ export interface CampaignRow {
   endDate: string | null;
   status: string;
   influencerCount: number;
+  shipmentCount: number;
   isMyCampaign?: boolean;
   influencers: CampaignInfluencerRow[];
   createdAt: string;
@@ -434,6 +436,9 @@ export function CampaignsDashboard({
                       Influencers
                     </th>
                     <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Shipments
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Created
                     </th>
                     <th className="w-10 px-2 py-3" />
@@ -494,6 +499,16 @@ export function CampaignsDashboard({
                             {c.influencerCount}
                           </span>
                         </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {c.shipmentCount > 0 ? (
+                          <span className="flex items-center gap-1">
+                            <Package className="h-3 w-3" />
+                            {c.shipmentCount}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">
                         {formatDate(c.createdAt)}

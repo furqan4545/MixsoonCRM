@@ -60,6 +60,7 @@ import type { InfluencerRow } from "./influencers-dashboard";
 import { InfluencerContactSection } from "@/components/influencer-contact-section";
 import { toast } from "sonner";
 import AnalyticsTab from "./analytics-tab";
+import ShippingTab from "./shipping-tab";
 
 function formatNumber(n: number | null): string {
   if (n == null) return "—";
@@ -1772,6 +1773,12 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
           >
             Analytics
           </TabsTrigger>
+          <TabsTrigger
+            value="shipping"
+            className="shrink-0 rounded-none border-b-2 border-transparent px-3 py-2.5 text-xs data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+          >
+            Shipping
+          </TabsTrigger>
         </TabsList>
 
         {/* Overview tab */}
@@ -2280,6 +2287,12 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
                 window.dispatchEvent(new CustomEvent("analysis-complete", { detail: influencer.id }));
               }}
             />
+          )}
+        </TabsContent>
+
+        <TabsContent value="shipping" className="mt-0 pt-5 pb-8">
+          {activeTab === "shipping" && (
+            <ShippingTab influencerId={influencer.id} />
           )}
         </TabsContent>
       </Tabs>

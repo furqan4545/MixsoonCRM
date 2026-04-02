@@ -26,7 +26,7 @@ export async function GET() {
       where,
       orderBy: { createdAt: "desc" },
       include: {
-        _count: { select: { influencers: true } },
+        _count: { select: { influencers: true, shipments: true } },
       },
     });
     return NextResponse.json(campaigns);
