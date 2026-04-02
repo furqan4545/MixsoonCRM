@@ -50,6 +50,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
   }
 
+  const qty = shipment.quantity ?? 1;
   const data: Record<string, unknown> = {};
 
   // Update carrier
@@ -88,8 +89,8 @@ export async function PATCH(
         await tx.product.update({
           where: { id: shipment.productId },
           data: {
-            quantity: { decrement: shipment.quantity },
-            reserved: { decrement: shipment.quantity },
+            quantity: { decrement: qty },
+            reserved: { decrement: qty },
           },
         });
       }
@@ -99,7 +100,7 @@ export async function PATCH(
         if (oldStatus !== "DELIVERED") {
           await tx.product.update({
             where: { id: shipment.productId },
-            data: { reserved: { decrement: shipment.quantity } },
+            data: { reserved: { decrement: qty } },
           });
         }
       }
@@ -160,11 +161,12 @@ export async function DELETE(
   }
 
   // Only cancel non-delivered shipments, free reservation
+  const delQty = shipment.quantity ?? 1;
   if (shipment.status !== "DELIVERED") {
     await prisma.$transaction([
       prisma.product.update({
         where: { id: shipment.productId },
-        data: { reserved: { decrement: shipment.quantity } },
+        data: { reserved: { decrement: delQty } },
       }),
       prisma.shipment.delete({ where: { id } }),
     ]);

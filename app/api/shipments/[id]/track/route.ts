@@ -64,8 +64,8 @@ export async function POST(
         await prisma.product.update({
           where: { id: shipment.productId },
           data: {
-            quantity: { decrement: shipment.quantity },
-            reserved: { decrement: shipment.quantity },
+            quantity: { decrement: (shipment.quantity ?? 1) },
+            reserved: { decrement: (shipment.quantity ?? 1) },
           },
         });
       }
