@@ -278,12 +278,14 @@ export function TrackingDashboard() {
         return;
       }
       const data = await res.json();
-      toast.success(`${data.created} video(s) added for tracking${data.skipped > 0 ? `, ${data.skipped} already tracked` : ""}`);
+      toast.success(`${data.created} video(s) added — fetching stats...`);
       setShowAddDialog(false);
       setAddUrls("");
       setAddInfluencerId("");
       setAddCampaignId("");
-      fetchVideos();
+      // Auto-refresh immediately to get initial stats
+      await fetch("/api/tracked-videos/bulk-refresh", { method: "POST" });
+      await fetchVideos();
     } catch {
       toast.error("Failed to add videos");
     } finally {
