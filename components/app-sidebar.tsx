@@ -163,12 +163,13 @@ function useViralAlertCount(canSee: boolean) {
     }
   }, [canSee]);
 
+  // Fetch once on mount, then listen for custom event (fired after refresh)
   useEffect(() => {
     fetchCount();
-    if (!canSee) return;
-    const id = setInterval(fetchCount, 30_000);
-    return () => clearInterval(id);
-  }, [fetchCount, canSee]);
+    const handler = () => fetchCount();
+    window.addEventListener("viral-alerts-changed", handler);
+    return () => window.removeEventListener("viral-alerts-changed", handler);
+  }, [fetchCount]);
 
   return count;
 }

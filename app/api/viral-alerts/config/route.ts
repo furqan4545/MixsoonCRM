@@ -28,6 +28,7 @@ export async function PATCH(request: NextRequest) {
   if (body.commentsThreshold !== undefined) data.commentsThreshold = parseInt(body.commentsThreshold);
   if (body.savesThreshold !== undefined) data.savesThreshold = parseInt(body.savesThreshold);
   if (body.sharesThreshold !== undefined) data.sharesThreshold = parseInt(body.sharesThreshold);
+  if (body.pollIntervalHours !== undefined) data.pollIntervalHours = Math.max(1, parseInt(body.pollIntervalHours));
   if (body.enabled !== undefined) data.enabled = body.enabled;
 
   const config = await prisma.viralAlertConfig.upsert({

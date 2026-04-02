@@ -1110,6 +1110,7 @@ model ViralAlertConfig {
   commentsThreshold Int     @default(5000)
   savesThreshold   Int      @default(5000)
   sharesThreshold  Int      @default(5000)
+  pollIntervalHours Int     @default(5)   // how often cron refreshes stats (hours)
   enabled          Boolean  @default(true)
   updatedAt        DateTime @updatedAt
 }

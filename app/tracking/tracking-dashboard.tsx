@@ -162,7 +162,7 @@ export function TrackingDashboard() {
 
   // Config dialog
   const [showConfig, setShowConfig] = useState(false);
-  const [config, setConfig] = useState({ viewsThreshold: 100000, likesThreshold: 10000, commentsThreshold: 5000, savesThreshold: 5000, sharesThreshold: 5000, enabled: true });
+  const [config, setConfig] = useState({ viewsThreshold: 100000, likesThreshold: 10000, commentsThreshold: 5000, savesThreshold: 5000, sharesThreshold: 5000, pollIntervalHours: 5, enabled: true });
 
   // Prevent double-fetching
   const fetchingRef = useRef(false);
@@ -234,6 +234,7 @@ export function TrackingDashboard() {
       if (!res.ok) throw new Error();
       toast.success("Stats refreshed");
       await fetchVideos();
+      window.dispatchEvent(new Event("viral-alerts-changed"));
       if (selectedId === id) {
         const d = await fetch(`/api/tracked-videos/${id}`).then((r) => r.json());
         setDetail(d);
@@ -254,6 +255,7 @@ export function TrackingDashboard() {
       const data = await res.json();
       toast.success(`Refreshed ${data.refreshed} videos${data.viralAlerts > 0 ? `, ${data.viralAlerts} viral alerts!` : ""}`);
       await fetchVideos();
+      window.dispatchEvent(new Event("viral-alerts-changed"));
     } catch {
       toast.error("Bulk refresh failed");
     } finally {
@@ -286,6 +288,7 @@ export function TrackingDashboard() {
       // Auto-refresh immediately to get initial stats
       await fetch("/api/tracked-videos/bulk-refresh", { method: "POST" });
       await fetchVideos();
+      window.dispatchEvent(new Event("viral-alerts-changed"));
     } catch {
       toast.error("Failed to add videos");
     } finally {
@@ -841,6 +844,27 @@ export function TrackingDashboard() {
                 />
               </div>
             ))}
+
+            <div className="border-t pt-3 mt-3">
+              <div className="flex items-center gap-3">
+                <RefreshCw className="h-4 w-4 text-muted-foreground shrink-0" />
+                <Label className="w-20 shrink-0">Poll Every</Label>
+                <div className="flex items-center gap-2 flex-1">
+                  <Input
+                    type="number"
+                    min="1"
+                    max="24"
+                    value={config.pollIntervalHours}
+                    onChange={(e) => setConfig({ ...config, pollIntervalHours: Math.max(1, parseInt(e.target.value) || 5) })}
+                    className="w-20"
+                  />
+                  <span className="text-sm text-muted-foreground">hours</span>
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1 ml-7">
+                How often the cron job refreshes video stats from TikTok
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowConfig(false)}>Cancel</Button>
