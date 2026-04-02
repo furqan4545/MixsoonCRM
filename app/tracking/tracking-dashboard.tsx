@@ -285,10 +285,13 @@ export function TrackingDashboard() {
       setAddUrls("");
       setAddInfluencerId("");
       setAddCampaignId("");
-      // Auto-refresh immediately to get initial stats
-      await fetch("/api/tracked-videos/bulk-refresh", { method: "POST" });
+      // Show the video immediately (with 0 stats)
       await fetchVideos();
-      window.dispatchEvent(new Event("viral-alerts-changed"));
+      // Then refresh stats in background — update UI when done
+      fetch("/api/tracked-videos/bulk-refresh", { method: "POST" })
+        .then(() => fetchVideos())
+        .then(() => window.dispatchEvent(new Event("viral-alerts-changed")))
+        .catch(() => {});
     } catch {
       toast.error("Failed to add videos");
     } finally {
