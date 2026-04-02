@@ -288,10 +288,12 @@ export function TrackingDashboard() {
       // Show the video immediately (with 0 stats)
       await fetchVideos();
       // Then refresh stats in background — update UI when done
+      setRefreshingAll(true);
       fetch("/api/tracked-videos/bulk-refresh", { method: "POST" })
         .then(() => fetchVideos())
         .then(() => window.dispatchEvent(new Event("viral-alerts-changed")))
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => setRefreshingAll(false));
     } catch {
       toast.error("Failed to add videos");
     } finally {
