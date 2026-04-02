@@ -216,6 +216,7 @@ function normalizeUrl(url: string): string {
  */
 export async function refreshTrackedVideos(
   videoIds?: string[], // if provided, only refresh these; otherwise refresh all isTracking=true
+  triggeredByUserId?: string, // user who triggered the refresh (for email notifications)
 ): Promise<{ refreshed: number; viralAlerts: number }> {
   const where = videoIds
     ? { id: { in: videoIds }, isTracking: true }
@@ -322,7 +323,7 @@ export async function refreshTrackedVideos(
 
             // Send viral alert email to connected account
             try {
-              await sendViralAlertEmail(video.videoUrl, video.influencerId, check.metric, check.value, check.threshold, stats.title);
+              await sendViralAlertEmail(video.videoUrl, video.influencerId, check.metric, check.value, check.threshold, stats.title, triggeredByUserId);
             } catch (emailErr) {
               console.error("[tracker-email] FAILED:", emailErr instanceof Error ? emailErr.message : emailErr);
               console.error("[tracker-email] Stack:", emailErr instanceof Error ? emailErr.stack : "no stack");
@@ -351,15 +352,31 @@ async function sendViralAlertEmail(
   value: number,
   threshold: number,
   title?: string,
+  triggeredByUserId?: string,
 ) {
-  // Send to ALL connected email accounts
-  console.log("[tracker-email] Looking for email accounts...");
-  const accounts = await prisma.emailAccount.findMany();
-  if (accounts.length === 0) {
-    console.warn("[tracker-email] No email accounts found. Connect an email in Settings first.");
+  // Send email to the user who triggered the refresh
+  // If triggered by cron (no user), send to admin users' accounts
+  console.log("[tracker-email] Looking for email account...");
+  let account;
+  if (triggeredByUserId) {
+    account = await prisma.emailAccount.findUnique({
+      where: { userId: triggeredByUserId },
+    });
+  }
+  if (!account) {
+    // Fallback: find account of an admin user
+    const adminUser = await prisma.user.findFirst({
+      where: { role: { name: "Admin" }, status: "ACTIVE" },
+      include: { emailAccount: true },
+    });
+    account = adminUser?.emailAccount ?? null;
+  }
+  if (!account) {
+    console.warn("[tracker-email] No email account found for this user or any admin.");
     return;
   }
-  console.log(`[tracker-email] Found ${accounts.length} account(s): ${accounts.map(a => a.emailAddress).join(", ")}`);
+  console.log(`[tracker-email] Using account: ${account.emailAddress}`);
+  const accounts = [account];
 
   // Get influencer info
   const influencer = await prisma.influencer.findUnique({
