@@ -38,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea";
 interface ProductShipment {
   id: string;
   status: string;
+  quantity?: number;
   influencer: {
     id: string;
     username: string;
@@ -94,7 +95,7 @@ export function InventoryDashboard() {
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [assigningProduct, setAssigningProduct] = useState<Product | null>(null);
-  const [removingShipment, setRemovingShipment] = useState<ProductShipment | null>(null);
+  const [removingShipments, setRemovingShipments] = useState<ProductShipment[] | null>(null);
   const [removeConfirmStep, setRemoveConfirmStep] = useState(0); // 0=initial, 1=confirmed once
 
   // Add/Edit form
@@ -460,7 +461,7 @@ export function InventoryDashboard() {
                                 const avatarSrc = inf.avatarUrl
                                   ? `/api/thumbnail?url=${encodeURIComponent(inf.avatarUrl)}`
                                   : null;
-                                const qty = infShipments.length;
+                                const qty = infShipments.reduce((sum, s) => sum + (s.quantity ?? 1), 0);
                                 return (
                                   <button
                                     key={inf.id}
@@ -468,7 +469,7 @@ export function InventoryDashboard() {
                                     className="relative group"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setRemovingShipment(infShipments[0]);
+                                      setRemovingShipments(infShipments);
                                     }}
                                     title={`${inf.displayName || inf.username} — ${qty} unit${qty > 1 ? "s" : ""}`}
                                   >
@@ -908,85 +909,93 @@ export function InventoryDashboard() {
       </Dialog>
 
       {/* Remove Assignment Confirmation Dialog (double confirm) */}
-      <Dialog open={!!removingShipment} onOpenChange={(open) => {
+      <Dialog open={!!removingShipments} onOpenChange={(open) => {
         if (!open) {
-          setRemovingShipment(null);
+          setRemovingShipments(null);
           setRemoveConfirmStep(0);
         }
       }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>
-              {removeConfirmStep === 0 ? "Remove Assignment?" : "Are you absolutely sure?"}
+              {removeConfirmStep === 0 ? "Remove All Shipments?" : "Are you absolutely sure?"}
             </DialogTitle>
           </DialogHeader>
-          {removingShipment && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-                {removingShipment.influencer.avatarUrl ? (
-                  <img
-                    src={`/api/thumbnail?url=${encodeURIComponent(removingShipment.influencer.avatarUrl)}`}
-                    alt=""
-                    className="h-10 w-10 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-sm font-medium">
-                    {(removingShipment.influencer.displayName || removingShipment.influencer.username)?.[0]?.toUpperCase()}
+          {removingShipments && removingShipments.length > 0 && (() => {
+            const inf = removingShipments[0].influencer;
+            const totalShipments = removingShipments.length;
+            const totalUnits = removingShipments.reduce((sum, s) => sum + (s.quantity ?? 1), 0);
+            return (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+                  {inf.avatarUrl ? (
+                    <img
+                      src={`/api/thumbnail?url=${encodeURIComponent(inf.avatarUrl)}`}
+                      alt=""
+                      className="h-10 w-10 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-sm font-medium">
+                      {(inf.displayName || inf.username)?.[0]?.toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <p className="font-medium text-sm">
+                      {inf.displayName || inf.username}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      @{inf.username} — {totalShipments} shipment{totalShipments > 1 ? "s" : ""}, {totalUnits} unit{totalUnits > 1 ? "s" : ""}
+                    </p>
                   </div>
-                )}
-                <div>
-                  <p className="font-medium text-sm">
-                    {removingShipment.influencer.displayName || removingShipment.influencer.username}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    @{removingShipment.influencer.username} — Status: {removingShipment.status}
-                  </p>
                 </div>
+                {removeConfirmStep === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    This will cancel all shipments for this influencer and free up {totalUnits} reserved unit{totalUnits > 1 ? "s" : ""}.
+                  </p>
+                ) : (
+                  <p className="text-sm text-red-600 font-medium">
+                    This cannot be undone. All {totalShipments} shipment record{totalShipments > 1 ? "s" : ""} will be permanently deleted.
+                  </p>
+                )}
               </div>
-              {removeConfirmStep === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  This will cancel the shipment and free up the reserved stock.
-                </p>
-              ) : (
-                <p className="text-sm text-red-600 font-medium">
-                  This action cannot be undone. The shipment record will be permanently deleted.
-                </p>
-              )}
-            </div>
-          )}
+            );
+          })()}
           <DialogFooter>
             <Button variant="outline" onClick={() => {
-              setRemovingShipment(null);
+              setRemovingShipments(null);
               setRemoveConfirmStep(0);
             }}>
               Cancel
             </Button>
             {removeConfirmStep === 0 ? (
               <Button variant="destructive" onClick={() => setRemoveConfirmStep(1)}>
-                Yes, Remove
+                Yes, Remove All
               </Button>
             ) : (
               <Button
                 variant="destructive"
                 disabled={removing}
                 onClick={async () => {
-                  if (!removingShipment) return;
+                  if (!removingShipments) return;
                   setRemoving(true);
                   try {
-                    const res = await fetch(`/api/shipments/${removingShipment.id}`, {
-                      method: "DELETE",
-                    });
-                    if (!res.ok) {
-                      const err = await res.json();
-                      toast.error(err.error || "Failed to remove");
-                      return;
+                    let failed = 0;
+                    await Promise.all(
+                      removingShipments.map(async (s) => {
+                        const res = await fetch(`/api/shipments/${s.id}`, { method: "DELETE" });
+                        if (!res.ok) failed++;
+                      })
+                    );
+                    if (failed > 0) {
+                      toast.error(`${failed} shipment(s) failed to remove`);
+                    } else {
+                      toast.success(`All ${removingShipments.length} shipment(s) removed`);
                     }
-                    toast.success("Assignment removed");
-                    setRemovingShipment(null);
+                    setRemovingShipments(null);
                     setRemoveConfirmStep(0);
                     fetchProducts();
                   } catch {
-                    toast.error("Failed to remove assignment");
+                    toast.error("Failed to remove assignments");
                   } finally {
                     setRemoving(false);
                   }
@@ -998,7 +1007,7 @@ export function InventoryDashboard() {
                     Removing...
                   </>
                 ) : (
-                  "Confirm Delete"
+                  "Confirm Delete All"
                 )}
               </Button>
             )}
