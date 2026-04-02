@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const { productId, influencerId, campaignId, carrier, trackingNumber, notes } = body;
+  const quantity = Math.max(1, parseInt(body.quantity) || 1);
 
   if (!productId || !influencerId) {
     return NextResponse.json(
@@ -75,9 +76,9 @@ export async function POST(request: NextRequest) {
   }
 
   const available = product.quantity - product.reserved;
-  if (available <= 0) {
+  if (available < quantity) {
     return NextResponse.json(
-      { error: `No stock available for "${product.name}" (${product.sku})` },
+      { error: `Only ${available} unit(s) available for "${product.name}" (${product.sku})` },
       { status: 400 },
     );
   }
@@ -100,43 +101,44 @@ export async function POST(request: NextRequest) {
     ? generateTrackingUrl(carrierEnum, trackingNumber)
     : null;
 
-  // Atomic: create shipment + increment reserved
-  const shipment = await prisma.$transaction(async (tx) => {
+  // Atomic: create all shipments + increment reserved in one transaction
+  const shipments = await prisma.$transaction(async (tx) => {
     await tx.product.update({
       where: { id: productId },
-      data: { reserved: { increment: 1 } },
+      data: { reserved: { increment: quantity } },
     });
 
-    return tx.shipment.create({
-      data: {
-        productId,
-        influencerId,
-        campaignId: campaignId || null,
-        carrier: carrierEnum,
-        trackingNumber: trackingNumber || null,
-        trackingUrl,
-        shippingAddress: onboarding || null,
-        notes: notes || null,
-        createdById: user.id,
-        status: trackingNumber ? "SHIPPED" : "PENDING",
-        shippedAt: trackingNumber ? new Date() : null,
-      },
-      include: {
-        product: { select: { id: true, name: true, sku: true } },
-        influencer: { select: { id: true, username: true, displayName: true } },
-      },
-    });
+    const created = [];
+    for (let i = 0; i < quantity; i++) {
+      const s = await tx.shipment.create({
+        data: {
+          productId,
+          influencerId,
+          campaignId: campaignId || null,
+          carrier: carrierEnum,
+          trackingNumber: trackingNumber || null,
+          trackingUrl,
+          shippingAddress: onboarding || null,
+          notes: notes || null,
+          createdById: user.id,
+          status: trackingNumber ? "SHIPPED" : "PENDING",
+          shippedAt: trackingNumber ? new Date() : null,
+        },
+      });
+      created.push(s);
+    }
+    return created;
   });
 
-  // Log activity
+  // Single activity log for the batch
   await prisma.activityLog.create({
     data: {
       influencerId,
       type: "shipment_created",
-      title: "Product assigned for shipping",
-      detail: `${product.name} (${product.sku}) — ${carrierEnum}${trackingNumber ? ` #${trackingNumber}` : ""}`,
+      title: `${quantity} unit${quantity > 1 ? "s" : ""} assigned for shipping`,
+      detail: `${product.name} (${product.sku}) x${quantity} — ${carrierEnum}${trackingNumber ? ` #${trackingNumber}` : ""}`,
     },
   });
 
-  return NextResponse.json(shipment, { status: 201 });
+  return NextResponse.json({ shipments, count: quantity }, { status: 201 });
 }

@@ -260,29 +260,24 @@ export function InventoryDashboard() {
     setAssigning(true);
     const qty = Math.max(1, parseInt(assignData.quantity) || 1);
     try {
-      // Create one shipment per unit (each unit is a separate shipment)
-      let successCount = 0;
-      for (let i = 0; i < qty; i++) {
-        const res = await fetch("/api/shipments", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            productId: assigningProduct.id,
-            influencerId: assignData.influencerId,
-            campaignId: assignData.campaignId || undefined,
-            carrier: assignData.carrier,
-            notes: assignData.notes || undefined,
-          }),
-        });
-        if (!res.ok) {
-          const err = await res.json();
-          toast.error(err.error || `Failed on unit ${i + 1}`);
-          break;
-        }
-        successCount++;
+      const res = await fetch("/api/shipments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: assigningProduct.id,
+          influencerId: assignData.influencerId,
+          campaignId: assignData.campaignId || undefined,
+          carrier: assignData.carrier,
+          quantity: qty,
+          notes: assignData.notes || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast.error(err.error || "Failed to assign");
+        return;
       }
-      if (successCount === 0) return;
-      toast.success(`${successCount} unit${successCount > 1 ? "s" : ""} assigned & shipment${successCount > 1 ? "s" : ""} created`);
+      toast.success(`${qty} unit${qty > 1 ? "s" : ""} assigned`);
       setShowAssignDialog(false);
       setAssigningProduct(null);
       setAssignData({ influencerId: "", campaignId: "", carrier: "DHL", notes: "" });
@@ -447,57 +442,63 @@ export function InventoryDashboard() {
                         {product.reserved > 0 ? product.reserved : "—"}
                       </td>
                       <td className="p-3">
-                        {product.shipments.length > 0 ? (
-                          <div className="flex items-center gap-1 flex-wrap">
-                            {product.shipments.slice(0, 5).map((s) => {
-                              const inf = s.influencer;
-                              const avatarSrc = inf.avatarUrl
-                                ? `/api/thumbnail?url=${encodeURIComponent(inf.avatarUrl)}`
-                                : null;
-                              return (
-                                <div key={s.id} className="relative group">
+                        {product.shipments.length > 0 ? (() => {
+                          // Group shipments by influencer
+                          const grouped = new Map<string, { influencer: ProductShipment["influencer"]; shipments: ProductShipment[] }>();
+                          for (const s of product.shipments) {
+                            const existing = grouped.get(s.influencer.id);
+                            if (existing) {
+                              existing.shipments.push(s);
+                            } else {
+                              grouped.set(s.influencer.id, { influencer: s.influencer, shipments: [s] });
+                            }
+                          }
+                          const entries = [...grouped.values()];
+                          return (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {entries.slice(0, 5).map(({ influencer: inf, shipments: infShipments }) => {
+                                const avatarSrc = inf.avatarUrl
+                                  ? `/api/thumbnail?url=${encodeURIComponent(inf.avatarUrl)}`
+                                  : null;
+                                const qty = infShipments.length;
+                                return (
                                   <button
+                                    key={inf.id}
                                     type="button"
-                                    className="block"
+                                    className="relative group"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setRemovingShipment(s);
+                                      setRemovingShipment(infShipments[0]);
                                     }}
-                                    title={`${inf.displayName || inf.username} — ${s.status}`}
+                                    title={`${inf.displayName || inf.username} — ${qty} unit${qty > 1 ? "s" : ""}`}
                                   >
                                     {avatarSrc ? (
                                       <img
                                         src={avatarSrc}
                                         alt={inf.username}
-                                        className={`h-8 w-8 rounded-full object-cover border-2 ${
-                                          s.status === "DELIVERED" ? "border-green-400" :
-                                          s.status === "SHIPPED" || s.status === "IN_TRANSIT" ? "border-blue-400" :
-                                          s.status === "PENDING" ? "border-gray-300" :
-                                          "border-red-400"
-                                        } group-hover:ring-2 group-hover:ring-red-300 transition`}
+                                        className="h-8 w-8 rounded-full object-cover border-2 border-gray-200 group-hover:ring-2 group-hover:ring-red-300 transition"
                                       />
                                     ) : (
-                                      <div
-                                        className={`h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-semibold border-2 ${
-                                          s.status === "DELIVERED" ? "border-green-400 bg-green-50" :
-                                          s.status === "SHIPPED" || s.status === "IN_TRANSIT" ? "border-blue-400 bg-blue-50" :
-                                          "border-gray-300 bg-muted"
-                                        } group-hover:ring-2 group-hover:ring-red-300 transition`}
-                                      >
+                                      <div className="h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-semibold border-2 border-gray-200 bg-muted group-hover:ring-2 group-hover:ring-red-300 transition">
                                         {(inf.displayName || inf.username)?.[0]?.toUpperCase()}
                                       </div>
                                     )}
+                                    {qty > 1 && (
+                                      <span className="absolute -top-1 -right-1 h-4 min-w-4 px-0.5 rounded-full bg-foreground text-background text-[9px] font-bold flex items-center justify-center">
+                                        {qty}
+                                      </span>
+                                    )}
                                   </button>
-                                </div>
-                              );
-                            })}
-                            {product.shipments.length > 5 && (
-                              <span className="text-xs text-muted-foreground ml-1">
-                                +{product.shipments.length - 5}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
+                                );
+                              })}
+                              {entries.length > 5 && (
+                                <span className="text-xs text-muted-foreground ml-1">
+                                  +{entries.length - 5}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })() : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
