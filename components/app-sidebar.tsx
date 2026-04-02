@@ -16,6 +16,7 @@ import {
   Sparkles,
   Trash2,
   Truck,
+  BarChart3,
   UserCog,
   Users,
 } from "lucide-react";
@@ -55,6 +56,7 @@ const workspaceItems = [
   { title: "Documents", href: "/contracts", icon: FileText },
   { title: "Inventory", href: "/inventory", icon: Package },
   { title: "Shipping", href: "/shipping", icon: Truck },
+  { title: "Tracking", href: "/tracking", icon: BarChart3 },
   { title: "Alerts", href: "/alerts", icon: AlertTriangle },
   { title: "Trash", href: "/trash", icon: Trash2 },
   { title: "Billing", href: "/billing", icon: CreditCard },
