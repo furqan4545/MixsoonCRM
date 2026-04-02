@@ -352,9 +352,7 @@ async function sendViralAlertEmail(
   title?: string,
 ) {
   // Find first connected email account to send from
-  const account = await prisma.emailAccount.findFirst({
-    where: { isActive: true },
-  });
+  const account = await prisma.emailAccount.findFirst();
   if (!account) {
     console.warn("[tracker] No active email account for viral alert email");
     return;
