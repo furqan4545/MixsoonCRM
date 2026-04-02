@@ -101,36 +101,35 @@ export async function POST(request: NextRequest) {
     ? generateTrackingUrl(carrierEnum, trackingNumber)
     : null;
 
-  // Atomic: create all shipments + increment reserved in one transaction
-  const shipments = await prisma.$transaction(async (tx) => {
+  // Atomic: create ONE shipment with quantity + increment reserved
+  const shipment = await prisma.$transaction(async (tx) => {
     await tx.product.update({
       where: { id: productId },
       data: { reserved: { increment: quantity } },
     });
 
-    const created = [];
-    for (let i = 0; i < quantity; i++) {
-      const s = await tx.shipment.create({
-        data: {
-          productId,
-          influencerId,
-          campaignId: campaignId || null,
-          carrier: carrierEnum,
-          trackingNumber: trackingNumber || null,
-          trackingUrl,
-          shippingAddress: onboarding || null,
-          notes: notes || null,
-          createdById: user.id,
-          status: trackingNumber ? "SHIPPED" : "PENDING",
-          shippedAt: trackingNumber ? new Date() : null,
-        },
-      });
-      created.push(s);
-    }
-    return created;
+    return tx.shipment.create({
+      data: {
+        productId,
+        influencerId,
+        campaignId: campaignId || null,
+        quantity,
+        carrier: carrierEnum,
+        trackingNumber: trackingNumber || null,
+        trackingUrl,
+        shippingAddress: onboarding || null,
+        notes: notes || null,
+        createdById: user.id,
+        status: trackingNumber ? "SHIPPED" : "PENDING",
+        shippedAt: trackingNumber ? new Date() : null,
+      },
+      include: {
+        product: { select: { id: true, name: true, sku: true } },
+        influencer: { select: { id: true, username: true, displayName: true } },
+      },
+    });
   });
 
-  // Single activity log for the batch
   await prisma.activityLog.create({
     data: {
       influencerId,
@@ -140,5 +139,5 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  return NextResponse.json({ shipments, count: quantity }, { status: 201 });
+  return NextResponse.json(shipment, { status: 201 });
 }

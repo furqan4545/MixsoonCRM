@@ -41,6 +41,7 @@ interface Shipment {
   influencer: { id: string; username: string; displayName: string | null; avatarUrl: string | null };
   campaign: { id: string; name: string } | null;
   createdBy: { id: string; name: string } | null;
+  quantity: number;
   carrier: string;
   trackingNumber: string | null;
   trackingUrl: string | null;
@@ -284,7 +285,7 @@ export function ShippingDashboard() {
                           {s.influencer.displayName || s.influencer.username}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {s.product.name} ({s.product.sku})
+                          {s.product.name} ({s.product.sku}){s.quantity > 1 ? ` x${s.quantity}` : ""}
                         </p>
                       </div>
                     </div>
@@ -403,7 +404,10 @@ export function ShippingDashboard() {
                   <Package className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <p className="font-medium text-sm">{selectedShipment.product.name}</p>
-                    <p className="text-xs text-muted-foreground">SKU: {selectedShipment.product.sku}</p>
+                    <p className="text-xs text-muted-foreground">
+                      SKU: {selectedShipment.product.sku}
+                      {selectedShipment.quantity > 1 ? ` — Qty: ${selectedShipment.quantity}` : ""}
+                    </p>
                   </div>
                 </div>
               </div>
