@@ -11,6 +11,7 @@ import {
   Trash2,
   Send,
   AlertTriangle,
+  Loader2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -106,6 +107,12 @@ export function InventoryDashboard() {
     unitCost: "",
   });
 
+  // Loading states
+  const [saving, setSaving] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
   // Import
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
@@ -117,6 +124,7 @@ export function InventoryDashboard() {
     influencerId: "",
     campaignId: "",
     carrier: "DHL",
+    quantity: "1",
     notes: "",
   });
 
@@ -167,6 +175,7 @@ export function InventoryDashboard() {
 
   // Add/Edit product
   const handleSaveProduct = async () => {
+    setSaving(true);
     const method = editingProduct ? "PATCH" : "POST";
     const url = editingProduct
       ? `/api/inventory/${editingProduct.id}`
@@ -190,12 +199,15 @@ export function InventoryDashboard() {
       fetchProducts();
     } catch {
       toast.error("Failed to save product");
+    } finally {
+      setSaving(false);
     }
   };
 
   // Delete product
   const handleDelete = async (product: Product) => {
     if (!confirm(`Delete "${product.name}" (${product.sku})?`)) return;
+    setDeleting(product.id);
     try {
       const res = await fetch(`/api/inventory/${product.id}`, { method: "DELETE" });
       if (!res.ok) {
@@ -207,6 +219,8 @@ export function InventoryDashboard() {
       fetchProducts();
     } catch {
       toast.error("Failed to delete");
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -243,30 +257,40 @@ export function InventoryDashboard() {
       toast.error("Select an influencer");
       return;
     }
+    setAssigning(true);
+    const qty = Math.max(1, parseInt(assignData.quantity) || 1);
     try {
-      const res = await fetch("/api/shipments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productId: assigningProduct.id,
-          influencerId: assignData.influencerId,
-          campaignId: assignData.campaignId || undefined,
-          carrier: assignData.carrier,
-          notes: assignData.notes || undefined,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        toast.error(err.error || "Failed to create shipment");
-        return;
+      // Create one shipment per unit (each unit is a separate shipment)
+      let successCount = 0;
+      for (let i = 0; i < qty; i++) {
+        const res = await fetch("/api/shipments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            productId: assigningProduct.id,
+            influencerId: assignData.influencerId,
+            campaignId: assignData.campaignId || undefined,
+            carrier: assignData.carrier,
+            notes: assignData.notes || undefined,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          toast.error(err.error || `Failed on unit ${i + 1}`);
+          break;
+        }
+        successCount++;
       }
-      toast.success("Product assigned & shipment created");
+      if (successCount === 0) return;
+      toast.success(`${successCount} unit${successCount > 1 ? "s" : ""} assigned & shipment${successCount > 1 ? "s" : ""} created`);
       setShowAssignDialog(false);
       setAssigningProduct(null);
       setAssignData({ influencerId: "", campaignId: "", carrier: "DHL", notes: "" });
       fetchProducts();
     } catch {
       toast.error("Failed to assign product");
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -346,9 +370,8 @@ export function InventoryDashboard() {
                 <th className="text-left p-3 font-medium">Product</th>
                 <th className="text-left p-3 font-medium">SKU</th>
                 <th className="text-left p-3 font-medium">Category</th>
-                <th className="text-center p-3 font-medium">Total</th>
-                <th className="text-center p-3 font-medium">Reserved</th>
-                <th className="text-center p-3 font-medium">Available</th>
+                <th className="text-center p-3 font-medium">Stock</th>
+                <th className="text-center p-3 font-medium">Shipped</th>
                 <th className="text-left p-3 font-medium">Assigned To</th>
                 <th className="text-right p-3 font-medium">Actions</th>
               </tr>
@@ -356,13 +379,13 @@ export function InventoryDashboard() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
                     Loading...
                   </td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
                     <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     No products found
                   </td>
@@ -407,26 +430,21 @@ export function InventoryDashboard() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="p-3 text-center">{product.quantity}</td>
-                      <td className="p-3 text-center">{product.reserved}</td>
                       <td className="p-3 text-center">
-                        <span
-                          className={
-                            available < 5
-                              ? "text-red-600 font-semibold"
-                              : "text-green-600 font-semibold"
-                          }
-                        >
-                          {available}
+                        <span className={available <= 0 ? "text-red-600 font-semibold" : ""}>
+                          {product.quantity}
                         </span>
-                        {available < 5 && available > 0 && (
-                          <AlertTriangle className="inline h-3 w-3 ml-1 text-amber-500" />
-                        )}
                         {available <= 0 && (
                           <Badge variant="destructive" className="ml-1 text-[10px]">
                             Out
                           </Badge>
                         )}
+                        {available > 0 && available < 5 && (
+                          <AlertTriangle className="inline h-3 w-3 ml-1 text-amber-500" title="Low stock" />
+                        )}
+                      </td>
+                      <td className="p-3 text-center">
+                        {product.reserved > 0 ? product.reserved : "—"}
                       </td>
                       <td className="p-3">
                         {product.shipments.length > 0 ? (
@@ -620,8 +638,15 @@ export function InventoryDashboard() {
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveProduct} disabled={!formData.name || !formData.sku}>
-              {editingProduct ? "Update" : "Create"}
+            <Button onClick={handleSaveProduct} disabled={!formData.name || !formData.sku || saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                editingProduct ? "Update" : "Create"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -814,24 +839,41 @@ export function InventoryDashboard() {
                 </div>
               </div>
 
-              {/* Carrier */}
-              <div>
-                <Label>Carrier</Label>
-                <Select
-                  value={assignData.carrier}
-                  onValueChange={(v) => setAssignData({ ...assignData, carrier: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="DHL">DHL</SelectItem>
-                    <SelectItem value="UPS">UPS</SelectItem>
-                    <SelectItem value="FEDEX">FedEx</SelectItem>
-                    <SelectItem value="EMS">EMS</SelectItem>
-                    <SelectItem value="OTHER">Other</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Quantity + Carrier */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Quantity</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max={assigningProduct ? assigningProduct.quantity - assigningProduct.reserved : 1}
+                    value={assignData.quantity}
+                    onChange={(e) => setAssignData({ ...assignData, quantity: e.target.value })}
+                  />
+                  {assigningProduct && (
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Max: {assigningProduct.quantity - assigningProduct.reserved}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label>Carrier</Label>
+                  <Select
+                    value={assignData.carrier}
+                    onValueChange={(v) => setAssignData({ ...assignData, carrier: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DHL">DHL</SelectItem>
+                      <SelectItem value="UPS">UPS</SelectItem>
+                      <SelectItem value="FEDEX">FedEx</SelectItem>
+                      <SelectItem value="EMS">EMS</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               {/* Notes */}
@@ -850,8 +892,15 @@ export function InventoryDashboard() {
             <Button variant="outline" onClick={() => setShowAssignDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAssign} disabled={!assignData.influencerId}>
-              Assign & Create Shipment
+            <Button onClick={handleAssign} disabled={!assignData.influencerId || assigning}>
+              {assigning ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Assigning...
+                </>
+              ) : (
+                "Assign & Create Shipment"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -918,8 +967,10 @@ export function InventoryDashboard() {
             ) : (
               <Button
                 variant="destructive"
+                disabled={removing}
                 onClick={async () => {
                   if (!removingShipment) return;
+                  setRemoving(true);
                   try {
                     const res = await fetch(`/api/shipments/${removingShipment.id}`, {
                       method: "DELETE",
@@ -935,10 +986,19 @@ export function InventoryDashboard() {
                     fetchProducts();
                   } catch {
                     toast.error("Failed to remove assignment");
+                  } finally {
+                    setRemoving(false);
                   }
                 }}
               >
-                Confirm Delete
+                {removing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Removing...
+                  </>
+                ) : (
+                  "Confirm Delete"
+                )}
               </Button>
             )}
           </DialogFooter>
