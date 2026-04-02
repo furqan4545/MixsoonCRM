@@ -79,11 +79,16 @@ export async function GET(request: NextRequest) {
           country: true,
           engagementRate: true,
           profileUrl: true,
+          campaignAssignments: {
+            select: { campaignId: true },
+          },
         },
       });
       const serialized = influencers.map((inf) => ({
         ...inf,
         avatarProxied: fixThumbnailUrl(inf.avatarUrl),
+        campaignIds: inf.campaignAssignments.map((ca) => ca.campaignId),
+        campaignAssignments: undefined,
       }));
       return NextResponse.json({ influencers: serialized });
     }

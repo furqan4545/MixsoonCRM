@@ -53,11 +53,14 @@ interface Influencer {
   username: string;
   displayName: string | null;
   avatarUrl: string | null;
+  avatarProxied?: string | null;
+  campaignIds?: string[];
 }
 
 interface Campaign {
   id: string;
   name: string;
+  _count?: { influencers: number };
 }
 
 export function InventoryDashboard() {
@@ -127,12 +130,17 @@ export function InventoryDashboard() {
     fetchProducts();
   }, [fetchProducts]);
 
+  const [influencerSearch, setInfluencerSearch] = useState("");
+
   // Fetch influencers + campaigns for assign dialog
   useEffect(() => {
     if (showAssignDialog) {
-      fetch("/api/influencers?limit=500")
+      fetch("/api/influencers?limit=2000&minimal=true")
         .then((r) => r.json())
-        .then((d) => setInfluencers(d.influencers || d || []))
+        .then((d) => {
+          const list = d.influencers || d || [];
+          setInfluencers(list);
+        })
         .catch(() => {});
       fetch("/api/marketing-campaigns")
         .then((r) => r.json())
@@ -579,9 +587,13 @@ export function InventoryDashboard() {
       {/* Assign to Influencer Dialog */}
       <Dialog open={showAssignDialog} onOpenChange={(open) => {
         setShowAssignDialog(open);
-        if (!open) setAssigningProduct(null);
+        if (!open) {
+          setAssigningProduct(null);
+          setInfluencerSearch("");
+          setAssignData({ influencerId: "", campaignId: "", carrier: "DHL", notes: "" });
+        }
       }}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
               Assign Product to Influencer
@@ -589,10 +601,11 @@ export function InventoryDashboard() {
           </DialogHeader>
           {assigningProduct && (
             <div className="space-y-4">
+              {/* Product info */}
               <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-                <Package className="h-5 w-5" />
+                <Package className="h-5 w-5 shrink-0" />
                 <div>
-                  <p className="font-medium">{assigningProduct.name}</p>
+                  <p className="font-medium text-sm">{assigningProduct.name}</p>
                   <p className="text-xs text-muted-foreground">
                     SKU: {assigningProduct.sku} — Available:{" "}
                     {assigningProduct.quantity - assigningProduct.reserved}
@@ -600,43 +613,109 @@ export function InventoryDashboard() {
                 </div>
               </div>
 
+              {/* Campaign first — filters influencer list */}
               <div>
-                <Label>Influencer *</Label>
+                <Label>Campaign (optional — filters influencer list)</Label>
                 <Select
-                  value={assignData.influencerId}
-                  onValueChange={(v) => setAssignData({ ...assignData, influencerId: v })}
+                  value={assignData.campaignId || "none"}
+                  onValueChange={(v) => {
+                    setAssignData({ ...assignData, campaignId: v === "none" ? "" : v, influencerId: "" });
+                    setInfluencerSearch("");
+                  }}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select influencer" />
+                    <SelectValue placeholder="All influencers" />
                   </SelectTrigger>
                   <SelectContent>
-                    {influencers.map((inf) => (
-                      <SelectItem key={inf.id} value={inf.id}>
-                        {inf.displayName || inf.username} (@{inf.username})
+                    <SelectItem value="none">All influencers (no campaign filter)</SelectItem>
+                    {campaigns.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} {c._count?.influencers ? `(${c._count.influencers})` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
+              {/* Influencer — searchable list */}
               <div>
-                <Label>Campaign (optional)</Label>
-                <Select
-                  value={assignData.campaignId}
-                  onValueChange={(v) => setAssignData({ ...assignData, campaignId: v === "none" ? "" : v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="No campaign" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No campaign</SelectItem>
-                    {campaigns.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Influencer *</Label>
+                <div className="relative mt-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by name or username..."
+                    value={influencerSearch}
+                    onChange={(e) => setInfluencerSearch(e.target.value)}
+                    className="pl-9 text-sm"
+                  />
+                </div>
+                <div className="mt-2 border rounded-lg max-h-48 overflow-y-auto">
+                  {(() => {
+                    // Filter by campaign if selected
+                    let filtered = influencers;
+                    if (assignData.campaignId) {
+                      filtered = influencers.filter(
+                        (inf) => inf.campaignIds?.includes(assignData.campaignId)
+                      );
+                    }
+                    // Then filter by search
+                    if (influencerSearch) {
+                      const q = influencerSearch.toLowerCase();
+                      filtered = filtered.filter(
+                        (inf) =>
+                          inf.username.toLowerCase().includes(q) ||
+                          (inf.displayName || "").toLowerCase().includes(q)
+                      );
+                    }
+                    // Limit display
+                    const shown = filtered.slice(0, 50);
+                    if (shown.length === 0) {
+                      return (
+                        <p className="p-3 text-xs text-muted-foreground text-center">
+                          No influencers found
+                        </p>
+                      );
+                    }
+                    return (
+                      <>
+                        {shown.map((inf) => (
+                          <button
+                            key={inf.id}
+                            type="button"
+                            className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm hover:bg-muted/50 transition ${
+                              assignData.influencerId === inf.id ? "bg-primary/10 border-l-2 border-primary" : ""
+                            }`}
+                            onClick={() => setAssignData({ ...assignData, influencerId: inf.id })}
+                          >
+                            {(inf.avatarProxied || inf.avatarUrl) ? (
+                              <img src={inf.avatarProxied || inf.avatarUrl || ""} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                            ) : (
+                              <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium shrink-0">
+                                {(inf.displayName || inf.username)?.[0]?.toUpperCase()}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="font-medium text-sm truncate">
+                                {inf.displayName || inf.username}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground truncate">
+                                @{inf.username}
+                              </p>
+                            </div>
+                          </button>
+                        ))}
+                        {filtered.length > 50 && (
+                          <p className="p-2 text-[11px] text-muted-foreground text-center border-t">
+                            Showing 50 of {filtered.length} — use search to narrow down
+                          </p>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
 
+              {/* Carrier */}
               <div>
                 <Label>Carrier</Label>
                 <Select
@@ -656,6 +735,7 @@ export function InventoryDashboard() {
                 </Select>
               </div>
 
+              {/* Notes */}
               <div>
                 <Label>Notes</Label>
                 <Textarea
