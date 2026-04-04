@@ -955,6 +955,22 @@ model ApiUsageLog {
   @@index([service, createdAt])
 }
 
+// ─── BUDGET CONFIG ────────────────────────────────────────
+
+model BudgetConfig {
+  id                String    @id @default("default")
+  monthlyCapUsd     Float     @default(0)       // 0 = no cap set
+  isBlocked         Boolean   @default(false)    // true = all external API calls blocked
+  blockedAt         DateTime?
+  blockedByUserId   String?
+  unblockedAt       DateTime?
+  unblockedByUserId String?
+  blockReason       String?                      // "budget_exceeded" | "manual"
+  gcpManualCostUsd  Float     @default(0)        // admin enters monthly GCP cost
+  gcpCostUpdatedAt  DateTime?
+  updatedAt         DateTime  @updatedAt
+}
+
 // ─── INVENTORY & SHIPPING ─────────────────────────────────
 
 model Product {

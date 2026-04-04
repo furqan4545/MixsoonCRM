@@ -57,6 +57,9 @@ async function main() {
     { feature: "approvals", action: "read" },
     { feature: "approvals", action: "write" },
     { feature: "approvals", action: "delete" },
+    { feature: "billing", action: "read" },
+    { feature: "billing", action: "write" },
+    { feature: "billing", action: "delete" },
   ];
 
   const picPermissions = [
@@ -79,6 +82,7 @@ async function main() {
     { feature: "campaigns", action: "write" },
     { feature: "approvals", action: "read" },
     { feature: "approvals", action: "write" },
+    { feature: "billing", action: "read" },
   ];
 
   const viewerPermissions = [
@@ -92,6 +96,7 @@ async function main() {
     { feature: "email", action: "read" },
     { feature: "campaigns", action: "read" },
     { feature: "approvals", action: "read" },
+    { feature: "billing", action: "read" },
   ];
 
   for (const perm of adminPermissions) {

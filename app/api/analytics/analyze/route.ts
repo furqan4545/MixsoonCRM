@@ -9,10 +9,20 @@ import {
   DEFAULT_CONFIG,
 } from "../../../lib/audience-analysis";
 import type { AnalysisMode } from "@prisma/client";
+import { checkBudgetOrThrow, BudgetExceededError } from "@/app/lib/budget-guard";
 
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
+  try {
+    await checkBudgetOrThrow();
+  } catch (err) {
+    if (err instanceof BudgetExceededError) {
+      return NextResponse.json({ error: err.message }, { status: 429 });
+    }
+    throw err;
+  }
+
   const { influencerId, mode: requestedMode } = (await request.json()) as {
     influencerId: string;
     mode?: AnalysisMode;

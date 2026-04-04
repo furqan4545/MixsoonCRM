@@ -2,6 +2,8 @@
 // Gemini-powered NLP + Vision pipeline for demographic estimation
 
 import type { AnalysisMode } from "@prisma/client";
+import { logApiUsage, estimateGeminiCost, estimateTokensFromText } from "./usage-tracking";
+import { checkBudgetOrThrow, BudgetExceededError } from "./budget-guard";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -93,7 +95,11 @@ function getGeminiEndpoint(model: string): string {
 async function callGeminiText(
   prompt: string,
   model: string,
+  action: string = "audience_nlp",
 ): Promise<string> {
+  await checkBudgetOrThrow();
+
+  const startTime = Date.now();
   const endpoint = getGeminiEndpoint(model);
   const response = await fetch(endpoint, {
     method: "POST",
@@ -109,6 +115,7 @@ async function callGeminiText(
 
   if (!response.ok) {
     const text = await response.text();
+    logApiUsage({ service: "gemini_nlp", action, status: "failed", durationMs: Date.now() - startTime, errorMessage: `${response.status} ${text}` }).catch(() => {});
     throw new Error(`Gemini request failed: ${response.status} ${text}`);
   }
 
@@ -117,6 +124,14 @@ async function callGeminiText(
   if (!rawText || typeof rawText !== "string") {
     throw new Error("Gemini returned empty response");
   }
+
+  // Log cost using actual token counts from API response, or estimate
+  const usageMeta = data?.usageMetadata;
+  const inputTokens = usageMeta?.promptTokenCount ?? estimateTokensFromText(prompt);
+  const outputTokens = usageMeta?.candidatesTokenCount ?? estimateTokensFromText(rawText);
+  const costUsd = estimateGeminiCost(inputTokens, outputTokens);
+  logApiUsage({ service: "gemini_nlp", action, inputTokens, outputTokens, costUsd, durationMs: Date.now() - startTime, status: "success" }).catch(() => {});
+
   return rawText;
 }
 
@@ -124,7 +139,11 @@ async function callGeminiVision(
   prompt: string,
   imageUrls: string[],
   model: string,
+  action: string = "audience_vision",
 ): Promise<string> {
+  await checkBudgetOrThrow();
+
+  const startTime = Date.now();
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is missing");
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -171,6 +190,7 @@ async function callGeminiVision(
 
   if (!response.ok) {
     const text = await response.text();
+    logApiUsage({ service: "gemini_vision", action, status: "failed", durationMs: Date.now() - startTime, errorMessage: `${response.status} ${text}` }).catch(() => {});
     throw new Error(`Gemini Vision request failed: ${response.status} ${text}`);
   }
 
@@ -179,6 +199,15 @@ async function callGeminiVision(
   if (!rawText || typeof rawText !== "string") {
     throw new Error("Gemini Vision returned empty response");
   }
+
+  // Log cost: use API token counts if available, otherwise estimate (258 tokens per image)
+  const usageMeta = data?.usageMetadata;
+  const imageTokenEstimate = imageParts.length * 258; // ~258 tokens per image
+  const inputTokens = usageMeta?.promptTokenCount ?? (estimateTokensFromText(prompt) + imageTokenEstimate);
+  const outputTokens = usageMeta?.candidatesTokenCount ?? estimateTokensFromText(rawText);
+  const costUsd = estimateGeminiCost(inputTokens, outputTokens);
+  logApiUsage({ service: "gemini_vision", action, inputTokens, outputTokens, costUsd, durationMs: Date.now() - startTime, inputCount: imageParts.length, status: "success" }).catch(() => {});
+
   return rawText;
 }
 

@@ -3,6 +3,7 @@ import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
 import { logApiUsage } from "../../lib/usage-tracking";
 import { processGcsSave } from "../../lib/gcs-save";
+import { checkBudgetOrThrow, BudgetExceededError } from "@/app/lib/budget-guard";
 // ELD (Efficient Language Detector) — NLP-based, neural n-gram detector, 60 languages
 // Loaded lazily since it needs async init
 let _eld: typeof import("eld").default | null = null;
@@ -664,6 +665,17 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  // Budget check before any Apify calls
+  try {
+    await checkBudgetOrThrow();
+  } catch (err) {
+    if (err instanceof BudgetExceededError) {
+      return NextResponse.json({ error: err.message }, { status: 429 });
+    }
+    throw err;
+  }
+
   let importId: string | null = null;
 
   try {

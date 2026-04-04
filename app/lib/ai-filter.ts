@@ -1,3 +1,6 @@
+import { logApiUsage, estimateGeminiCost, estimateTokensFromText } from "./usage-tracking";
+import { checkBudgetOrThrow } from "./budget-guard";
+
 interface CampaignContext {
   campaignName: string;
   notes?: string | null;
@@ -203,6 +206,9 @@ export async function scoreWithGemini(
     `{"score": number, "reasons": string, "matchedSignals": string, "riskSignals": string}`,
   ].join("\n");
 
+  await checkBudgetOrThrow();
+  const startTime = Date.now();
+
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -217,6 +223,7 @@ export async function scoreWithGemini(
 
   if (!response.ok) {
     const text = await response.text();
+    logApiUsage({ service: "gemini_nlp", action: "ai_filter_score", status: "failed", durationMs: Date.now() - startTime, errorMessage: `${response.status} ${text}` }).catch(() => {});
     throw new Error(`Gemini request failed: ${response.status} ${text}`);
   }
 
@@ -225,6 +232,13 @@ export async function scoreWithGemini(
   if (!rawText || typeof rawText !== "string") {
     throw new Error("Gemini returned empty response");
   }
+
+  // Log cost
+  const usageMeta = data?.usageMetadata;
+  const inputTokens = usageMeta?.promptTokenCount ?? estimateTokensFromText(prompt);
+  const outputTokens = usageMeta?.candidatesTokenCount ?? estimateTokensFromText(rawText);
+  const costUsd = estimateGeminiCost(inputTokens, outputTokens);
+  logApiUsage({ service: "gemini_nlp", action: "ai_filter_score", inputTokens, outputTokens, costUsd, durationMs: Date.now() - startTime, status: "success" }).catch(() => {});
 
   let parsed: Partial<AiScoreResult> & { score?: number };
   try {

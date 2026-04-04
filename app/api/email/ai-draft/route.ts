@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
+import { logApiUsage, estimateGeminiCost, estimateTokensFromText } from "@/app/lib/usage-tracking";
+import { checkBudgetOrThrow, BudgetExceededError } from "@/app/lib/budget-guard";
 
 type AiDraftResult = {
   subject: string;
@@ -98,6 +100,8 @@ async function generateDraftWithGemini(
   prompt: string,
   ctx: InfluencerPromptContext,
 ): Promise<AiDraftResult> {
+  await checkBudgetOrThrow();
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is missing");
 
@@ -106,6 +110,7 @@ async function generateDraftWithGemini(
 
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const startTime = Date.now();
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -120,6 +125,7 @@ async function generateDraftWithGemini(
 
     if (!response.ok) {
       const text = await response.text();
+      logApiUsage({ service: "gemini_nlp", action: "email_ai_draft", status: "failed", durationMs: Date.now() - startTime, errorMessage: `${response.status} ${text}` }).catch(() => {});
       if (attempt === maxAttempts) {
         throw new Error(`Gemini request failed: ${response.status} ${text}`);
       }
@@ -134,6 +140,13 @@ async function generateDraftWithGemini(
       }
       continue;
     }
+
+    // Log cost
+    const usageMeta = data?.usageMetadata;
+    const inputTokens = usageMeta?.promptTokenCount ?? estimateTokensFromText(prompt);
+    const outputTokens = usageMeta?.candidatesTokenCount ?? estimateTokensFromText(rawText);
+    const costUsd = estimateGeminiCost(inputTokens, outputTokens);
+    logApiUsage({ service: "gemini_nlp", action: "email_ai_draft", inputTokens, outputTokens, costUsd, durationMs: Date.now() - startTime, status: "success" }).catch(() => {});
 
     const parsed = parseModelJson(rawText);
     const normalized = parsed ? normalizeDraft(parsed) : null;
@@ -243,6 +256,9 @@ export async function POST(req: Request) {
       bodyText: draft.bodyText,
     });
   } catch (error) {
+    if (error instanceof BudgetExceededError) {
+      return NextResponse.json({ error: error.message }, { status: 429 });
+    }
     console.error("[email-ai-draft] error:", error);
     return NextResponse.json(
       {

@@ -6,6 +6,7 @@ import {
   scoreWithGemini,
 } from "../../../../../../lib/ai-filter";
 import { prisma } from "../../../../../../lib/prisma";
+import { checkBudgetOrThrow, BudgetExceededError } from "@/app/lib/budget-guard";
 
 export async function POST(
   request: NextRequest,

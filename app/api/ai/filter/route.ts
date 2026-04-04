@@ -5,6 +5,7 @@ import {
   scoreWithGemini,
 } from "../../../lib/ai-filter";
 import { prisma } from "../../../lib/prisma";
+import { checkBudgetOrThrow, BudgetExceededError } from "@/app/lib/budget-guard";
 
 export const maxDuration = 300;
 
@@ -238,6 +239,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   try {
+    // Budget check before any AI calls
+    try {
+      await checkBudgetOrThrow();
+    } catch (err) {
+      if (err instanceof BudgetExceededError) {
+        return NextResponse.json({ error: err.message }, { status: 429 });
+      }
+      throw err;
+    }
+
     const body = await request.json();
     const {
       campaignId,
