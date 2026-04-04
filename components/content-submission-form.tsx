@@ -305,32 +305,28 @@ export function ContentSubmissionForm({
           <div>
             <h2 className="text-lg font-semibold">Payment Details</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              Please provide your bank account information for payment.
+              Please provide your payment information. You can use any bank, PayPal, Stripe, or other payment method.
             </p>
           </div>
 
           <div>
-            <Label htmlFor="bankSelect">Bank</Label>
-            <Select value={bank.bankCode} onValueChange={handleBankSelect}>
-              <SelectTrigger id="bankSelect" className="mt-1.5">
-                <SelectValue placeholder="Select your bank" />
-              </SelectTrigger>
-              <SelectContent>
-                {KOREAN_BANKS.map((b) => (
-                  <SelectItem key={b.code} value={b.code}>
-                    {b.nameKo} ({b.name})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="bankName">Bank / Payment Method</Label>
+            <Input
+              id="bankName"
+              type="text"
+              placeholder="e.g. KB Kookmin Bank, PayPal, Stripe, Chase Bank..."
+              value={bank.bankName}
+              onChange={(e) => updateBank("bankName", e.target.value)}
+              className="mt-1.5"
+            />
           </div>
 
           <div>
-            <Label htmlFor="accountNumber">Account Number</Label>
+            <Label htmlFor="accountNumber">Account Number / Payment ID</Label>
             <Input
               id="accountNumber"
               type="text"
-              placeholder="Enter your account number"
+              placeholder="Bank account number, PayPal email, Stripe ID..."
               value={bank.accountNumber}
               onChange={(e) => updateBank("accountNumber", e.target.value)}
               className="mt-1.5"
