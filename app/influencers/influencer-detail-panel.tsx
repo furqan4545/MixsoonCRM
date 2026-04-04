@@ -628,6 +628,8 @@ function DocumentsTab({
 
   // Verification state
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [expandedSubmissionId, setExpandedSubmissionId] = useState<string | null>(null);
+  const [submissionDetail, setSubmissionDetail] = useState<{ bankName?: string; accountNumber?: string; accountHolder?: string; bankCode?: string } | null>(null);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -1347,10 +1349,16 @@ function DocumentsTab({
                 </div>
               )}
 
-              {/* Payment info indicator */}
-              {s.includePayment && s.bankName && (
-                <div className="text-xs text-muted-foreground">
-                  Bank: {s.bankName} ({s.accountHolder})
+              {/* Expanded payment details */}
+              {s.includePayment && expandedSubmissionId === s.id && submissionDetail && (
+                <div className="bg-muted/50 rounded-lg p-3 space-y-2 text-xs">
+                  <p className="font-semibold uppercase tracking-wider text-muted-foreground text-[10px]">Payment Details</p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <div><span className="text-muted-foreground">Bank / Method:</span><br /><span className="font-medium">{submissionDetail.bankName || "Not provided"}</span></div>
+                    <div><span className="text-muted-foreground">Account Number:</span><br /><span className="font-medium font-mono">{submissionDetail.accountNumber || "Not provided"}</span></div>
+                    <div><span className="text-muted-foreground">Account Holder:</span><br /><span className="font-medium">{submissionDetail.accountHolder || "Not provided"}</span></div>
+                    <div><span className="text-muted-foreground">SWIFT / BIC:</span><br /><span className="font-medium">{submissionDetail.bankCode || "Not provided"}</span></div>
+                  </div>
                 </div>
               )}
 
@@ -1362,7 +1370,30 @@ function DocumentsTab({
               )}
 
               {/* Actions */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {s.includePayment && s.status !== "PENDING" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      if (expandedSubmissionId === s.id) {
+                        setExpandedSubmissionId(null);
+                        setSubmissionDetail(null);
+                      } else {
+                        setExpandedSubmissionId(s.id);
+                        setSubmissionDetail(null);
+                        fetch(`/api/payments/onboarding?influencerId=${influencer.id}`)
+                          .then((r) => r.json())
+                          .then((d) => setSubmissionDetail(d.exists ? d : null))
+                          .catch(() => {});
+                      }
+                    }}
+                  >
+                    <Eye className="mr-1 h-3 w-3" />
+                    {expandedSubmissionId === s.id ? "Hide Details" : "View Details"}
+                  </Button>
+                )}
                 {s.status === "PENDING" && (
                   <span className="text-xs text-gray-500 flex items-center gap-1">
                     <Mail className="h-3 w-3" />
