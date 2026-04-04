@@ -62,7 +62,7 @@ interface SubmissionRow {
   submissionLabel: string | null;
   includePayment: boolean;
   bankName: string | null;
-  accountNumber: string | null;
+  accountNumberMasked: string | null;
   accountHolder: string | null;
   bankCode: string | null;
   status: string;
@@ -506,6 +506,9 @@ export function ContractsPage({
                           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
                             <div><span className="text-muted-foreground">Bank / Method:</span><br /><span className="font-medium">{s.bankName}</span></div>
                             <div><span className="text-muted-foreground">Account Holder:</span><br /><span className="font-medium">{s.accountHolder || "—"}</span></div>
+                            {s.accountNumberMasked && (
+                              <div><span className="text-muted-foreground">Account Number:</span><br /><span className="font-medium font-mono">{s.accountNumberMasked}</span></div>
+                            )}
                             {s.bankCode && (
                               <div><span className="text-muted-foreground">SWIFT / BIC:</span><br /><span className="font-medium">{s.bankCode}</span></div>
                             )}
