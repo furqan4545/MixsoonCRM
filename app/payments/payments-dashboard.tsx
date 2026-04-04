@@ -131,6 +131,8 @@ export function PaymentsDashboard() {
 
   // Request details
   const [requesting, setRequesting] = useState(false);
+  const [bankStatus, setBankStatus] = useState<{ has: boolean; bankName?: string; accountHolder?: string; masked?: string } | null>(null);
+  const [checkingBank, setCheckingBank] = useState(false);
 
   const fetchingRef = useRef(false);
 
@@ -518,7 +520,7 @@ export function PaymentsDashboard() {
       {/* Create Payment Dialog */}
       <Dialog open={showCreate} onOpenChange={(open) => {
         setShowCreate(open);
-        if (!open) { setCreateData({ influencerId: "", campaignId: "", amount: "", currency: "KRW", invoiceNumber: "", notes: "" }); setInfSearch(""); }
+        if (!open) { setCreateData({ influencerId: "", campaignId: "", amount: "", currency: "KRW", invoiceNumber: "", notes: "" }); setInfSearch(""); setBankStatus(null); }
       }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -531,6 +533,7 @@ export function PaymentsDashboard() {
               <Select value={createData.campaignId || "none"} onValueChange={(v) => {
                 setCreateData({ ...createData, campaignId: v === "none" ? "" : v, influencerId: "" });
                 setInfSearch("");
+                setBankStatus(null);
               }}>
                 <SelectTrigger><SelectValue placeholder="All influencers" /></SelectTrigger>
                 <SelectContent>
@@ -552,12 +555,49 @@ export function PaymentsDashboard() {
                     </div>
                     <p className="text-sm font-medium text-green-900">{sel.displayName || sel.username} <span className="text-green-700 font-normal">@{sel.username}</span></p>
                   </div>
-                  <button onClick={() => setCreateData({ ...createData, influencerId: "" })} className="text-green-700 hover:text-red-600">
+                  <button onClick={() => { setCreateData({ ...createData, influencerId: "" }); setBankStatus(null); }} className="text-green-700 hover:text-red-600">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
               );
             })()}
+
+            {/* Bank status check result */}
+            {createData.influencerId && checkingBank && (
+              <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Checking bank details...</span>
+              </div>
+            )}
+
+            {createData.influencerId && bankStatus && !checkingBank && bankStatus.has && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2 mb-1">
+                  <Building2 className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-medium text-blue-900">Bank details on file</span>
+                </div>
+                <p className="text-xs text-blue-700">{bankStatus.bankName} — {bankStatus.masked} ({bankStatus.accountHolder})</p>
+              </div>
+            )}
+
+            {createData.influencerId && bankStatus && !checkingBank && !bankStatus.has && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-amber-600" />
+                  <span className="text-sm font-medium text-amber-900">No bank details on file</span>
+                </div>
+                <p className="text-xs text-amber-700">Send a payment form to this influencer to collect their bank details first.</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => requestDetails(createData.influencerId)}
+                  disabled={requesting}
+                >
+                  {requesting ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Sending...</> : <><Send className="h-3 w-3 mr-1" />Request Payment Details</>}
+                </Button>
+              </div>
+            )}
 
             {/* Influencer list */}
             {!createData.influencerId && (
@@ -573,7 +613,17 @@ export function PaymentsDashboard() {
                   ) : (
                     filteredInf.map((inf) => (
                       <button key={inf.id} type="button" className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/50"
-                        onClick={() => setCreateData({ ...createData, influencerId: inf.id })}>
+                        onClick={() => {
+                          setCreateData({ ...createData, influencerId: inf.id });
+                          // Check bank status
+                          setBankStatus(null);
+                          setCheckingBank(true);
+                          fetch(`/api/payments/check-bank?influencerId=${inf.id}`)
+                            .then((r) => r.json())
+                            .then((d) => setBankStatus(d))
+                            .catch(() => setBankStatus({ has: false }))
+                            .finally(() => setCheckingBank(false));
+                        }}>
                         <span className="font-medium truncate">{inf.displayName || inf.username}</span>
                         <span className="text-[11px] text-muted-foreground">@{inf.username}</span>
                       </button>
@@ -583,7 +633,8 @@ export function PaymentsDashboard() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            {/* Only show amount/details if bank details exist */}
+            {bankStatus?.has && <><div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Amount *</Label>
                 <Input type="number" value={createData.amount} onChange={(e) => setCreateData({ ...createData, amount: e.target.value })} placeholder="0" />
@@ -610,12 +661,15 @@ export function PaymentsDashboard() {
               <Label>Notes</Label>
               <Textarea value={createData.notes} onChange={(e) => setCreateData({ ...createData, notes: e.target.value })} placeholder="Optional notes" rows={2} />
             </div>
+            </>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={!createData.influencerId || !createData.amount || creating}>
-              {creating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating...</> : "Create Payment"}
-            </Button>
+            {bankStatus?.has && (
+              <Button onClick={handleCreate} disabled={!createData.influencerId || !createData.amount || creating}>
+                {creating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating...</> : "Create Payment"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
