@@ -145,29 +145,26 @@ export function OnboardingForm({ token, influencer }: OnboardingFormProps) {
     <form onSubmit={handleSubmit} className="space-y-8">
       {/* Bank Details Section */}
       <div className="rounded-lg border border-border p-6">
-        <h2 className="mb-4 text-lg font-semibold">Bank Details</h2>
+        <h2 className="mb-4 text-lg font-semibold">Payment Details</h2>
         <div className="space-y-4">
           <div>
-            <Label htmlFor="bank">Bank</Label>
-            <Select value={form.bankCode} onValueChange={handleBankSelect}>
-              <SelectTrigger id="bank" className="mt-1.5">
-                <SelectValue placeholder="Select your bank" />
-              </SelectTrigger>
-              <SelectContent>
-                {KOREAN_BANKS.map((bank) => (
-                  <SelectItem key={bank.code} value={bank.code}>
-                    {bank.nameKo} ({bank.name})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="bankName">Bank / Payment Method</Label>
+            <Input
+              id="bankName"
+              type="text"
+              placeholder="e.g. KB Kookmin Bank, PayPal, Stripe, Chase Bank..."
+              value={form.bankName}
+              onChange={(e) => updateField("bankName", e.target.value)}
+              className="mt-1.5"
+              required
+            />
           </div>
           <div>
-            <Label htmlFor="accountNumber">Account Number</Label>
+            <Label htmlFor="accountNumber">Account Number / Payment ID</Label>
             <Input
               id="accountNumber"
               type="text"
-              placeholder="Enter your account number"
+              placeholder="Bank account number, PayPal email, Stripe ID..."
               value={form.accountNumber}
               onChange={(e) => updateField("accountNumber", e.target.value)}
               className="mt-1.5"
