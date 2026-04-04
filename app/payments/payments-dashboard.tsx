@@ -215,21 +215,30 @@ export function PaymentsDashboard() {
     }
   };
 
-  // Update status
-  const updateStatus = async (id: string, status: string) => {
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  // Update status (optionally notify influencer)
+  const updateStatus = async (id: string, status: string, notifyInfluencer = false) => {
+    setUpdatingStatus(true);
     try {
       const res = await fetch(`/api/payments/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, notifyInfluencer }),
       });
       if (!res.ok) throw new Error();
       const updated = await res.json();
-      toast.success(`Status updated to ${status}`);
+      toast.success(
+        notifyInfluencer
+          ? `Status → ${status} & influencer notified`
+          : `Status → ${status}`,
+      );
       setSelected((prev) => prev?.id === id ? { ...prev, ...updated } : prev);
       fetchPayments();
     } catch {
       toast.error("Failed to update");
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
@@ -432,27 +441,42 @@ export function PaymentsDashboard() {
               {/* Status actions */}
               <div className="flex gap-2 flex-wrap">
                 {selected.status === "PENDING" && (
-                  <Button size="sm" onClick={() => updateStatus(selected.id, "PROCESSING")}>
-                    <ArrowRight className="h-3 w-3 mr-1" />Mark Processing
-                  </Button>
+                  <>
+                    <Button size="sm" disabled={updatingStatus} onClick={() => updateStatus(selected.id, "PROCESSING")}>
+                      {updatingStatus ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <ArrowRight className="h-3 w-3 mr-1" />}Processing
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={updatingStatus} onClick={() => updateStatus(selected.id, "PROCESSING", true)}>
+                      {updatingStatus ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Bell className="h-3 w-3 mr-1" />}Processing & Notify
+                    </Button>
+                  </>
                 )}
                 {selected.status === "PROCESSING" && (
-                  <Button size="sm" onClick={() => updateStatus(selected.id, "SENT")}>
-                    <Send className="h-3 w-3 mr-1" />Mark Sent
-                  </Button>
+                  <>
+                    <Button size="sm" disabled={updatingStatus} onClick={() => updateStatus(selected.id, "SENT")}>
+                      {updatingStatus ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Send className="h-3 w-3 mr-1" />}Mark Sent
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={updatingStatus} onClick={() => updateStatus(selected.id, "SENT", true)}>
+                      {updatingStatus ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Bell className="h-3 w-3 mr-1" />}Sent & Notify
+                    </Button>
+                  </>
                 )}
                 {selected.status === "SENT" && (
-                  <Button size="sm" onClick={() => updateStatus(selected.id, "RECEIVED")}>
-                    <CheckCircle2 className="h-3 w-3 mr-1" />Mark Received
-                  </Button>
+                  <>
+                    <Button size="sm" disabled={updatingStatus} onClick={() => updateStatus(selected.id, "RECEIVED")}>
+                      {updatingStatus ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}Mark Received
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={updatingStatus} onClick={() => updateStatus(selected.id, "RECEIVED", true)}>
+                      {updatingStatus ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Bell className="h-3 w-3 mr-1" />}Received & Notify
+                    </Button>
+                  </>
                 )}
                 {selected.status !== "RECEIVED" && selected.status !== "FAILED" && (
-                  <Button size="sm" variant="outline" onClick={() => updateStatus(selected.id, "FAILED")}>
+                  <Button size="sm" variant="outline" disabled={updatingStatus} onClick={() => updateStatus(selected.id, "FAILED")}>
                     <XCircle className="h-3 w-3 mr-1" />Mark Failed
                   </Button>
                 )}
                 <Button size="sm" variant="outline" onClick={() => setShowNotify(true)}>
-                  <Bell className="h-3 w-3 mr-1" />Notify
+                  <Bell className="h-3 w-3 mr-1" />Notify Team
                 </Button>
                 {selected.status === "PENDING" && (
                   <Button size="sm" variant="destructive" onClick={() => handleDelete(selected.id)}>Delete</Button>
