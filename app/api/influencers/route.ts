@@ -128,6 +128,21 @@ export async function GET(request: NextRequest) {
           createdAt: true,
           importId: true,
           _count: { select: { videos: true, emailMessages: true } },
+          // AI evals needed for queue tabs (Approved/Ok-ish/Rejected/Saved)
+          aiEvaluations: {
+            orderBy: { createdAt: "desc" },
+            take: 2,
+            select: {
+              id: true,
+              score: true,
+              bucket: true,
+              reviewStatus: true,
+              reasons: true,
+              matchedSignals: true,
+              riskSignals: true,
+              run: { select: { campaign: { select: { name: true } } } },
+            },
+          },
         },
       }),
     ]);
@@ -136,54 +151,59 @@ export async function GET(request: NextRequest) {
     const page = hasMore ? influencers.slice(0, limit) : influencers;
     const nextCursor = hasMore ? page[page.length - 1].id : null;
 
-    const serialized = page.map((inf) => ({
-      id: inf.id,
-      username: inf.username,
-      displayName: inf.displayName,
-      avatarUrl: inf.avatarUrl,
-      avatarProxied: fixThumbnailUrl(inf.avatarUrl),
-      profileUrl: inf.profileUrl,
-      platform:
-        inf.platform ??
-        (inf.profileUrl?.includes("tiktok")
-          ? "TikTok"
-          : inf.profileUrl?.includes("instagram")
-            ? "Instagram"
-            : null),
-      followers: inf.followers,
-      engagementRate: inf.engagementRate,
-      rate: inf.rate,
-      language: inf.language,
-      country: inf.country,
-      email: inf.email,
-      phone: inf.phone,
-      biolink: inf.biolink,
-      bioLinkUrl: inf.bioLinkUrl,
-      socialLinks: inf.socialLinks,
-      sourceFilename: inf.sourceFilename,
-      importId: inf.importId,
-      pipelineStage: inf.pipelineStage,
-      tags: inf.tags,
-      notes: inf.notes,
-      aiScore: inf.aiScore,
-      videoCount: inf._count.videos,
-      conversationCount: inf._count.emailMessages,
-      // Relations loaded on demand via GET /api/influencers/[id]
-      videos: [],
-      activityLogs: [],
-      campaignAssignments: [],
-      analytics: null,
-      pics: [],
-      queueBucket: null,
-      queueEvalId: null,
-      aiReasons: null,
-      aiMatchedSignals: null,
-      aiRiskSignals: null,
-      campaignName: null,
-      importFilename: null,
-      savedAt: inf.savedAt?.toISOString() ?? null,
-      createdAt: inf.createdAt.toISOString(),
-    }));
+    const serialized = page.map((inf) => {
+      const savedEval = inf.aiEvaluations.find((e) => e.reviewStatus === "SAVED");
+      const latestEval = inf.aiEvaluations[0] ?? null;
+
+      return {
+        id: inf.id,
+        username: inf.username,
+        displayName: inf.displayName,
+        avatarUrl: inf.avatarUrl,
+        avatarProxied: fixThumbnailUrl(inf.avatarUrl),
+        profileUrl: inf.profileUrl,
+        platform:
+          inf.platform ??
+          (inf.profileUrl?.includes("tiktok")
+            ? "TikTok"
+            : inf.profileUrl?.includes("instagram")
+              ? "Instagram"
+              : null),
+        followers: inf.followers,
+        engagementRate: inf.engagementRate,
+        rate: inf.rate,
+        language: inf.language,
+        country: inf.country,
+        email: inf.email,
+        phone: inf.phone,
+        biolink: inf.biolink,
+        bioLinkUrl: inf.bioLinkUrl,
+        socialLinks: inf.socialLinks,
+        sourceFilename: inf.sourceFilename,
+        importId: inf.importId,
+        pipelineStage: inf.pipelineStage,
+        tags: inf.tags,
+        notes: inf.notes,
+        aiScore: inf.aiScore ?? latestEval?.score ?? null,
+        queueBucket: savedEval?.bucket ?? null,
+        queueEvalId: savedEval?.id ?? null,
+        aiReasons: latestEval?.reasons ?? null,
+        aiMatchedSignals: latestEval?.matchedSignals ?? null,
+        aiRiskSignals: latestEval?.riskSignals ?? null,
+        campaignName: latestEval?.run?.campaign?.name ?? null,
+        videoCount: inf._count.videos,
+        conversationCount: inf._count.emailMessages,
+        // Heavy relations loaded on demand via GET /api/influencers/[id]
+        videos: [],
+        activityLogs: [],
+        campaignAssignments: [],
+        analytics: null,
+        pics: [],
+        importFilename: null,
+        savedAt: inf.savedAt?.toISOString() ?? null,
+        createdAt: inf.createdAt.toISOString(),
+      };
+    });
 
     return NextResponse.json({
       influencers: serialized,
