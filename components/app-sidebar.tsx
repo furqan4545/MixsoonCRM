@@ -16,6 +16,7 @@ import {
   Sparkles,
   Trash2,
   Truck,
+  Banknote,
   BarChart3,
   UserCog,
   Users,
@@ -57,6 +58,7 @@ const workspaceItems = [
   { title: "Inventory", href: "/inventory", icon: Package },
   { title: "Shipping", href: "/shipping", icon: Truck },
   { title: "Tracking", href: "/tracking", icon: BarChart3 },
+  { title: "Payments", href: "/payments", icon: Banknote },
   { title: "Alerts", href: "/alerts", icon: AlertTriangle },
   { title: "Trash", href: "/trash", icon: Trash2 },
   { title: "Billing", href: "/billing", icon: CreditCard },
@@ -147,6 +149,27 @@ function useAlertCount(canSee: boolean) {
   return count;
 }
 
+function usePendingPaymentCount(canSee: boolean) {
+  const [count, setCount] = useState(0);
+  const fetchCount = useCallback(async () => {
+    if (!canSee) return;
+    try {
+      const res = await fetch("/api/payments/pending-count");
+      if (res.ok) {
+        const data = await res.json();
+        setCount(data.count ?? 0);
+      }
+    } catch { /* silent */ }
+  }, [canSee]);
+  useEffect(() => {
+    fetchCount();
+    if (!canSee) return;
+    const id = setInterval(fetchCount, 30_000);
+    return () => clearInterval(id);
+  }, [fetchCount, canSee]);
+  return count;
+}
+
 function useViralAlertCount(canSee: boolean) {
   const [count, setCount] = useState(0);
 
@@ -186,6 +209,8 @@ export function AppSidebar() {
   const activeAlertCount = useAlertCount(canSeeAlerts);
   const canSeeTracking = canSeeNavItem("/tracking", permissions);
   const viralAlertCount = useViralAlertCount(canSeeTracking);
+  const canSeePayments = canSeeNavItem("/payments", permissions);
+  const pendingPaymentCount = usePendingPaymentCount(canSeePayments);
 
   return (
     <Sidebar collapsible="icon">
@@ -233,6 +258,15 @@ export function AppSidebar() {
                             className="ml-auto h-5 min-w-5 rounded-full px-1.5 text-[10px] font-semibold"
                           >
                             {pendingApprovalCount}
+                          </Badge>
+                        ) : null}
+                        {item.href === "/payments" &&
+                        pendingPaymentCount > 0 ? (
+                          <Badge
+                            variant="destructive"
+                            className="ml-auto h-5 min-w-5 rounded-full px-1.5 text-[10px] font-semibold"
+                          >
+                            {pendingPaymentCount}
                           </Badge>
                         ) : null}
                         {item.href === "/tracking" &&

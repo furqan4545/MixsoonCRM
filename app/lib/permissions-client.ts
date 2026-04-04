@@ -19,6 +19,7 @@ export const FEATURES = {
   INVENTORY: "inventory",
   SHIPPING: "shipping",
   TRACKING: "tracking",
+  PAYMENTS: "payments",
 } as const;
 
 /** Sidebar nav: path → required permission (read). null = no requirement (e.g. Dashboard). */
@@ -42,4 +43,5 @@ export const NAV_FEATURE_MAP: Record<
   "/inventory": { feature: FEATURES.INVENTORY, action: "read" },
   "/shipping": { feature: FEATURES.SHIPPING, action: "read" },
   "/tracking": { feature: FEATURES.TRACKING, action: "read" },
+  "/payments": { feature: FEATURES.PAYMENTS, action: "read" },
 };
