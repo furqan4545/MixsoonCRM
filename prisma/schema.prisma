@@ -59,6 +59,7 @@ model Influencer {
   shipments           Shipment[]
   trackedVideos       TrackedVideo[]
   viralAlerts         ViralAlert[]
+  payments            Payment[]
 
   @@index([username])
   @@index([importId])
@@ -282,6 +283,7 @@ model User {
   adminSignedContracts Contract[]      @relation("AdminSignedContracts")
   contractComments     ContractComment[] @relation("ContractComments")
   shipmentsCreated     Shipment[]       @relation("ShipmentCreator")
+  paymentsCreated      Payment[]        @relation("PaymentCreator")
 
   @@index([roleId])
   @@index([status])
@@ -397,6 +399,7 @@ model MarketingCampaign {
   contracts        Contract[]
   shipments        Shipment[]
   trackedVideos    TrackedVideo[]
+  payments         Payment[]
 
   @@index([status])
   @@index([name])
@@ -1113,4 +1116,48 @@ model ViralAlertConfig {
   pollIntervalHours Int     @default(5)   // how often cron refreshes stats (hours)
   enabled          Boolean  @default(true)
   updatedAt        DateTime @updatedAt
+}
+
+// ─── PAYMENT MANAGEMENT ──────────────────────────────────
+
+enum PaymentStatus {
+  PENDING      // payment created, not yet processed
+  PROCESSING   // being processed by finance
+  SENT         // payment sent to influencer
+  RECEIVED     // influencer confirmed receipt
+  FAILED       // payment failed
+}
+
+model Payment {
+  id              String          @id @default(cuid())
+  influencerId    String
+  influencer      Influencer      @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  campaignId      String?
+  campaign        MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  amount          Float
+  currency        String          @default("KRW")
+  status          PaymentStatus   @default(PENDING)
+
+  // Bank details snapshot (copied from InfluencerOnboarding at creation)
+  bankName        String?
+  accountNumber   String?         // AES-256 encrypted
+  accountHolder   String?
+  bankCode        String?
+
+  invoiceNumber   String?
+  notes           String?
+
+  paidAt          DateTime?       // when status becomes SENT
+  confirmedAt     DateTime?       // when status becomes RECEIVED
+
+  createdById     String?
+  createdBy       User?           @relation("PaymentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([influencerId])
+  @@index([campaignId])
+  @@index([status])
+  @@index([createdAt])
 }
