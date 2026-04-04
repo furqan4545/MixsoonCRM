@@ -199,24 +199,6 @@ export function PaymentsDashboard() {
       });
       if (!res.ok) {
         const err = await res.json();
-        if (err.error?.includes("No payment details")) {
-          toast.error("No bank details on file", {
-            description: "Sending payment form to influencer...",
-            duration: 5000,
-          });
-          // Auto-request payment details
-          try {
-            await fetch("/api/payments/request-details", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ influencerId: createData.influencerId }),
-            });
-            toast.success("Payment details form sent to influencer's email");
-          } catch {
-            toast.error("Failed to send payment details request");
-          }
-          return;
-        }
         toast.error(err.error || "Failed to create payment");
         return;
       }
