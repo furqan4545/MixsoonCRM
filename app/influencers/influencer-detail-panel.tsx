@@ -1057,26 +1057,54 @@ function DocumentsTab({
                 <div>
                   <h4 className="text-sm font-semibold">Payment Details</h4>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Bank account information for payment processing
+                    Provide your payment information (any bank, PayPal, Stripe, etc.)
                   </p>
                 </div>
                 <div className="space-y-2">
                   <div>
-                    <p className="text-xs font-medium mb-1">Bank</p>
+                    <p className="text-xs font-medium mb-1">Bank / Payment Method</p>
                     <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                      Select your bank (Korean banks dropdown)
+                      e.g. KB Kookmin Bank, PayPal, Stripe, Chase Bank...
                     </div>
                   </div>
                   <div>
-                    <p className="text-xs font-medium mb-1">Account Number</p>
+                    <p className="text-xs font-medium mb-1">Account Number / Payment ID</p>
                     <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                      Enter your account number
+                      Bank account number, PayPal email, Stripe ID...
                     </div>
                   </div>
                   <div>
                     <p className="text-xs font-medium mb-1">Account Holder Name</p>
                     <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
                       Name as it appears on the account
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs font-medium mb-1">SWIFT / BIC Code</p>
+                      <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                        e.g. CITIKRSX
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium mb-1">Routing Number <span className="text-muted-foreground font-normal">(optional)</span></p>
+                      <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                        For US banks
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs font-medium mb-1">Country</p>
+                      <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                        e.g. South Korea, USA
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium mb-1">Contact Number</p>
+                      <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                        +1 234 567 8900
+                      </div>
                     </div>
                   </div>
                 </div>
