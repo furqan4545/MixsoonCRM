@@ -83,7 +83,7 @@ const STATUS_OPTIONS = [
   "VERIFIED",
 ] as const;
 
-const TYPE_OPTIONS = ["ALL", "CONTRACT", "SUBMISSION"] as const;
+const TYPE_OPTIONS = ["ALL", "CONTRACT", "CONTENT", "PAYMENT"] as const;
 
 const statusColors: Record<string, string> = {
   DRAFT: "bg-gray-100 text-gray-700 border-gray-200",
@@ -156,15 +156,18 @@ export function ContractsPage({
     const items: DocItem[] = [];
 
     // Add contracts
-    if (typeFilter !== "SUBMISSION") {
+    if (typeFilter === "ALL" || typeFilter === "CONTRACT") {
       for (const c of contracts) {
         items.push({ kind: "contract", data: c });
       }
     }
 
-    // Add submissions
-    if (typeFilter !== "CONTRACT") {
+    // Add submissions (split by content vs payment)
+    if (typeFilter === "ALL" || typeFilter === "CONTENT" || typeFilter === "PAYMENT") {
       for (const s of submissions) {
+        const isPayment = s.includePayment && s.videoLinks.length === 0;
+        if (typeFilter === "PAYMENT" && !isPayment) continue;
+        if (typeFilter === "CONTENT" && isPayment) continue;
         items.push({ kind: "submission", data: s });
       }
     }
@@ -268,7 +271,7 @@ export function ContractsPage({
         >
           {TYPE_OPTIONS.map((t) => (
             <option key={t} value={t}>
-              {t === "ALL" ? "All Types" : t === "CONTRACT" ? "Contracts" : "Submissions"}
+              {t === "ALL" ? "All Types" : t === "CONTRACT" ? "Contracts" : t === "CONTENT" ? "Content Submissions" : "Payment Forms"}
             </option>
           ))}
         </select>
@@ -451,7 +454,7 @@ export function ContractsPage({
                 </div>
 
                 {/* Video links */}
-                {s.videoLinks.length > 0 && s.status !== "PENDING" && (
+                {s.videoLinks.length > 0 && (
                   <div className="space-y-1">
                     {s.videoLinks.map((link, i) => (
                       <a
@@ -468,9 +471,25 @@ export function ContractsPage({
                   </div>
                 )}
 
-                {s.includePayment && s.bankName && (
-                  <div className="text-xs text-muted-foreground">
-                    Bank: {s.bankName} ({s.accountHolder})
+                {/* Bank / Payment Details */}
+                {s.includePayment && (
+                  <div className="bg-muted/50 rounded-lg p-3 space-y-1.5">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Payment Details</p>
+                    {s.bankName ? (
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        <div><span className="text-muted-foreground">Bank:</span> <span className="font-medium">{s.bankName}</span></div>
+                        <div><span className="text-muted-foreground">Holder:</span> <span className="font-medium">{s.accountHolder || "—"}</span></div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-amber-600">No payment details submitted yet</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Notes */}
+                {s.notes && s.status !== "PENDING" && (
+                  <div className="bg-muted/30 rounded p-2.5 text-xs text-muted-foreground italic">
+                    {s.notes}
                   </div>
                 )}
 
@@ -496,6 +515,12 @@ export function ContractsPage({
                       )}
                       Verify
                     </Button>
+                  )}
+                  {s.verifiedAt && (
+                    <span className="text-xs text-emerald-600 flex items-center gap-1">
+                      <Check className="h-3 w-3" />
+                      Verified {new Date(s.verifiedAt).toLocaleDateString()}
+                    </span>
                   )}
                   <Link href={`/influencers?selected=${s.influencer.id}&tab=contracts`} className="ml-auto">
                     <Button variant="ghost" size="sm" className="h-7 text-xs">
