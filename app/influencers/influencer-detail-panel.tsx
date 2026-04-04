@@ -1383,7 +1383,7 @@ function DocumentsTab({
                       } else {
                         setExpandedSubmissionId(s.id);
                         setSubmissionDetail(null);
-                        fetch(`/api/payments/onboarding?influencerId=${influencer.id}`)
+                        fetch(`/api/payments/onboarding?influencerId=${s.influencer.id}`)
                           .then((r) => r.json())
                           .then((d) => setSubmissionDetail(d.exists ? d : null))
                           .catch(() => {});
