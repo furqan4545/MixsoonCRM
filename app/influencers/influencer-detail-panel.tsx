@@ -61,6 +61,7 @@ import { InfluencerContactSection } from "@/components/influencer-contact-sectio
 import { toast } from "sonner";
 import AnalyticsTab from "./analytics-tab";
 import ShippingTab from "./shipping-tab";
+import PaymentTab from "./payment-tab";
 
 function formatNumber(n: number | null): string {
   if (n == null) return "—";
@@ -1779,6 +1780,12 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
           >
             Shipping
           </TabsTrigger>
+          <TabsTrigger
+            value="payment"
+            className="shrink-0 rounded-none border-b-2 border-transparent px-3 py-2.5 text-xs data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+          >
+            Payment
+          </TabsTrigger>
         </TabsList>
 
         {/* Overview tab */}
@@ -2293,6 +2300,12 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
         <TabsContent value="shipping" className="mt-0 pt-5 pb-8">
           {activeTab === "shipping" && (
             <ShippingTab influencerId={influencer.id} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="payment" className="mt-0 pt-5 pb-8">
+          {activeTab === "payment" && (
+            <PaymentTab influencerId={influencer.id} />
           )}
         </TabsContent>
       </Tabs>
