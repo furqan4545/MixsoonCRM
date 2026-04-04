@@ -71,7 +71,9 @@ export default async function ContractsPageWrapper() {
     submissionLabel: s.submissionLabel,
     includePayment: s.includePayment,
     bankName: s.bankName,
+    accountNumber: s.accountNumber, // encrypted — will mask on client
     accountHolder: s.accountHolder,
+    bankCode: s.bankCode,
     status: s.status,
     submittedAt: s.submittedAt?.toISOString() ?? null,
     verifiedAt: s.verifiedAt?.toISOString() ?? null,

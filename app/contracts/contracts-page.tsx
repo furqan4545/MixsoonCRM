@@ -5,7 +5,10 @@ import { useMemo, useState } from "react";
 import {
   ArrowDownAZ,
   ArrowUpAZ,
+  Building2,
   Check,
+  ChevronDown,
+  ChevronUp,
   ClipboardCheck,
   Download,
   ExternalLink,
@@ -14,6 +17,7 @@ import {
   Loader2,
   Mail,
   PenLine,
+  Phone,
   RefreshCw,
   Search,
 } from "lucide-react";
@@ -58,7 +62,9 @@ interface SubmissionRow {
   submissionLabel: string | null;
   includePayment: boolean;
   bankName: string | null;
+  accountNumber: string | null;
   accountHolder: string | null;
+  bankCode: string | null;
   status: string;
   submittedAt: string | null;
   verifiedAt: string | null;
@@ -114,6 +120,7 @@ export function ContractsPage({
   const [sortNewest, setSortNewest] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Admin counter-sign
   const [signDialogOpen, setSignDialogOpen] = useState(false);
@@ -409,8 +416,15 @@ export function ContractsPage({
 
             // Content Submission
             const s = item.data as SubmissionRow;
+            const isExpanded = expandedId === s.id;
             return (
-              <div key={`s-${s.id}`} className="rounded-lg border p-4 space-y-2.5 hover:border-foreground/20 transition-colors">
+              <div key={`s-${s.id}`} className="rounded-lg border hover:border-foreground/20 transition-colors">
+                {/* Clickable header */}
+                <button
+                  type="button"
+                  className="w-full p-4 text-left"
+                  onClick={() => setExpandedId(isExpanded ? null : s.id)}
+                >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <ClipboardCheck className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -436,12 +450,15 @@ export function ContractsPage({
                       @{s.influencer.username}
                     </Link>
                   </div>
-                  <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${statusColors[s.status] || ""}`}>
-                    {s.status}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${statusColors[s.status] || ""}`}>
+                      {s.status}
+                    </span>
+                    {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
                   <span>Created {new Date(s.createdAt).toLocaleDateString()}</span>
                   {s.submittedAt && (
                     <span>Submitted {new Date(s.submittedAt).toLocaleDateString()}</span>
@@ -452,82 +469,106 @@ export function ContractsPage({
                     </span>
                   )}
                 </div>
+                </button>
 
-                {/* Video links */}
-                {s.videoLinks.length > 0 && (
-                  <div className="space-y-1">
-                    {s.videoLinks.map((link, i) => (
-                      <a
-                        key={i}
-                        href={link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-xs text-blue-600 hover:underline truncate"
-                      >
-                        <ExternalLink className="h-3 w-3 shrink-0" />
-                        {link}
-                      </a>
-                    ))}
-                  </div>
-                )}
-
-                {/* Bank / Payment Details */}
-                {s.includePayment && (
-                  <div className="bg-muted/50 rounded-lg p-3 space-y-1.5">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Payment Details</p>
-                    {s.bankName ? (
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                        <div><span className="text-muted-foreground">Bank:</span> <span className="font-medium">{s.bankName}</span></div>
-                        <div><span className="text-muted-foreground">Holder:</span> <span className="font-medium">{s.accountHolder || "—"}</span></div>
+                {/* Expanded detail */}
+                {isExpanded && (
+                  <div className="px-4 pb-4 space-y-3 border-t pt-3">
+                    {/* Video links */}
+                    {s.videoLinks.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Submitted Videos</p>
+                        <div className="space-y-1">
+                          {s.videoLinks.map((link, i) => (
+                            <a
+                              key={i}
+                              href={link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-xs text-blue-600 hover:underline truncate"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <ExternalLink className="h-3 w-3 shrink-0" />
+                              {link}
+                            </a>
+                          ))}
+                        </div>
                       </div>
-                    ) : (
-                      <p className="text-xs text-amber-600">No payment details submitted yet</p>
                     )}
-                  </div>
-                )}
 
-                {/* Notes */}
-                {s.notes && s.status !== "PENDING" && (
-                  <div className="bg-muted/30 rounded p-2.5 text-xs text-muted-foreground italic">
-                    {s.notes}
-                  </div>
-                )}
+                    {/* Bank / Payment Details */}
+                    {s.includePayment && (
+                      <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                          <Building2 className="h-3 w-3" /> Payment Details
+                        </p>
+                        {s.bankName ? (
+                          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                            <div><span className="text-muted-foreground">Bank / Method:</span><br /><span className="font-medium">{s.bankName}</span></div>
+                            <div><span className="text-muted-foreground">Account Holder:</span><br /><span className="font-medium">{s.accountHolder || "—"}</span></div>
+                            {s.bankCode && (
+                              <div><span className="text-muted-foreground">SWIFT / BIC:</span><br /><span className="font-medium">{s.bankCode}</span></div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-amber-600">No payment details submitted yet</p>
+                        )}
+                      </div>
+                    )}
 
-                <div className="flex items-center gap-2">
-                  {s.status === "PENDING" && (
-                    <span className="text-xs text-gray-500 flex items-center gap-1">
-                      <Mail className="h-3 w-3" />
-                      Awaiting submission
-                    </span>
-                  )}
-                  {s.status === "SUBMITTED" && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => verifySubmission(s.id)}
-                      disabled={verifyingId === s.id}
-                    >
-                      {verifyingId === s.id ? (
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      ) : (
-                        <Check className="mr-1 h-3 w-3" />
+                    {/* S-Code */}
+                    {s.sCode && (
+                      <div className="text-xs">
+                        <span className="text-muted-foreground">S-Code:</span> <span className="font-medium">{s.sCode}</span>
+                      </div>
+                    )}
+
+                    {/* Notes */}
+                    {s.notes && (
+                      <div className="bg-muted/30 rounded p-2.5 text-xs text-muted-foreground">
+                        <span className="font-semibold uppercase tracking-wider text-[10px]">Notes:</span>
+                        <p className="mt-1 italic">{s.notes}</p>
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 pt-1">
+                      {s.status === "PENDING" && (
+                        <span className="text-xs text-gray-500 flex items-center gap-1">
+                          <Mail className="h-3 w-3" />
+                          Awaiting submission
+                        </span>
                       )}
-                      Verify
-                    </Button>
-                  )}
-                  {s.verifiedAt && (
-                    <span className="text-xs text-emerald-600 flex items-center gap-1">
-                      <Check className="h-3 w-3" />
-                      Verified {new Date(s.verifiedAt).toLocaleDateString()}
-                    </span>
-                  )}
-                  <Link href={`/influencers?selected=${s.influencer.id}&tab=contracts`} className="ml-auto">
-                    <Button variant="ghost" size="sm" className="h-7 text-xs">
-                      Open in Influencer
-                    </Button>
-                  </Link>
-                </div>
+                      {s.status === "SUBMITTED" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={(e) => { e.stopPropagation(); verifySubmission(s.id); }}
+                          disabled={verifyingId === s.id}
+                        >
+                          {verifyingId === s.id ? (
+                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                          ) : (
+                            <Check className="mr-1 h-3 w-3" />
+                          )}
+                          Verify
+                        </Button>
+                      )}
+                      {s.verifiedAt && (
+                        <span className="text-xs text-emerald-600 flex items-center gap-1">
+                          <Check className="h-3 w-3" />
+                          Verified {new Date(s.verifiedAt).toLocaleDateString()}
+                        </span>
+                      )}
+                      <Link href={`/influencers?selected=${s.influencer.id}&tab=contracts`} className="ml-auto" onClick={(e) => e.stopPropagation()}>
+                        <Button variant="ghost" size="sm" className="h-7 text-xs">
+                          Open in Influencer
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
