@@ -47,8 +47,10 @@ import {
   FileText,
   ClipboardCheck,
   Download,
+  MapPin,
   Maximize2,
   Minimize2,
+  Package,
   Star,
 } from "lucide-react";
 import Link from "next/link";
@@ -584,7 +586,7 @@ interface ContentSubmissionItem {
   createdAt: string;
 }
 
-type FormType = "contract" | "content" | "content_payment" | "payment";
+type FormType = "contract" | "content" | "content_payment" | "payment" | "shipping" | "shipping_payment";
 
 function DocumentsTab({
   influencerId,
@@ -608,8 +610,9 @@ function DocumentsTab({
 
   // Form preview state
   const [formPreview, setFormPreview] = useState<{
-    type: "content" | "payment";
+    type: "content" | "payment" | "shipping";
     includePayment: boolean;
+    includeShipping: boolean;
     requireScode: boolean;
     submissionLabel: string;
   } | null>(null);
@@ -789,11 +792,15 @@ function DocumentsTab({
   const openFormPreview = (formType: FormType) => {
     setShowNewMenu(false);
     if (formType === "content") {
-      setFormPreview({ type: "content", includePayment: false, requireScode: false, submissionLabel: "" });
+      setFormPreview({ type: "content", includePayment: false, includeShipping: false, requireScode: false, submissionLabel: "" });
     } else if (formType === "content_payment") {
-      setFormPreview({ type: "content", includePayment: true, requireScode: false, submissionLabel: "" });
+      setFormPreview({ type: "content", includePayment: true, includeShipping: false, requireScode: false, submissionLabel: "" });
     } else if (formType === "payment") {
-      setFormPreview({ type: "payment", includePayment: true, requireScode: false, submissionLabel: "" });
+      setFormPreview({ type: "payment", includePayment: true, includeShipping: false, requireScode: false, submissionLabel: "" });
+    } else if (formType === "shipping") {
+      setFormPreview({ type: "shipping", includePayment: false, includeShipping: true, requireScode: false, submissionLabel: "" });
+    } else if (formType === "shipping_payment") {
+      setFormPreview({ type: "shipping", includePayment: true, includeShipping: true, requireScode: false, submissionLabel: "" });
     }
   };
 
@@ -806,7 +813,7 @@ function DocumentsTab({
 
     setSendingForm(true);
     try {
-      const type = formPreview.type === "payment" ? "PAYMENT" : "CONTENT";
+      const type = formPreview.type === "shipping" ? "ONBOARDING" : formPreview.type === "payment" ? "PAYMENT" : "CONTENT";
       const includePayment = formPreview.includePayment;
 
       const res = await fetch("/api/onboarding/generate-link", {
@@ -981,7 +988,7 @@ function DocumentsTab({
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">
-              {formPreview.type === "content" ? "Content Submission Form" : "Payment Form"}
+              {formPreview.type === "content" ? "Content Submission Form" : formPreview.type === "shipping" ? "Shipping Details Form" : "Payment Form"}
             </h3>
             <button onClick={() => setFormPreview(null)} className="text-muted-foreground hover:text-foreground">
               <X className="h-4 w-4" />
@@ -1110,6 +1117,73 @@ function DocumentsTab({
                 </div>
               </div>
             )}
+            {/* Shipping preview */}
+            {(formPreview.includeShipping || formPreview.type === "shipping") && (
+              <div className="rounded-lg border bg-background p-4 space-y-3">
+                <div>
+                  <h4 className="text-sm font-semibold">Shipping Details</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Provide your delivery address for product shipment
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-xs font-medium mb-1">Full Name</p>
+                    <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">Full name for delivery</div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1">Address Line 1</p>
+                    <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">Street address</div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1">Address Line 2 <span className="text-muted-foreground font-normal">(optional)</span></p>
+                    <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">Apt, suite, unit, etc.</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs font-medium mb-1">City</p>
+                      <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">City</div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium mb-1">Postal Code</p>
+                      <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">ZIP / Postal code</div>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1">Country</p>
+                    <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">Country</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Include Shipping toggle (for payment/content forms) */}
+            {formPreview.type !== "shipping" && (
+              <div className="flex items-center justify-between px-1">
+                <div>
+                  <p className="text-sm font-medium">Include Shipping Form</p>
+                  <p className="text-[11px] text-muted-foreground">Also collect delivery address</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormPreview((prev) =>
+                      prev ? { ...prev, includeShipping: !prev.includeShipping } : prev
+                    )
+                  }
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    formPreview.includeShipping ? "bg-foreground" : "bg-muted-foreground/30"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                      formPreview.includeShipping ? "translate-x-4" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
+
             {/* S-Code & Submission Label */}
             <div className="rounded-lg border bg-background p-4 space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Submission Settings</p>
@@ -1235,6 +1309,26 @@ function DocumentsTab({
                 <div>
                   <p className="font-medium">Payment Form</p>
                   <p className="text-muted-foreground text-[10px]">Bank details only</p>
+                </div>
+              </button>
+              <button
+                className="w-full px-3 py-2.5 text-left text-xs hover:bg-accent flex items-center gap-2 border-t"
+                onClick={() => openFormPreview("shipping")}
+              >
+                <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Shipping Details Form</p>
+                  <p className="text-muted-foreground text-[10px]">Delivery address only</p>
+                </div>
+              </button>
+              <button
+                className="w-full px-3 py-2.5 text-left text-xs hover:bg-accent flex items-center gap-2 border-t"
+                onClick={() => openFormPreview("shipping_payment")}
+              >
+                <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Shipping + Payment Form</p>
+                  <p className="text-muted-foreground text-[10px]">Delivery address + bank details</p>
                 </div>
               </button>
             </div>
