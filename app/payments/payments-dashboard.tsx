@@ -62,6 +62,7 @@ interface Influencer {
   username: string;
   displayName: string | null;
   avatarProxied?: string | null;
+  campaignIds?: string[];
 }
 
 interface Campaign { id: string; name: string }
@@ -562,7 +563,7 @@ export function PaymentsDashboard() {
                   {(() => {
                     let list = filteredInf;
                     if (createData.campaignId) {
-                      list = list.filter((i) => (i as Influencer & { campaignIds?: string[] }).campaignIds?.includes(createData.campaignId));
+                      list = list.filter((i) => i.campaignIds?.includes(createData.campaignId));
                     }
                     return list.length === 0 ? (
                       <p className="p-2 text-xs text-muted-foreground text-center">No influencers found</p>
