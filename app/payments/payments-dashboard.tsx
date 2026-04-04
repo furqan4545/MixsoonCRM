@@ -516,7 +516,22 @@ export function PaymentsDashboard() {
             <DialogTitle>Create Payment</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Influencer selector */}
+            {/* Campaign first — filters influencer list */}
+            <div>
+              <Label>Campaign (optional — filters influencer list)</Label>
+              <Select value={createData.campaignId || "none"} onValueChange={(v) => {
+                setCreateData({ ...createData, campaignId: v === "none" ? "" : v, influencerId: "" });
+                setInfSearch("");
+              }}>
+                <SelectTrigger><SelectValue placeholder="All influencers" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">All influencers (no campaign filter)</SelectItem>
+                  {campaigns.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Selected influencer preview */}
             {createData.influencerId && (() => {
               const sel = influencers.find((i) => i.id === createData.influencerId);
               if (!sel) return null;
@@ -526,7 +541,7 @@ export function PaymentsDashboard() {
                     <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center text-xs font-bold text-green-700">
                       {(sel.displayName || sel.username)?.[0]?.toUpperCase()}
                     </div>
-                    <p className="text-sm font-medium text-green-900">{sel.displayName || sel.username}</p>
+                    <p className="text-sm font-medium text-green-900">{sel.displayName || sel.username} <span className="text-green-700 font-normal">@{sel.username}</span></p>
                   </div>
                   <button onClick={() => setCreateData({ ...createData, influencerId: "" })} className="text-green-700 hover:text-red-600">
                     <X className="h-4 w-4" />
@@ -534,6 +549,8 @@ export function PaymentsDashboard() {
                 </div>
               );
             })()}
+
+            {/* Influencer list */}
             {!createData.influencerId && (
               <div>
                 <Label>Influencer *</Label>
@@ -542,13 +559,23 @@ export function PaymentsDashboard() {
                   <Input placeholder="Search influencer..." value={infSearch} onChange={(e) => setInfSearch(e.target.value)} className="pl-9 text-sm" />
                 </div>
                 <div className="mt-1 border rounded-lg max-h-36 overflow-y-auto">
-                  {filteredInf.map((inf) => (
-                    <button key={inf.id} type="button" className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/50"
-                      onClick={() => setCreateData({ ...createData, influencerId: inf.id })}>
-                      <span className="font-medium truncate">{inf.displayName || inf.username}</span>
-                      <span className="text-[11px] text-muted-foreground">@{inf.username}</span>
-                    </button>
-                  ))}
+                  {(() => {
+                    let list = filteredInf;
+                    if (createData.campaignId) {
+                      list = list.filter((i) => (i as Influencer & { campaignIds?: string[] }).campaignIds?.includes(createData.campaignId));
+                    }
+                    return list.length === 0 ? (
+                      <p className="p-2 text-xs text-muted-foreground text-center">No influencers found</p>
+                    ) : (
+                      list.map((inf) => (
+                        <button key={inf.id} type="button" className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/50"
+                          onClick={() => setCreateData({ ...createData, influencerId: inf.id })}>
+                          <span className="font-medium truncate">{inf.displayName || inf.username}</span>
+                          <span className="text-[11px] text-muted-foreground">@{inf.username}</span>
+                        </button>
+                      ))
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -569,17 +596,6 @@ export function PaymentsDashboard() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-
-            <div>
-              <Label>Campaign (optional)</Label>
-              <Select value={createData.campaignId || "none"} onValueChange={(v) => setCreateData({ ...createData, campaignId: v === "none" ? "" : v })}>
-                <SelectTrigger><SelectValue placeholder="No campaign" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No campaign</SelectItem>
-                  {campaigns.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
-                </SelectContent>
-              </Select>
             </div>
 
             <div>
