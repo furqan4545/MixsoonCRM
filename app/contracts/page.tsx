@@ -72,7 +72,7 @@ export default async function ContractsPageWrapper() {
     submissionLabel: s.submissionLabel,
     includePayment: s.includePayment,
     bankName: s.bankName,
-    accountNumberMasked: s.accountNumber ? (() => { try { const plain = decrypt(s.accountNumber); return `****${plain.slice(-4)}`; } catch { return "****"; } })() : null,
+    accountNumber: s.accountNumber ? (() => { try { return decrypt(s.accountNumber); } catch { return null; } })() : null,
     accountHolder: s.accountHolder,
     bankCode: s.bankCode,
     status: s.status,
