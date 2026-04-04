@@ -1184,8 +1184,8 @@ function DocumentsTab({
               </div>
             )}
 
-            {/* S-Code & Submission Label */}
-            <div className="rounded-lg border bg-background p-4 space-y-3">
+            {/* S-Code & Submission Label — hide for shipping-only */}
+            {formPreview.type !== "shipping" && <div className="rounded-lg border bg-background p-4 space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Submission Settings</p>
               <div className="space-y-3">
                 <div>
@@ -1229,7 +1229,7 @@ function DocumentsTab({
                   </button>
                 </div>
               </div>
-            </div>
+            </div>}
           </div>
 
           {/* Send button */}
