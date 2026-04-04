@@ -183,6 +183,43 @@ export function OnboardingForm({ token, influencer }: OnboardingFormProps) {
               required
             />
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="swiftCode">SWIFT / BIC Code <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                id="swiftCode"
+                type="text"
+                placeholder="e.g. CITIKRSX"
+                value={form.bankCode || ""}
+                onChange={(e) => updateField("bankCode", e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label htmlFor="routingNumber">Routing Number <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                id="routingNumber"
+                type="text"
+                placeholder="For US banks"
+                value={form.routingNumber || ""}
+                onChange={(e) => updateField("routingNumber", e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="contactNumber">Contact Number <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Input
+              id="contactNumber"
+              type="tel"
+              placeholder="+1 234 567 8900"
+              value={form.contactNumber || ""}
+              onChange={(e) => updateField("contactNumber", e.target.value)}
+              className="mt-1.5"
+            />
+          </div>
         </div>
       </div>
 

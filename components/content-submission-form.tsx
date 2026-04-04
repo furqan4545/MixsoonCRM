@@ -27,7 +27,10 @@ interface BankDetails {
   bankName: string;
   accountNumber: string;
   accountHolder: string;
-  bankCode: string;
+  bankCode: string;       // SWIFT/BIC code
+  routingNumber: string;  // US routing number
+  country: string;        // Bank country
+  contactNumber: string;  // Contact phone
 }
 
 const defaultBank: BankDetails = {
@@ -35,6 +38,9 @@ const defaultBank: BankDetails = {
   accountNumber: "",
   accountHolder: "",
   bankCode: "",
+  routingNumber: "",
+  country: "",
+  contactNumber: "",
 };
 
 export function ContentSubmissionForm({
@@ -343,6 +349,56 @@ export function ContentSubmissionForm({
               onChange={(e) => updateBank("accountHolder", e.target.value)}
               className="mt-1.5"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="swiftCode">SWIFT / BIC Code <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                id="swiftCode"
+                type="text"
+                placeholder="e.g. CITIKRSX"
+                value={bank.bankCode || ""}
+                onChange={(e) => updateBank("bankCode", e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label htmlFor="routingNumber">Routing Number <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                id="routingNumber"
+                type="text"
+                placeholder="For US banks"
+                value={bank.routingNumber || ""}
+                onChange={(e) => updateBank("routingNumber", e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="paymentCountry">Country <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                id="paymentCountry"
+                type="text"
+                placeholder="e.g. South Korea, USA, Canada"
+                value={bank.country || ""}
+                onChange={(e) => updateBank("country", e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label htmlFor="contactNumber">Contact Number <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                id="contactNumber"
+                type="tel"
+                placeholder="+1 234 567 8900"
+                value={bank.contactNumber || ""}
+                onChange={(e) => updateBank("contactNumber", e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
           </div>
         </div>
       )}
