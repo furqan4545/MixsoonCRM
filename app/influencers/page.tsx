@@ -17,7 +17,7 @@ export default function InfluencersPage() {
     else setLoadingMore(true);
 
     try {
-      const params = new URLSearchParams({ limit: "50" });
+      const params = new URLSearchParams({ limit: "500" });
       if (cursor) params.set("cursor", cursor);
       const res = await fetch(`/api/influencers?${params}`);
       if (!res.ok) throw new Error();
@@ -42,22 +42,19 @@ export default function InfluencersPage() {
     fetchPage(null);
   }, [fetchPage]);
 
-  // Silently update analytics data when analysis completes (no full page reload)
+  // Silently update analytics data when analysis completes — fetch only that influencer
   useEffect(() => {
     const handler = async (e: Event) => {
       const influencerId = (e as CustomEvent).detail;
+      if (!influencerId) return;
       try {
-        // Fetch fresh data silently in the background
-        const res = await fetch("/api/influencers?limit=50");
+        const res = await fetch(`/api/influencers/${influencerId}`);
         if (!res.ok) return;
-        const data = await res.json();
-        const fresh: InfluencerRow[] = data.influencers ?? [];
-        // Merge analytics into existing list without resetting scroll/selection
+        const updated = await res.json();
         setInfluencers((prev) =>
-          prev.map((inf) => {
-            const updated = fresh.find((f: InfluencerRow) => f.id === inf.id);
-            return updated ? { ...inf, analytics: updated.analytics } : inf;
-          }),
+          prev.map((inf) =>
+            inf.id === influencerId ? { ...inf, analytics: updated.analytics } : inf,
+          ),
         );
       } catch {}
     };

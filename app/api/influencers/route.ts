@@ -27,10 +27,10 @@ export async function GET(request: NextRequest) {
     const minimal = searchParams.get("minimal") === "true";
     const trash = searchParams.get("trash") === "true";
     const importId = searchParams.get("importId");
-    // When filtering by importId, allow loading all (up to 2000)
-    const maxLimit = minimal || importId ? 2000 : 100;
+    // Allow loading all influencers — 213 is nothing, no need for tiny pages
+    const maxLimit = 2000;
     const limit = Math.min(
-      parseInt(searchParams.get("limit") ?? "50", 10) || 50,
+      parseInt(searchParams.get("limit") ?? "500", 10) || 500,
       maxLimit,
     );
 
@@ -93,143 +93,97 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ influencers: serialized });
     }
 
-    // Full mode with pagination for the dashboard
-    const totalCount = await prisma.influencer.count({ where });
-
-    const influencers = await prisma.influencer.findMany({
-      where,
-      take: limit + 1, // fetch one extra to check if there's a next page
-      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-      orderBy: { createdAt: "desc" },
-      include: {
-        videos: { orderBy: { uploadedAt: "desc" } },
-        _count: { select: { videos: true, emailMessages: true } },
-        import: { select: { id: true, sourceFilename: true } },
-        aiEvaluations: {
-          orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            score: true,
-            bucket: true,
-            reviewStatus: true,
-            reasons: true,
-            matchedSignals: true,
-            riskSignals: true,
-            run: { select: { campaign: { select: { name: true } } } },
-          },
+    // Ultra-lean list query — flat fields + counts ONLY (~500ms vs ~5.7s)
+    // All relations (videos, evals, logs, campaigns, pics) fetched on click via GET /api/influencers/[id]
+    const [totalCount, influencers] = await Promise.all([
+      prisma.influencer.count({ where }),
+      prisma.influencer.findMany({
+        where,
+        take: limit + 1,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatarUrl: true,
+          profileUrl: true,
+          platform: true,
+          followers: true,
+          engagementRate: true,
+          rate: true,
+          language: true,
+          country: true,
+          email: true,
+          phone: true,
+          biolink: true,
+          bioLinkUrl: true,
+          socialLinks: true,
+          sourceFilename: true,
+          pipelineStage: true,
+          tags: true,
+          notes: true,
+          aiScore: true,
+          savedAt: true,
+          createdAt: true,
+          importId: true,
+          _count: { select: { videos: true, emailMessages: true } },
         },
-        activityLogs: {
-          orderBy: { createdAt: "desc" },
-          take: 10,
-        },
-        campaignAssignments: {
-          include: {
-            campaign: {
-              select: { id: true, name: true, status: true },
-            },
-          },
-          orderBy: { assignedAt: "desc" },
-        },
-        analytics: {
-          select: {
-            influencerGender: true,
-            influencerAgeRange: true,
-            influencerEthnicity: true,
-            influencerCountry: true,
-            lastAnalyzedAt: true,
-            mode: true,
-            confidence: true,
-          },
-        },
-        pics: {
-          include: { user: { select: { id: true, name: true, email: true } } },
-          orderBy: { assignedAt: "asc" },
-        },
-      },
-    });
+      }),
+    ]);
 
     const hasMore = influencers.length > limit;
     const page = hasMore ? influencers.slice(0, limit) : influencers;
     const nextCursor = hasMore ? page[page.length - 1].id : null;
 
-    const serialized = page.map((inf) => {
-      const savedEval = inf.aiEvaluations.find(
-        (e) => e.reviewStatus === "SAVED",
-      );
-      const latestEval = inf.aiEvaluations[0] ?? null;
-
-      return {
-        id: inf.id,
-        username: inf.username,
-        displayName: inf.displayName,
-        avatarUrl: inf.avatarUrl,
-        avatarProxied: fixThumbnailUrl(inf.avatarUrl),
-        profileUrl: inf.profileUrl,
-        platform:
-          inf.platform ??
-          (inf.profileUrl?.includes("tiktok")
-            ? "TikTok"
-            : inf.profileUrl?.includes("instagram")
-              ? "Instagram"
-              : null),
-        followers: inf.followers,
-        engagementRate: inf.engagementRate,
-        rate: inf.rate,
-        language: inf.language,
-        country: inf.country,
-        email: inf.email,
-        phone: inf.phone,
-        biolink: inf.biolink,
-        bioLinkUrl: inf.bioLinkUrl,
-        socialLinks: inf.socialLinks,
-        sourceFilename: inf.sourceFilename,
-        importId: inf.import?.id ?? null,
-        importFilename: inf.import?.sourceFilename ?? null,
-        pipelineStage: inf.pipelineStage,
-        tags: inf.tags,
-        notes: inf.notes,
-        aiScore: inf.aiScore ?? latestEval?.score ?? null,
-        queueBucket: savedEval?.bucket ?? null,
-        queueEvalId: savedEval?.id ?? null,
-        aiReasons: latestEval?.reasons ?? null,
-        aiMatchedSignals: latestEval?.matchedSignals ?? null,
-        aiRiskSignals: latestEval?.riskSignals ?? null,
-        campaignName: latestEval?.run?.campaign?.name ?? null,
-        videoCount: inf._count.videos,
-        conversationCount: inf._count.emailMessages,
-        videos: inf.videos.map((v) => ({
-          id: v.id,
-          title: v.title,
-          views: v.views,
-          bookmarks: v.bookmarks,
-          uploadedAt: v.uploadedAt?.toISOString() ?? null,
-          thumbnailUrl: v.thumbnailUrl,
-          thumbnailProxied: fixThumbnailUrl(v.thumbnailUrl),
-          videoUrl: v.videoUrl ?? null,
-          tiktokId: v.tiktokId ?? null,
-        })),
-        activityLogs: inf.activityLogs.map((log) => ({
-          id: log.id,
-          type: log.type,
-          title: log.title,
-          detail: log.detail,
-          createdAt: log.createdAt.toISOString(),
-        })),
-        campaignAssignments: inf.campaignAssignments.map((ca) => ({
-          campaignId: ca.campaign.id,
-          campaignName: ca.campaign.name,
-          campaignStatus: ca.campaign.status,
-        })),
-        analytics: inf.analytics ?? null,
-        pics: inf.pics.map((p) => ({
-          id: p.user.id,
-          name: p.user.name,
-          email: p.user.email,
-        })),
-        savedAt: inf.savedAt?.toISOString() ?? null,
-        createdAt: inf.createdAt.toISOString(),
-      };
-    });
+    const serialized = page.map((inf) => ({
+      id: inf.id,
+      username: inf.username,
+      displayName: inf.displayName,
+      avatarUrl: inf.avatarUrl,
+      avatarProxied: fixThumbnailUrl(inf.avatarUrl),
+      profileUrl: inf.profileUrl,
+      platform:
+        inf.platform ??
+        (inf.profileUrl?.includes("tiktok")
+          ? "TikTok"
+          : inf.profileUrl?.includes("instagram")
+            ? "Instagram"
+            : null),
+      followers: inf.followers,
+      engagementRate: inf.engagementRate,
+      rate: inf.rate,
+      language: inf.language,
+      country: inf.country,
+      email: inf.email,
+      phone: inf.phone,
+      biolink: inf.biolink,
+      bioLinkUrl: inf.bioLinkUrl,
+      socialLinks: inf.socialLinks,
+      sourceFilename: inf.sourceFilename,
+      importId: inf.importId,
+      pipelineStage: inf.pipelineStage,
+      tags: inf.tags,
+      notes: inf.notes,
+      aiScore: inf.aiScore,
+      videoCount: inf._count.videos,
+      conversationCount: inf._count.emailMessages,
+      // Relations loaded on demand via GET /api/influencers/[id]
+      videos: [],
+      activityLogs: [],
+      campaignAssignments: [],
+      analytics: null,
+      pics: [],
+      queueBucket: null,
+      queueEvalId: null,
+      aiReasons: null,
+      aiMatchedSignals: null,
+      aiRiskSignals: null,
+      campaignName: null,
+      importFilename: null,
+      savedAt: inf.savedAt?.toISOString() ?? null,
+      createdAt: inf.createdAt.toISOString(),
+    }));
 
     return NextResponse.json({
       influencers: serialized,

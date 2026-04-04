@@ -113,12 +113,27 @@ export async function GET(
     where: { id },
     include: {
       videos: { orderBy: { uploadedAt: "desc" } },
-      activityLogs: { orderBy: { createdAt: "desc" }, take: 20 },
+      activityLogs: { orderBy: { createdAt: "desc" }, take: 30 },
       _count: { select: { emailMessages: true, videos: true } },
+      import: { select: { id: true, sourceFilename: true } },
       aiEvaluations: {
         orderBy: { createdAt: "desc" },
-        take: 1,
-        select: { score: true },
+        select: {
+          id: true,
+          score: true,
+          bucket: true,
+          reviewStatus: true,
+          reasons: true,
+          matchedSignals: true,
+          riskSignals: true,
+          run: { select: { campaign: { select: { name: true } } } },
+        },
+      },
+      campaignAssignments: {
+        include: {
+          campaign: { select: { id: true, name: true, status: true } },
+        },
+        orderBy: { assignedAt: "desc" },
       },
       analytics: {
         select: {
@@ -126,6 +141,9 @@ export async function GET(
           influencerAgeRange: true,
           influencerEthnicity: true,
           influencerCountry: true,
+          lastAnalyzedAt: true,
+          mode: true,
+          confidence: true,
         },
       },
       pics: {
@@ -139,5 +157,77 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json(influencer);
+  const savedEval = influencer.aiEvaluations.find((e) => e.reviewStatus === "SAVED");
+  const latestEval = influencer.aiEvaluations[0] ?? null;
+
+  function fixThumb(url: string | null): string | null {
+    if (!url) return null;
+    return `/api/thumbnail?url=${encodeURIComponent(url)}`;
+  }
+
+  return NextResponse.json({
+    id: influencer.id,
+    username: influencer.username,
+    displayName: influencer.displayName,
+    avatarUrl: influencer.avatarUrl,
+    avatarProxied: fixThumb(influencer.avatarUrl),
+    profileUrl: influencer.profileUrl,
+    platform: influencer.platform ?? (influencer.profileUrl?.includes("tiktok") ? "TikTok" : influencer.profileUrl?.includes("instagram") ? "Instagram" : null),
+    followers: influencer.followers,
+    engagementRate: influencer.engagementRate,
+    rate: influencer.rate,
+    language: influencer.language,
+    country: influencer.country,
+    email: influencer.email,
+    phone: influencer.phone,
+    biolink: influencer.biolink,
+    bioLinkUrl: influencer.bioLinkUrl,
+    socialLinks: influencer.socialLinks,
+    sourceFilename: influencer.sourceFilename,
+    importId: influencer.import?.id ?? null,
+    importFilename: influencer.import?.sourceFilename ?? null,
+    pipelineStage: influencer.pipelineStage,
+    tags: influencer.tags,
+    notes: influencer.notes,
+    aiScore: influencer.aiScore ?? latestEval?.score ?? null,
+    queueBucket: savedEval?.bucket ?? null,
+    queueEvalId: savedEval?.id ?? null,
+    aiReasons: latestEval?.reasons ?? null,
+    aiMatchedSignals: latestEval?.matchedSignals ?? null,
+    aiRiskSignals: latestEval?.riskSignals ?? null,
+    campaignName: latestEval?.run?.campaign?.name ?? null,
+    videoCount: influencer._count.videos,
+    conversationCount: influencer._count.emailMessages,
+    videos: influencer.videos.map((v) => ({
+      id: v.id,
+      title: v.title,
+      views: v.views,
+      bookmarks: v.bookmarks,
+      uploadedAt: v.uploadedAt?.toISOString() ?? null,
+      thumbnailUrl: v.thumbnailUrl,
+      thumbnailProxied: fixThumb(v.thumbnailUrl),
+      videoUrl: v.videoUrl ?? null,
+      tiktokId: v.tiktokId ?? null,
+    })),
+    activityLogs: influencer.activityLogs.map((log) => ({
+      id: log.id,
+      type: log.type,
+      title: log.title,
+      detail: log.detail,
+      createdAt: log.createdAt.toISOString(),
+    })),
+    campaignAssignments: influencer.campaignAssignments.map((ca) => ({
+      campaignId: ca.campaign.id,
+      campaignName: ca.campaign.name,
+      campaignStatus: ca.campaign.status,
+    })),
+    analytics: influencer.analytics ?? null,
+    pics: influencer.pics.map((p) => ({
+      id: p.user.id,
+      name: p.user.name,
+      email: p.user.email,
+    })),
+    savedAt: influencer.savedAt?.toISOString() ?? null,
+    createdAt: influencer.createdAt.toISOString(),
+  });
 }

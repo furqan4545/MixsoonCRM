@@ -65,6 +65,8 @@ model Influencer {
   @@index([importId])
   @@index([pipelineStage])
   @@index([trashedAt])
+  @@index([createdAt])
+  @@index([trashedAt, createdAt])
 }
 
 enum PipelineStage {

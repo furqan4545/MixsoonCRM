@@ -466,8 +466,42 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
     return list;
   }, [influencers, search, queueFilter, filterCountry, filterLanguage, filterPlatform, filterMinFollowers, filterMaxFollowers]);
 
+  // Cache loaded influencer details — cleared on any data mutation
+  const detailCacheRef = useRef<Map<string, InfluencerRow>>(new Map());
+  const [detailData, setDetailData] = useState<InfluencerRow | null>(null);
+
+  const clearDetailCache = useCallback(() => {
+    detailCacheRef.current.clear();
+    setDetailData(null);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setDetailData(null);
+      return;
+    }
+    // Serve from cache if available
+    const cached = detailCacheRef.current.get(selectedId);
+    if (cached) {
+      setDetailData(cached);
+      return;
+    }
+    // Otherwise fetch and cache
+    let cancelled = false;
+    fetch(`/api/influencers/${selectedId}`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!cancelled && data) {
+          detailCacheRef.current.set(selectedId, data);
+          setDetailData(data);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedId]);
+
   const selected = selectedId
-    ? influencers.find((i) => i.id === selectedId) ?? null
+    ? (detailData?.id === selectedId ? detailData : null) ?? influencers.find((i) => i.id === selectedId) ?? null
     : null;
 
   // Toggle row selection
@@ -499,12 +533,13 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
         await Promise.all(promises);
         toast.success(`Removed ${evalIds.length} from queue`);
         setSelectedRows(new Set());
+        clearDetailCache();
         router.refresh();
       } catch {
         toast.error("Failed to remove from queue");
       }
     },
-    [router],
+    [router, clearDetailCache],
   );
 
   // Move between queues
@@ -520,6 +555,7 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
         if (!res.ok) throw new Error("Failed");
         toast.success(`Moved ${evalIds.length} to ${targetBucket}`);
         setSelectedRows(new Set());
+        clearDetailCache();
         router.refresh();
       } catch {
         toast.error("Failed to move");
@@ -527,7 +563,7 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
         setMoving(false);
       }
     },
-    [router],
+    [router, clearDetailCache],
   );
 
   // Get eval IDs for selected rows
@@ -631,6 +667,7 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
         const data = await res.json();
         toast.success(data.message);
         setSelectedRows(new Set());
+        clearDetailCache();
         onRefresh?.();
       } catch {
         toast.error("Failed to assign PIC");
@@ -1047,6 +1084,7 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                       const data = await res.json();
                       toast.success(data.message);
                       setSelectedRows(new Set());
+                      clearDetailCache();
                       onRefresh?.();
                     } catch {
                       toast.error("Failed to trash influencers");
@@ -1296,7 +1334,7 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                           <StageCell
                             influencerId={inf.id}
                             currentStage={inf.pipelineStage}
-                            onUpdated={() => router.refresh()}
+                            onUpdated={() => { clearDetailCache(); router.refresh(); }}
                           />
                         </td>
                         <td className="px-2 py-3">
