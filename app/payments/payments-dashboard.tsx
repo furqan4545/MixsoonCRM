@@ -174,10 +174,18 @@ export function PaymentsDashboard() {
   }, [showNotify]);
 
   const filteredInf = useMemo(() => {
-    if (!infSearch) return influencers.slice(0, 50);
-    const q = infSearch.toLowerCase();
-    return influencers.filter((i) => i.username.toLowerCase().includes(q) || (i.displayName || "").toLowerCase().includes(q)).slice(0, 50);
-  }, [influencers, infSearch]);
+    let list = influencers;
+    // Filter by campaign first
+    if (createData.campaignId) {
+      list = list.filter((i) => i.campaignIds?.includes(createData.campaignId));
+    }
+    // Then filter by search
+    if (infSearch) {
+      const q = infSearch.toLowerCase();
+      list = list.filter((i) => i.username.toLowerCase().includes(q) || (i.displayName || "").toLowerCase().includes(q));
+    }
+    return list.slice(0, 50);
+  }, [influencers, infSearch, createData.campaignId]);
 
   // Create payment
   const handleCreate = async () => {
@@ -560,23 +568,17 @@ export function PaymentsDashboard() {
                   <Input placeholder="Search influencer..." value={infSearch} onChange={(e) => setInfSearch(e.target.value)} className="pl-9 text-sm" />
                 </div>
                 <div className="mt-1 border rounded-lg max-h-36 overflow-y-auto">
-                  {(() => {
-                    let list = filteredInf;
-                    if (createData.campaignId) {
-                      list = list.filter((i) => i.campaignIds?.includes(createData.campaignId));
-                    }
-                    return list.length === 0 ? (
-                      <p className="p-2 text-xs text-muted-foreground text-center">No influencers found</p>
-                    ) : (
-                      list.map((inf) => (
-                        <button key={inf.id} type="button" className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/50"
-                          onClick={() => setCreateData({ ...createData, influencerId: inf.id })}>
-                          <span className="font-medium truncate">{inf.displayName || inf.username}</span>
-                          <span className="text-[11px] text-muted-foreground">@{inf.username}</span>
-                        </button>
-                      ))
-                    );
-                  })()}
+                  {filteredInf.length === 0 ? (
+                    <p className="p-2 text-xs text-muted-foreground text-center">No influencers found</p>
+                  ) : (
+                    filteredInf.map((inf) => (
+                      <button key={inf.id} type="button" className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/50"
+                        onClick={() => setCreateData({ ...createData, influencerId: inf.id })}>
+                        <span className="font-medium truncate">{inf.displayName || inf.username}</span>
+                        <span className="text-[11px] text-muted-foreground">@{inf.username}</span>
+                      </button>
+                    ))
+                  )}
                 </div>
               </div>
             )}
