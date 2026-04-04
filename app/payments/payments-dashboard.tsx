@@ -216,6 +216,7 @@ export function PaymentsDashboard() {
   };
 
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ id: string; status: string; notify: boolean } | null>(null);
 
   // Update status (optionally notify influencer)
   const updateStatus = async (id: string, status: string, notifyInfluencer = false) => {
@@ -441,22 +442,37 @@ export function PaymentsDashboard() {
               {/* Status actions */}
               <div className="flex gap-2 flex-wrap">
                 {selected.status === "PENDING" && (
-                  <Button size="sm" disabled={updatingStatus} onClick={() => updateStatus(selected.id, "PROCESSING", true)}>
-                    {updatingStatus ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <ArrowRight className="h-3 w-3 mr-1" />}Mark Processing & Notify
-                  </Button>
+                  <>
+                    <Button size="sm" variant="outline" onClick={() => setConfirmAction({ id: selected.id, status: "PROCESSING", notify: false })}>
+                      <ArrowRight className="h-3 w-3 mr-1" />Mark Processing
+                    </Button>
+                    <Button size="sm" onClick={() => setConfirmAction({ id: selected.id, status: "PROCESSING", notify: true })}>
+                      <Bell className="h-3 w-3 mr-1" />Mark Processing & Notify
+                    </Button>
+                  </>
                 )}
                 {selected.status === "PROCESSING" && (
-                  <Button size="sm" disabled={updatingStatus} onClick={() => updateStatus(selected.id, "SENT", true)}>
-                    {updatingStatus ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Send className="h-3 w-3 mr-1" />}Mark Sent & Notify
-                  </Button>
+                  <>
+                    <Button size="sm" variant="outline" onClick={() => setConfirmAction({ id: selected.id, status: "SENT", notify: false })}>
+                      <Send className="h-3 w-3 mr-1" />Mark Sent
+                    </Button>
+                    <Button size="sm" onClick={() => setConfirmAction({ id: selected.id, status: "SENT", notify: true })}>
+                      <Bell className="h-3 w-3 mr-1" />Mark Sent & Notify
+                    </Button>
+                  </>
                 )}
                 {selected.status === "SENT" && (
-                  <Button size="sm" disabled={updatingStatus} onClick={() => updateStatus(selected.id, "RECEIVED", true)}>
-                    {updatingStatus ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}Mark Received & Notify
-                  </Button>
+                  <>
+                    <Button size="sm" variant="outline" onClick={() => setConfirmAction({ id: selected.id, status: "RECEIVED", notify: false })}>
+                      <CheckCircle2 className="h-3 w-3 mr-1" />Mark Received
+                    </Button>
+                    <Button size="sm" onClick={() => setConfirmAction({ id: selected.id, status: "RECEIVED", notify: true })}>
+                      <Bell className="h-3 w-3 mr-1" />Mark Received & Notify
+                    </Button>
+                  </>
                 )}
                 {selected.status !== "RECEIVED" && selected.status !== "FAILED" && (
-                  <Button size="sm" variant="outline" disabled={updatingStatus} onClick={() => updateStatus(selected.id, "FAILED")}>
+                  <Button size="sm" variant="outline" onClick={() => setConfirmAction({ id: selected.id, status: "FAILED", notify: false })}>
                     <XCircle className="h-3 w-3 mr-1" />Mark Failed
                   </Button>
                 )}
@@ -679,6 +695,40 @@ export function PaymentsDashboard() {
                 {creating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating...</> : "Create Payment"}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Status Change Dialog */}
+      <Dialog open={!!confirmAction} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirm Status Change</DialogTitle>
+          </DialogHeader>
+          {confirmAction && (
+            <div className="space-y-3">
+              <p className="text-sm">
+                This will update the payment status to <strong>{confirmAction.status}</strong>.
+              </p>
+              {confirmAction.notify && (
+                <p className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  An email will be sent to the influencer notifying them about this status change.
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmAction(null)}>Cancel</Button>
+            <Button
+              disabled={updatingStatus}
+              onClick={async () => {
+                if (!confirmAction) return;
+                await updateStatus(confirmAction.id, confirmAction.status, confirmAction.notify);
+                setConfirmAction(null);
+              }}
+            >
+              {updatingStatus ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Updating...</> : "Yes, Proceed"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
