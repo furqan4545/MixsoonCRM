@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma";
+import { decrypt } from "../lib/crypto";
 import { getCurrentUser } from "../lib/rbac";
 import { ContractsPage } from "./contracts-page";
 
@@ -71,7 +72,7 @@ export default async function ContractsPageWrapper() {
     submissionLabel: s.submissionLabel,
     includePayment: s.includePayment,
     bankName: s.bankName,
-    accountNumber: s.accountNumber, // encrypted — will mask on client
+    accountNumberMasked: s.accountNumber ? (() => { try { const plain = decrypt(s.accountNumber); return `****${plain.slice(-4)}`; } catch { return "****"; } })() : null,
     accountHolder: s.accountHolder,
     bankCode: s.bankCode,
     status: s.status,
