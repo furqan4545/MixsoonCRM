@@ -353,7 +353,7 @@ export function ContentSubmissionForm({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="swiftCode">SWIFT / BIC Code <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Label htmlFor="swiftCode">SWIFT / BIC Code</Label>
               <Input
                 id="swiftCode"
                 type="text"
@@ -378,7 +378,7 @@ export function ContentSubmissionForm({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="paymentCountry">Country <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Label htmlFor="paymentCountry">Country</Label>
               <Input
                 id="paymentCountry"
                 type="text"
@@ -389,7 +389,7 @@ export function ContentSubmissionForm({
               />
             </div>
             <div>
-              <Label htmlFor="contactNumber">Contact Number <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Label htmlFor="contactNumber">Contact Number</Label>
               <Input
                 id="contactNumber"
                 type="tel"
