@@ -154,6 +154,11 @@ model Campaign {
   avoidKeywords   String[]
   notes           String?
   strictnessDefault Int    @default(50)
+  // Deterministic pre-filters. Null = disabled. Evaluated before AI scoring;
+  // rejections here never hit the LLM.
+  maxDaysSinceLastPost Int? @default(30) // recency: exclude if latest video older than N days
+  minFollowers         Int?              // follower floor
+  minVideoCount        Int?              // minimum videos on profile
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -224,6 +229,7 @@ enum PreFilterLabel {
   LIKELY_RELEVANT
   NO_KEYWORD_MATCH
   REVIEW_QUEUE
+  DETERMINISTIC_REJECTED
 }
 
 enum AiBucket {
@@ -244,19 +250,25 @@ enum ReviewStatus {
 
 model Notification {
   id         String   @id @default(cuid())
-  type       String   // e.g. "import_save", "ai_filter"
+  type       String   // e.g. "import_save", "ai_filter", "payment_due"
   status     String   @default("info") // "success" | "error" | "info"
   title      String
   message    String?
   read       Boolean  @default(false)
+  // Scoping. null = broadcast (all users with notifications.read see it).
+  // Set = only this user sees it (fan-out to roles via createMany).
+  userId     String?
+  user       User?    @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
   importId   String?
   runId      String?  // AiFilterRun id when type is ai_filter
   approvalId String?  // ApprovalRequest id when type is approval
+  paymentId  String?  // Payment id when type is payment_due / payment_submitted
   createdAt  DateTime @default(now())
 
   @@index([read])
   @@index([createdAt])
   @@index([status])
+  @@index([userId])
 }
 
 // ─── RBAC ──────────────────────────────────────────────────
@@ -286,6 +298,7 @@ model User {
   contractComments     ContractComment[] @relation("ContractComments")
   shipmentsCreated     Shipment[]       @relation("ShipmentCreator")
   paymentsCreated      Payment[]        @relation("PaymentCreator")
+  notifications        Notification[]   @relation("UserNotifications")
 
   @@index([roleId])
   @@index([status])

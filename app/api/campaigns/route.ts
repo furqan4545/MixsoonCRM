@@ -36,17 +36,30 @@ export async function POST(request: NextRequest) {
       strictnessDefault = 50,
       targetKeywords = [],
       avoidKeywords = [],
+      maxDaysSinceLastPost,
+      minFollowers,
+      minVideoCount,
     } = body as {
       name: string;
       notes?: string;
       strictnessDefault?: number;
       targetKeywords?: string[];
       avoidKeywords?: string[];
+      maxDaysSinceLastPost?: number | null;
+      minFollowers?: number | null;
+      minVideoCount?: number | null;
     };
 
     if (!name?.trim()) {
       return NextResponse.json({ error: "name is required" }, { status: 400 });
     }
+
+    const normalizePositiveInt = (v: unknown): number | null => {
+      if (v === null || v === undefined || v === "") return null;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return Math.floor(n);
+    };
 
     const campaign = await prisma.campaign.create({
       data: {
@@ -58,6 +71,12 @@ export async function POST(request: NextRequest) {
         ),
         targetKeywords: targetKeywords.map((k) => k.trim()).filter(Boolean),
         avoidKeywords: avoidKeywords.map((k) => k.trim()).filter(Boolean),
+        maxDaysSinceLastPost:
+          maxDaysSinceLastPost === undefined
+            ? 30
+            : normalizePositiveInt(maxDaysSinceLastPost),
+        minFollowers: normalizePositiveInt(minFollowers),
+        minVideoCount: normalizePositiveInt(minVideoCount),
       },
     });
 

@@ -14,6 +14,9 @@ type Campaign = {
   strictnessDefault: number;
   targetKeywords: string[];
   avoidKeywords: string[];
+  maxDaysSinceLastPost: number | null;
+  minFollowers: number | null;
+  minVideoCount: number | null;
 };
 
 type Run = {
@@ -52,6 +55,14 @@ export default function AiFilterPage() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // Deterministic pre-filters. Recency is enabled by default (30d); others opt-in.
+  const [recencyEnabled, setRecencyEnabled] = useState(true);
+  const [recencyDays, setRecencyDays] = useState(30);
+  const [minFollowersEnabled, setMinFollowersEnabled] = useState(false);
+  const [minFollowers, setMinFollowers] = useState(10000);
+  const [minVideoCountEnabled, setMinVideoCountEnabled] = useState(false);
+  const [minVideoCount, setMinVideoCount] = useState(5);
+
   // Run history state
   const [runs, setRuns] = useState<Run[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
@@ -79,6 +90,9 @@ export default function AiFilterPage() {
         targetKeywords: fromCsv(targetKeywords),
         avoidKeywords: fromCsv(avoidKeywords),
         notes,
+        maxDaysSinceLastPost: recencyEnabled ? recencyDays : null,
+        minFollowers: minFollowersEnabled ? minFollowers : null,
+        minVideoCount: minVideoCountEnabled ? minVideoCount : null,
       };
 
       let res: Response;
@@ -124,6 +138,12 @@ export default function AiFilterPage() {
     setTargetKeywords("");
     setAvoidKeywords("");
     setNotes("");
+    setRecencyEnabled(true);
+    setRecencyDays(30);
+    setMinFollowersEnabled(false);
+    setMinFollowers(10000);
+    setMinVideoCountEnabled(false);
+    setMinVideoCount(5);
   }
 
   function startEdit(c: Campaign) {
@@ -133,6 +153,12 @@ export default function AiFilterPage() {
     setTargetKeywords(toCsv(c.targetKeywords));
     setAvoidKeywords(toCsv(c.avoidKeywords));
     setNotes(c.notes ?? "");
+    setRecencyEnabled(c.maxDaysSinceLastPost != null);
+    setRecencyDays(c.maxDaysSinceLastPost ?? 30);
+    setMinFollowersEnabled(c.minFollowers != null);
+    setMinFollowers(c.minFollowers ?? 10000);
+    setMinVideoCountEnabled(c.minVideoCount != null);
+    setMinVideoCount(c.minVideoCount ?? 5);
   }
 
   async function deleteFilter(id: string) {
@@ -218,6 +244,66 @@ export default function AiFilterPage() {
                 value={avoidKeywords}
                 onChange={(e) => setAvoidKeywords(e.target.value)}
               />
+
+              {/* Deterministic pre-filters */}
+              <div className="rounded-md border bg-muted/30 p-3 md:col-span-2">
+                <p className="mb-1 text-sm font-medium">Deterministic pre-filters</p>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Rejected here never reach the LLM — cheap, exact, no hallucination.
+                </p>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={recencyEnabled}
+                      onChange={(e) => setRecencyEnabled(e.target.checked)}
+                    />
+                    <span className="w-48">Last post within last</span>
+                    <input
+                      type="number"
+                      min={1}
+                      disabled={!recencyEnabled}
+                      value={recencyDays}
+                      onChange={(e) => setRecencyDays(Number(e.target.value))}
+                      className="w-24 rounded-md border bg-background px-2 py-1 text-sm disabled:opacity-50"
+                    />
+                    <span className="text-muted-foreground">days</span>
+                  </label>
+                  <label className="flex items-center gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={minFollowersEnabled}
+                      onChange={(e) => setMinFollowersEnabled(e.target.checked)}
+                    />
+                    <span className="w-48">Minimum followers</span>
+                    <input
+                      type="number"
+                      min={0}
+                      disabled={!minFollowersEnabled}
+                      value={minFollowers}
+                      onChange={(e) => setMinFollowers(Number(e.target.value))}
+                      className="w-28 rounded-md border bg-background px-2 py-1 text-sm disabled:opacity-50"
+                    />
+                  </label>
+                  <label className="flex items-center gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={minVideoCountEnabled}
+                      onChange={(e) => setMinVideoCountEnabled(e.target.checked)}
+                    />
+                    <span className="w-48">Minimum videos on profile</span>
+                    <input
+                      type="number"
+                      min={0}
+                      disabled={!minVideoCountEnabled}
+                      value={minVideoCount}
+                      onChange={(e) => setMinVideoCount(Number(e.target.value))}
+                      className="w-24 rounded-md border bg-background px-2 py-1 text-sm disabled:opacity-50"
+                    />
+                  </label>
+                </div>
+              </div>
+
               <textarea
                 className="min-h-20 rounded-md border bg-background px-3 py-2 text-sm md:col-span-2"
                 placeholder="Notes / instructions for AI (optional)"
@@ -271,6 +357,18 @@ export default function AiFilterPage() {
                         <p className="mt-1 text-xs text-muted-foreground">
                           Target: {toCsv(c.targetKeywords) || "none"} · Avoid:{" "}
                           {toCsv(c.avoidKeywords) || "none"}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Pre-filter:{" "}
+                          {c.maxDaysSinceLastPost != null
+                            ? `≤${c.maxDaysSinceLastPost}d since last post`
+                            : "recency off"}
+                          {c.minFollowers != null
+                            ? ` · ≥${c.minFollowers.toLocaleString()} followers`
+                            : ""}
+                          {c.minVideoCount != null
+                            ? ` · ≥${c.minVideoCount} videos`
+                            : ""}
                         </p>
                         {c.notes && (
                           <p className="mt-1 text-xs text-muted-foreground italic">

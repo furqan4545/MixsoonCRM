@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { encrypt } from "@/app/lib/crypto";
 import { getSmtpTransport } from "@/app/lib/email";
+import { notifyPaymentsTeam } from "@/app/lib/notifications";
 
 // POST /api/portal/submit-content — Public (token-based): submit video links + optional payment
 export async function POST(request: Request) {
@@ -190,7 +191,8 @@ export async function POST(request: Request) {
       },
     });
 
-    // 7. Bell notification for admins
+    // 7. Bell notifications
+    // Broadcast content-submission notice (unchanged, visible to all)
     await prisma.notification.create({
       data: {
         type: "content_submitted",
@@ -199,6 +201,17 @@ export async function POST(request: Request) {
         message: activityDetail,
       },
     });
+
+    // If bank details were submitted, also fan-out a finance-scoped alert
+    // so only users with payments.write see it in their bell.
+    if (shouldIncludePayment && bankDetails) {
+      await notifyPaymentsTeam({
+        type: "payment_submitted",
+        status: "info",
+        title: `Payment details submitted — ${influencerName}`,
+        message: `@${tokenRecord.influencer.username} submitted bank details. Ready to create a payment record.`,
+      });
+    }
 
     // 8. Email alert
     try {

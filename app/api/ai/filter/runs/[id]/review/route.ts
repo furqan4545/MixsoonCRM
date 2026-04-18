@@ -54,8 +54,9 @@ export async function POST(
               videos: {
                 take: 20,
                 orderBy: { uploadedAt: "desc" },
-                select: { title: true, views: true },
+                select: { title: true, views: true, uploadedAt: true },
               },
+              _count: { select: { videos: true } },
             },
           },
         },
@@ -71,6 +72,7 @@ export async function POST(
             phone: evalRow.influencer.phone,
             socialLinks: evalRow.influencer.socialLinks,
             videos: evalRow.influencer.videos,
+            totalVideoCount: evalRow.influencer._count.videos,
           };
           const campaignCtx = {
             campaignName: run.campaign.name,
@@ -78,6 +80,9 @@ export async function POST(
             targetKeywords: run.campaign.targetKeywords,
             avoidKeywords: run.campaign.avoidKeywords,
             strictness: run.strictness,
+            maxDaysSinceLastPost: run.campaign.maxDaysSinceLastPost,
+            minFollowers: run.campaign.minFollowers,
+            minVideoCount: run.campaign.minVideoCount,
           };
           const pre = runPreFilter(influencerCtx, campaignCtx);
           const ai = await scoreWithGemini(influencerCtx, campaignCtx, pre);

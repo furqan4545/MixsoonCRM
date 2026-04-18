@@ -42,14 +42,32 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, notes, strictnessDefault, targetKeywords, avoidKeywords } =
-      body as {
-        name?: string;
-        notes?: string | null;
-        strictnessDefault?: number;
-        targetKeywords?: string[];
-        avoidKeywords?: string[];
-      };
+    const {
+      name,
+      notes,
+      strictnessDefault,
+      targetKeywords,
+      avoidKeywords,
+      maxDaysSinceLastPost,
+      minFollowers,
+      minVideoCount,
+    } = body as {
+      name?: string;
+      notes?: string | null;
+      strictnessDefault?: number;
+      targetKeywords?: string[];
+      avoidKeywords?: string[];
+      maxDaysSinceLastPost?: number | null;
+      minFollowers?: number | null;
+      minVideoCount?: number | null;
+    };
+
+    const normalizePositiveInt = (v: unknown): number | null => {
+      if (v === null || v === "") return null;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return Math.floor(n);
+    };
 
     const campaign = await prisma.campaign.update({
       where: { id },
@@ -75,6 +93,15 @@ export async function PATCH(
           ? {
               avoidKeywords: avoidKeywords.map((k) => k.trim()).filter(Boolean),
             }
+          : {}),
+        ...(maxDaysSinceLastPost !== undefined
+          ? { maxDaysSinceLastPost: normalizePositiveInt(maxDaysSinceLastPost) }
+          : {}),
+        ...(minFollowers !== undefined
+          ? { minFollowers: normalizePositiveInt(minFollowers) }
+          : {}),
+        ...(minVideoCount !== undefined
+          ? { minVideoCount: normalizePositiveInt(minVideoCount) }
           : {}),
       },
     });

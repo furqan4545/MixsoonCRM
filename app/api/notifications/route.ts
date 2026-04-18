@@ -1,13 +1,20 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
 import { prisma } from "../../lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 500;
 
+// Scope: current user's personal notifications OR broadcast (userId IS NULL).
+function scopeWhere(userId: string): Prisma.NotificationWhereInput {
+  return { OR: [{ userId }, { userId: null }] };
+}
+
 export async function GET(request: NextRequest) {
+  let user;
   try {
-    await requirePermission("notifications", "read");
+    user = await requirePermission("notifications", "read");
   } catch {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -23,13 +30,19 @@ export async function GET(request: NextRequest) {
     );
     const unreadOnly = searchParams.get("unreadOnly") === "true";
 
+    const where: Prisma.NotificationWhereInput = unreadOnly
+      ? { AND: [scopeWhere(user.id), { read: false }] }
+      : scopeWhere(user.id);
+
     const [notifications, unreadCount] = await Promise.all([
       prisma.notification.findMany({
-        where: unreadOnly ? { read: false } : undefined,
+        where,
         orderBy: { createdAt: "desc" },
         take: limit,
       }),
-      prisma.notification.count({ where: { read: false } }),
+      prisma.notification.count({
+        where: { AND: [scopeWhere(user.id), { read: false }] },
+      }),
     ]);
 
     return NextResponse.json({ notifications, unreadCount });
@@ -47,14 +60,15 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH() {
+  let user;
   try {
-    await requirePermission("notifications", "write");
+    user = await requirePermission("notifications", "write");
   } catch {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   try {
     await prisma.notification.updateMany({
-      where: {},
+      where: scopeWhere(user.id),
       data: { read: true },
     });
     return NextResponse.json({ ok: true });
@@ -65,13 +79,15 @@ export async function PATCH() {
 }
 
 export async function DELETE() {
+  let user;
   try {
-    await requirePermission("notifications", "write");
+    user = await requirePermission("notifications", "write");
   } catch {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   try {
-    await prisma.notification.deleteMany({});
+    // Only delete this user's personal notifications + broadcasts they see.
+    await prisma.notification.deleteMany({ where: scopeWhere(user.id) });
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[DELETE /api/notifications]", error);

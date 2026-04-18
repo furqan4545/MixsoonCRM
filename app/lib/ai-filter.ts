@@ -7,6 +7,10 @@ interface CampaignContext {
   targetKeywords: string[];
   avoidKeywords: string[];
   strictness: number;
+  // Deterministic pre-filters. Null/undefined = disabled.
+  maxDaysSinceLastPost?: number | null;
+  minFollowers?: number | null;
+  minVideoCount?: number | null;
 }
 
 interface InfluencerContext {
@@ -16,11 +20,17 @@ interface InfluencerContext {
   email: string | null;
   phone: string | null;
   socialLinks: string | null;
-  videos: { title: string | null; views: number | null }[];
+  videos: { title: string | null; views: number | null; uploadedAt: Date | null }[];
+  totalVideoCount?: number; // true count; falls back to videos.length when omitted
 }
 
 export type PreFilterResult = {
-  label: "NONE" | "LIKELY_RELEVANT" | "NO_KEYWORD_MATCH" | "REVIEW_QUEUE";
+  label:
+    | "NONE"
+    | "LIKELY_RELEVANT"
+    | "NO_KEYWORD_MATCH"
+    | "REVIEW_QUEUE"
+    | "DETERMINISTIC_REJECTED";
   matchedTarget: string[];
   matchedAvoid: string[];
   shouldRunAi: boolean;
@@ -48,10 +58,59 @@ function compileCorpus(input: InfluencerContext): string {
     .toLowerCase();
 }
 
+function rejectDeterministic(reason: string): PreFilterResult {
+  return {
+    label: "DETERMINISTIC_REJECTED",
+    matchedTarget: [],
+    matchedAvoid: [],
+    shouldRunAi: false,
+    reason,
+  };
+}
+
 export function runPreFilter(
   influencer: InfluencerContext,
   campaign: CampaignContext,
 ): PreFilterResult {
+  // Deterministic rules run first — cheap rejection, no LLM call.
+  if (
+    campaign.minFollowers != null &&
+    (influencer.followers ?? 0) < campaign.minFollowers
+  ) {
+    return rejectDeterministic(
+      `Below follower threshold (${influencer.followers ?? 0} < ${campaign.minFollowers}).`,
+    );
+  }
+
+  const videoCount = influencer.totalVideoCount ?? influencer.videos.length;
+  if (campaign.minVideoCount != null && videoCount < campaign.minVideoCount) {
+    return rejectDeterministic(
+      `Below video-count threshold (${videoCount} < ${campaign.minVideoCount}).`,
+    );
+  }
+
+  if (campaign.maxDaysSinceLastPost != null) {
+    const latest = influencer.videos.reduce<Date | null>((max, v) => {
+      if (!v.uploadedAt) return max;
+      return !max || v.uploadedAt > max ? v.uploadedAt : max;
+    }, null);
+
+    if (!latest) {
+      return rejectDeterministic(
+        `No dated posts on profile (recency filter requires last post within ${campaign.maxDaysSinceLastPost} days).`,
+      );
+    }
+
+    const daysSince = Math.floor(
+      (Date.now() - latest.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    if (daysSince > campaign.maxDaysSinceLastPost) {
+      return rejectDeterministic(
+        `Last post was ${daysSince} days ago (max ${campaign.maxDaysSinceLastPost}).`,
+      );
+    }
+  }
+
   const hasFilters =
     campaign.targetKeywords.length > 0 || campaign.avoidKeywords.length > 0;
   if (!hasFilters) {

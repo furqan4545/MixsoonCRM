@@ -23,6 +23,9 @@ type CampaignContext = {
   targetKeywords: string[];
   avoidKeywords: string[];
   strictness: number;
+  maxDaysSinceLastPost: number | null;
+  minFollowers: number | null;
+  minVideoCount: number | null;
 };
 
 type InfluencerWithVideos = Awaited<
@@ -32,8 +35,9 @@ type InfluencerWithVideos = Awaited<
         videos: {
           take: number;
           orderBy: { uploadedAt: "desc" };
-          select: { title: true; views: true };
+          select: { title: true; views: true; uploadedAt: true };
         };
+        _count: { select: { videos: true } };
       };
     }>
   >
@@ -84,6 +88,7 @@ async function runAiFilterBackground(params: {
           phone: influencer.phone,
           socialLinks: influencer.socialLinks,
           videos: influencer.videos,
+          totalVideoCount: influencer._count.videos,
         },
         campaignContext,
       );
@@ -297,8 +302,9 @@ export async function POST(request: NextRequest) {
         videos: {
           take: 20,
           orderBy: { uploadedAt: "desc" },
-          select: { title: true, views: true },
+          select: { title: true, views: true, uploadedAt: true },
         },
+        _count: { select: { videos: true } },
       },
       orderBy: { username: "asc" },
     });
@@ -339,6 +345,9 @@ export async function POST(request: NextRequest) {
       avoidKeywords:
         overrideAvoid.length > 0 ? overrideAvoid : campaign.avoidKeywords,
       strictness: resolvedStrictness,
+      maxDaysSinceLastPost: campaign.maxDaysSinceLastPost,
+      minFollowers: campaign.minFollowers,
+      minVideoCount: campaign.minVideoCount,
     };
 
     after(() =>
