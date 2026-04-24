@@ -4,6 +4,7 @@
 import type { AnalysisMode } from "@prisma/client";
 import { logApiUsage, estimateGeminiCost, estimateTokensFromText } from "./usage-tracking";
 import { checkBudgetOrThrow, BudgetExceededError } from "./budget-guard";
+import { isGcsUrl, readGcsImage } from "./gcs-media";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -148,26 +149,66 @@ async function callGeminiVision(
   if (!apiKey) throw new Error("GEMINI_API_KEY is missing");
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-  // Download images and convert to base64
+  // Download images and convert to base64.
+  // Supports both HTTP(S) URLs and gcs:// URIs — avatars are cached to GCS at
+  // scrape time to avoid TikTok's expiring signed URLs, so most imageUrls here
+  // will be gcs:// which Node's fetch() can't handle directly.
   const imageParts: { inlineData: { mimeType: string; data: string } }[] = [];
+  const skipReasons: string[] = [];
 
   for (const url of imageUrls) {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-      if (!res.ok) continue;
-      const buffer = await res.arrayBuffer();
+      let buffer: ArrayBuffer | null = null;
+      let contentType = "image/jpeg";
+
+      if (isGcsUrl(url)) {
+        const img = await readGcsImage(url);
+        if (!img) {
+          skipReasons.push(`gcs-not-found:${url.slice(0, 80)}`);
+          continue;
+        }
+        buffer = img.body;
+        contentType = img.contentType;
+      } else {
+        const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        if (!res.ok) {
+          skipReasons.push(`http-${res.status}:${url.slice(0, 80)}`);
+          continue;
+        }
+        buffer = await res.arrayBuffer();
+        contentType = res.headers.get("content-type") || "image/jpeg";
+      }
+
+      // Gemini Vision supports: image/png, image/jpeg, image/webp, image/heic, image/heif
+      // Normalize weird/missing content-types by sniffing magic bytes.
+      const u8 = new Uint8Array(buffer);
+      if (u8[0] === 0xff && u8[1] === 0xd8) contentType = "image/jpeg";
+      else if (u8[0] === 0x89 && u8[1] === 0x50) contentType = "image/png";
+      else if (
+        u8.length >= 12 &&
+        String.fromCharCode(u8[0], u8[1], u8[2], u8[3]) === "RIFF" &&
+        String.fromCharCode(u8[8], u8[9], u8[10], u8[11]) === "WEBP"
+      ) contentType = "image/webp";
+      else if (
+        u8.length >= 12 &&
+        String.fromCharCode(u8[4], u8[5], u8[6], u8[7]) === "ftyp"
+      ) contentType = "image/heic";
+
       const base64 = Buffer.from(buffer).toString("base64");
-      const contentType = res.headers.get("content-type") || "image/jpeg";
       imageParts.push({
         inlineData: { mimeType: contentType, data: base64 },
       });
-    } catch {
-      // Skip failed image downloads
+    } catch (e) {
+      skipReasons.push(`err:${(e as Error).message?.slice(0, 80)}`);
       continue;
     }
   }
 
   if (imageParts.length === 0) {
+    console.error(
+      `[Gemini Vision] No images could be downloaded from ${imageUrls.length} URL(s). Reasons:`,
+      skipReasons,
+    );
     throw new Error("No images could be downloaded");
   }
 
@@ -774,15 +815,20 @@ export async function scrapeComments(
   const apiKey = process.env.APIFY_API_KEY;
   if (!apiKey) throw new Error("APIFY_API_KEY is missing");
 
-  // Filter to actual video URLs (must contain /video/), fall back to profile URL
+  // Filter to actual video URLs (must contain /video/). The clockworks comment
+  // scraper does NOT accept profile URLs — sending one causes the actor run to
+  // FAIL. If we have no video URLs, skip cleanly and return empty.
   const actualVideoUrls = videoUrls.filter((u) => u.includes("/video/"));
   const selectedVideos = actualVideoUrls.slice(0, config.videosToSample);
 
-  // If we have no video URLs, construct a profile URL so the actor can find videos
-  const postURLs =
-    selectedVideos.length > 0
-      ? selectedVideos
-      : [`https://www.tiktok.com/@${username}`];
+  if (selectedVideos.length === 0) {
+    console.warn(
+      `[Comment Scraper] No video URLs for @${username} (out of ${videoUrls.length} stored URLs). Skipping comment scrape — analytics will run without comments.`,
+    );
+    return [];
+  }
+
+  const postURLs = selectedVideos;
 
   console.log(
     `[Comment Scraper] Scraping comments for @${username}: ${postURLs.length} URLs, ${config.commentsPerVideo} per post`,
@@ -831,7 +877,11 @@ export async function scrapeComments(
       break;
     }
     if (status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT") {
-      throw new Error(`Comment scraping ${status}`);
+      const reason =
+        (statusData.statusMessage as string | undefined) ??
+        (statusData.meta?.origin as string | undefined) ??
+        "(no reason from Apify)";
+      throw new Error(`Comment scraping ${status}: ${reason}`);
     }
 
     onProgress?.(0, config.maxTotalComments);

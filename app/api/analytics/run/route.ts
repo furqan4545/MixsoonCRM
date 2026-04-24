@@ -126,14 +126,19 @@ export async function runAnalysisPipeline(params: {
         },
       );
     } catch (err) {
-      console.error("[Analytics] Comment scraping failed:", err);
+      // Graceful degradation: comment scraping failure (bad Apify token, rotated key,
+      // Apify outage, actor FAILED, etc.) should NOT kill the whole analytics run.
+      // Continue with empty comments — downstream NLP will skip comment-based metrics
+      // and analytics will still produce profile/video-based insights.
+      const reason = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[Analytics] Comment scraping failed, continuing without comments: ${reason}`,
+      );
       await updateRunStatus(runId, {
-        status: "FAILED",
-        progress: 5,
-        progressMsg: "Comment scraping failed",
-        errorMessage: `Comment scraping failed: ${err instanceof Error ? err.message : String(err)}`,
+        progress: 30,
+        progressMsg: `Comment scraping skipped (${reason}) — continuing analysis`,
       });
-      return;
+      scrapedComments = [];
     }
 
     // ── Low comments: warn but continue — analyze whatever is available ──

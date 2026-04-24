@@ -55,14 +55,19 @@ interface ApifyItem {
   views?: number;
   bookmarks?: number;
   uploadedAtFormatted?: string;
-  video?: ApifyVideo;
-  // Video identification fields (varies by scraper)
+  video?: ApifyVideo & { id?: string | number };
+  // Video identification fields (varies by scraper).
+  // IMPORTANT: Apify returns IDs as BIGINT-like numbers (e.g. 7593047111055281440)
+  // NOT strings. Always coerce with String() before using.
   webVideoUrl?: string;
   videoUrl?: string;
   url?: string;
-  id?: string;
-  itemId?: string;
-  aweme_id?: string;
+  id?: string | number;
+  itemId?: string | number;
+  item_id?: string | number;
+  videoId?: string | number;
+  aweme_id?: string | number;
+  postPage?: { itemInfo?: { itemStruct?: { id?: string | number } } };
 }
 
 /** xtdata profile scraper returns TikTok's raw internal API format */
@@ -1076,17 +1081,21 @@ export async function POST(request: NextRequest) {
           let processedCount = 0;
           let totalVideosWritten = 0;
 
-          for (const [username, data] of influencerMap) {
+          // Parallelize per-username DB writes & processing. Each username's work
+          // is independent (separate influencer row, separate videos), so we can
+          // run `concurrency` of them at once. Same concurrency as Apify batches.
+          const influencerEntries = Array.from(influencerMap.entries());
+          await runWithConcurrency(influencerEntries, concurrency, async ([username, data]) => {
             // Skip influencers with 0 videos — empty/dead accounts
             if (data.videos.length === 0 && !data.profile) {
               console.log(`[Scrape] Skipping @${username} — no videos, no profile data`);
               processedCount++;
-              continue;
+              return;
             }
             if (data.videos.length === 0) {
               console.log(`[Scrape] Skipping @${username} — 0 videos (empty/private account)`);
               processedCount++;
-              continue;
+              return;
             }
 
             const allItems = data.profile
@@ -1361,12 +1370,40 @@ export async function POST(request: NextRequest) {
               const videoData = await Promise.all(
                 data.videos.map(async (v) => {
                   const thumbnailUrl = v.video?.cover ?? null;
-                  // Extract TikTok video ID from various possible field names
-                  const tiktokId = (v.id ?? v.itemId ?? v.aweme_id ?? null) as string | null;
+                  // Extract TikTok video ID. Apify returns IDs as BIGINT-like numbers
+                  // (e.g. 7593047111055281440). Must coerce with String() or Prisma
+                  // silently drops the value (schema expects String?). This was the
+                  // root cause of ~87% of videos having null tiktokId/videoUrl.
+                  const idCandidates = [
+                    v.id,
+                    v.itemId,
+                    v.item_id,
+                    v.videoId,
+                    v.aweme_id,
+                    v.video?.id,
+                    v.postPage?.itemInfo?.itemStruct?.id,
+                  ];
+                  let tiktokId: string | null = null;
+                  for (const c of idCandidates) {
+                    if (c !== null && c !== undefined && c !== "") {
+                      tiktokId = String(c);
+                      break;
+                    }
+                  }
                   // Build video URL: use provided URL or construct from username + ID
-                  let videoUrl = (v.webVideoUrl ?? v.videoUrl ?? v.url ?? null) as string | null;
+                  let videoUrl: string | null =
+                    (typeof v.webVideoUrl === "string" && v.webVideoUrl) ||
+                    (typeof v.videoUrl === "string" && v.videoUrl) ||
+                    (typeof v.url === "string" && v.url) ||
+                    null;
                   if (!videoUrl && tiktokId && username) {
                     videoUrl = `https://www.tiktok.com/@${username}/video/${tiktokId}`;
+                  }
+                  if (!tiktokId && !videoUrl) {
+                    console.warn(
+                      `[VIDEO-EXTRACT] @${username} video missing both id+url. Available keys:`,
+                      Object.keys(v as object).join(", "),
+                    );
                   }
 
                   return {
@@ -1395,6 +1432,8 @@ export async function POST(request: NextRequest) {
                     title: true,
                     uploadedAt: true,
                     thumbnailUrl: true,
+                    tiktokId: true,
+                    videoUrl: true,
                   },
                 });
                 const incomingByKey = new Map(
@@ -1410,27 +1449,47 @@ export async function POST(request: NextRequest) {
                   ),
                 );
 
-                // Refresh thumbnails for already-existing videos so old expiring TikTok URLs
-                // get replaced with current (GCS-cached) URLs even when no new slots are available.
-                const thumbUpdates = existingVideos
+                // Refresh thumbnails + backfill tiktokId/videoUrl on existing rows.
+                // BUGFIX: before, rescrape only updated thumbnailUrl, so rows stored
+                // with null tiktokId/videoUrl (older scrapes, different actor shape)
+                // stayed broken forever — which broke comment scraping in analytics.
+                // Now we backfill identification fields whenever we have them.
+                const rowUpdates = existingVideos
                   .map((v) => {
                     const key = `${v.title ?? ""}|${v.uploadedAt?.toISOString() ?? ""}`;
                     const incoming = incomingByKey.get(key);
-                    if (!incoming?.thumbnailUrl) return null;
-                    if (incoming.thumbnailUrl === v.thumbnailUrl) return null;
-                    return { id: v.id, thumbnailUrl: incoming.thumbnailUrl };
+                    if (!incoming) return null;
+                    const patch: {
+                      thumbnailUrl?: string;
+                      tiktokId?: string;
+                      videoUrl?: string;
+                    } = {};
+                    if (
+                      incoming.thumbnailUrl &&
+                      incoming.thumbnailUrl !== v.thumbnailUrl
+                    ) {
+                      patch.thumbnailUrl = incoming.thumbnailUrl;
+                    }
+                    if (!v.tiktokId && incoming.tiktokId) {
+                      patch.tiktokId = incoming.tiktokId;
+                    }
+                    if (!v.videoUrl && incoming.videoUrl) {
+                      patch.videoUrl = incoming.videoUrl;
+                    }
+                    if (Object.keys(patch).length === 0) return null;
+                    return { id: v.id, patch };
                   })
                   .filter(
-                    (u): u is { id: string; thumbnailUrl: string } =>
+                    (u): u is { id: string; patch: Record<string, string> } =>
                       u !== null,
                   );
 
-                if (thumbUpdates.length > 0) {
+                if (rowUpdates.length > 0) {
                   await prisma.$transaction(
-                    thumbUpdates.map((u) =>
+                    rowUpdates.map((u) =>
                       prisma.video.update({
                         where: { id: u.id },
-                        data: { thumbnailUrl: u.thumbnailUrl },
+                        data: u.patch,
                       }),
                     ),
                   );
@@ -1466,7 +1525,7 @@ export async function POST(request: NextRequest) {
               total: totalToProcess,
               username,
             });
-          }
+          });
 
           const skippedNotRescraped = refreshSkippedProfiles
             ? 0
