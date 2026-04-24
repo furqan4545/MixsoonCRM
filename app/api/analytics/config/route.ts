@@ -19,7 +19,6 @@ export async function PUT(request: NextRequest) {
   const allowedFields = [
     "videosToSample",
     "commentsPerVideo",
-    "maxTotalComments",
     "avatarsToAnalyze",
     "commentBatchSize",
     "defaultMode",

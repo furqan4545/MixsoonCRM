@@ -12,6 +12,7 @@ import {
   LogOut,
   Megaphone,
   Package,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -21,6 +22,10 @@ import {
   UserCog,
   Users,
 } from "lucide-react";
+import { ScrapingSettingsDialog } from "@/components/scraping-settings-dialog";
+import {
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
@@ -201,6 +206,7 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { isMobile } = useSidebar();
   const { data: session } = useSession();
+  const [scrapingSettingsOpen, setScrapingSettingsOpen] = useState(false);
   const permissions = session?.user?.permissions ?? [];
   const showUserManagement = hasPermission(permissions, "users", "write");
   const canSeeApprovals = canSeeNavItem("/approvals", permissions);
@@ -356,6 +362,13 @@ export function AppSidebar() {
                   sideOffset={4}
                 >
                   <DropdownMenuItem
+                    onClick={() => setScrapingSettingsOpen(true)}
+                  >
+                    <Settings2 />
+                    Scraping settings
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
                     onClick={() => signOut({ callbackUrl: "/login" })}
                   >
                     <LogOut />
@@ -368,6 +381,10 @@ export function AppSidebar() {
         )}
       </SidebarFooter>
       <SidebarRail />
+      <ScrapingSettingsDialog
+        open={scrapingSettingsOpen}
+        onOpenChange={setScrapingSettingsOpen}
+      />
     </Sidebar>
   );
 }

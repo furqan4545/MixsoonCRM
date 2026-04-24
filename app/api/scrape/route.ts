@@ -4,6 +4,8 @@ import { prisma } from "../../lib/prisma";
 import { logApiUsage } from "../../lib/usage-tracking";
 import { processGcsSave } from "../../lib/gcs-save";
 import { checkBudgetOrThrow, BudgetExceededError } from "@/app/lib/budget-guard";
+import { getScrapingConcurrency } from "@/app/lib/scraping-config";
+import { runWithConcurrency } from "@/app/lib/concurrency";
 // ELD (Efficient Language Detector) — NLP-based, neural n-gram detector, 60 languages
 // Loaded lazily since it needs async init
 let _eld: typeof import("eld").default | null = null;
@@ -122,33 +124,6 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Runs `fn` over `items` with at most `concurrency` in flight.
- * Preserves output order. No external deps.
- */
-async function runWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  const poolSize = Math.max(1, Math.min(concurrency, items.length));
-  let cursor = 0;
-  const workers = Array.from({ length: poolSize }, async () => {
-    while (true) {
-      const idx = cursor++;
-      if (idx >= items.length) return;
-      results[idx] = await fn(items[idx], idx);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
-
-function clampConcurrency(n: unknown, fallback = 10): number {
-  const v = typeof n === "number" && Number.isFinite(n) ? Math.floor(n) : fallback;
-  return Math.max(1, Math.min(50, v));
-}
 
 function normalizeUsername(value: string | undefined | null): string | null {
   if (!value || typeof value !== "string") return null;
@@ -721,7 +696,6 @@ export async function POST(request: NextRequest) {
       videoCount: requestedVideoCount,
       refreshSkippedProfiles = false,
       runAnalysis = false,
-      concurrency: requestedConcurrency,
     } = body as {
       importId: string;
       toScrape?: string[];
@@ -730,9 +704,9 @@ export async function POST(request: NextRequest) {
       videoCount?: number;
       refreshSkippedProfiles?: boolean;
       runAnalysis?: boolean;
-      concurrency?: number;
     };
-    const concurrency = clampConcurrency(requestedConcurrency, 10);
+    // Global Apify concurrency — set in the sidebar profile → Scraping settings dialog.
+    const concurrency = await getScrapingConcurrency();
 
     importId = id;
 

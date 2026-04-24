@@ -63,7 +63,6 @@ export async function POST(request: NextRequest) {
           config: {
             videosToSample: config.videosToSample,
             commentsPerVideo: config.commentsPerVideo,
-            maxTotalComments: config.maxTotalComments,
             avatarsToAnalyze: config.avatarsToAnalyze,
             commentBatchSize: config.commentBatchSize,
           },

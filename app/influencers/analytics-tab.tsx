@@ -16,8 +16,14 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
-import { BarChart3, Loader2, Settings2, Play, RefreshCw } from "lucide-react";
+import { BarChart3, HelpCircle, Loader2, Settings2, Play, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import {
+  Tooltip as UITooltip,
+  TooltipContent as UITooltipContent,
+  TooltipProvider as UITooltipProvider,
+  TooltipTrigger as UITooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -797,14 +803,22 @@ export default function AnalyticsTab({
 
 // ─── Config Panel ───────────────────────────────────────────
 
+// Auto-size Gemini NLP batch from commentsPerVideo.
+// One batch ≈ one video's worth of comments, capped at 100 for token safety.
+function suggestedBatchSize(commentsPerVideo: number): number {
+  return Math.max(10, Math.min(100, commentsPerVideo));
+}
+
 function ConfigPanel({ onClose }: { onClose: () => void }) {
   const [config, setConfig] = useState({
     videosToSample: 20,
     commentsPerVideo: 50,
-    maxTotalComments: 1000,
     avatarsToAnalyze: 100,
-    commentBatchSize: 200,
+    commentBatchSize: 50,
   });
+  // Per-field raw string buffer for in-progress typing. Lets the field go
+  // empty without snapping back to "0". Commits to numeric config on blur.
+  const [draft, setDraft] = useState<Partial<Record<keyof typeof config, string>>>({});
   const [saving, setSaving] = useState(false);
   const loadedRef = useRef(false);
 
@@ -815,16 +829,34 @@ function ConfigPanel({ onClose }: { onClose: () => void }) {
     fetch("/api/analytics/config")
       .then((r) => r.json())
       .then((data) => {
+        const cpv = data.commentsPerVideo ?? 50;
         setConfig({
           videosToSample: data.videosToSample ?? 20,
-          commentsPerVideo: data.commentsPerVideo ?? 50,
-          maxTotalComments: data.maxTotalComments ?? 1000,
-          avatarsToAnalyze: data.avatarsToAnalyze ?? 100,
-          commentBatchSize: data.commentBatchSize ?? 200,
+          commentsPerVideo: cpv,
+          // Cap avatars to ≤ commentsPerVideo
+          avatarsToAnalyze: Math.min(data.avatarsToAnalyze ?? 100, cpv),
+          // If not set or out of sync, use suggested value
+          commentBatchSize: data.commentBatchSize ?? suggestedBatchSize(cpv),
         });
       })
       .catch(() => {});
   }, []);
+
+  // When commentsPerVideo changes, auto-update dependent fields.
+  const updateCommentsPerVideo = (nextCpv: number) => {
+    setConfig((prev) => {
+      const totalCommenters = prev.videosToSample * nextCpv;
+      return {
+        ...prev,
+        commentsPerVideo: nextCpv,
+        // Cap avatars at TOTAL commenters (videos × cpv), not just cpv —
+        // commenters come from all videos combined.
+        avatarsToAnalyze: Math.min(prev.avatarsToAnalyze, totalCommenters),
+        // Auto-resize Gemini batch size
+        commentBatchSize: suggestedBatchSize(nextCpv),
+      };
+    });
+  };
 
   const save = async () => {
     setSaving(true);
@@ -843,57 +875,139 @@ function ConfigPanel({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const fields: { key: keyof typeof config; label: string; min: number; max: number }[] = [
-    { key: "videosToSample", label: "Videos to sample", min: 3, max: 50 },
-    { key: "commentsPerVideo", label: "Comments per video", min: 10, max: 200 },
-    { key: "maxTotalComments", label: "Max total comments", min: 100, max: 5000 },
-    { key: "avatarsToAnalyze", label: "Avatars to analyze", min: 10, max: 500 },
-    { key: "commentBatchSize", label: "Comment batch size", min: 50, max: 500 },
+  // Field definitions with tooltips. Avatars cap and batch sizing are enforced
+  // at update-time (see updateCommentsPerVideo) so the max here is a soft hint.
+  const fields: {
+    key: keyof typeof config;
+    label: string;
+    min: number;
+    max: number;
+    help: string;
+  }[] = [
+    {
+      key: "videosToSample",
+      label: "Videos to sample",
+      min: 3,
+      max: 50,
+      help: "How many of the influencer's most-viewed videos to scrape comments from. Total comments = this × Comments per video.",
+    },
+    {
+      key: "commentsPerVideo",
+      label: "Comments per video",
+      min: 10,
+      max: 1000,
+      help: "Max comments scraped per video. This is the ceiling — fewer may be returned. Controls total scrape size and Apify cost.",
+    },
+    {
+      key: "avatarsToAnalyze",
+      label: "Avatars to analyze",
+      min: 10,
+      max: config.videosToSample * config.commentsPerVideo,
+      help: "How many commenter profile pictures to send to Gemini Vision for audience demographics (gender / age / ethnicity). Auto-capped at total commenters (videos × Comments per video).",
+    },
+    {
+      key: "commentBatchSize",
+      label: "Gemini Comment batch size",
+      min: 10,
+      max: 100,
+      help: "How many comments per Gemini NLP call. Auto-sized from Comments per video. Higher = fewer Gemini calls but more tokens per call.",
+    },
   ];
 
   return (
-    <div className="rounded-lg border bg-muted/30 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Analysis Settings
-        </h4>
-        <button
-          onClick={onClose}
-          className="text-xs text-muted-foreground hover:text-foreground"
-        >
-          Close
-        </button>
+    <UITooltipProvider delayDuration={200}>
+      <div className="rounded-lg border bg-muted/30 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Analysis Settings
+          </h4>
+          <button
+            onClick={onClose}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Close
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {fields.map((f) => (
+            <div key={f.key}>
+              <label className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+                {f.label}
+                <UITooltip>
+                  <UITooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={`${f.label} info`}
+                      className="inline-flex h-3 w-3 items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground"
+                    >
+                      <HelpCircle className="h-3 w-3" />
+                    </button>
+                  </UITooltipTrigger>
+                  <UITooltipContent side="top" className="max-w-[240px] text-[11px] leading-snug">
+                    {f.help}
+                  </UITooltipContent>
+                </UITooltip>
+              </label>
+              <input
+                type="number"
+                min={f.min}
+                max={f.max}
+                value={draft[f.key] ?? String(config[f.key])}
+                onChange={(e) => {
+                  // Just buffer the raw string — don't touch config yet.
+                  // This allows the field to be empty or contain a partial
+                  // number while the user is still typing.
+                  setDraft((prev) => ({ ...prev, [f.key]: e.target.value }));
+                }}
+                onBlur={() => {
+                  const raw = draft[f.key];
+                  if (raw === undefined) return;
+                  // Empty / invalid → snap back to min (don't keep empty on save)
+                  const parsed = Number(raw);
+                  const n = Number.isFinite(parsed) && parsed > 0
+                    ? Math.max(f.min, Math.min(f.max, Math.floor(parsed)))
+                    : f.min;
+                  if (f.key === "commentsPerVideo") {
+                    updateCommentsPerVideo(n);
+                  } else if (f.key === "avatarsToAnalyze") {
+                    setConfig((prev) => ({
+                      ...prev,
+                      avatarsToAnalyze: Math.min(
+                        n,
+                        prev.videosToSample * prev.commentsPerVideo,
+                      ),
+                    }));
+                  } else {
+                    setConfig((prev) => ({ ...prev, [f.key]: n }));
+                  }
+                  // Clear draft so the field reflects committed numeric value
+                  setDraft((prev) => {
+                    const next = { ...prev };
+                    delete next[f.key];
+                    return next;
+                  });
+                }}
+                className="mt-1 h-7 w-full rounded border bg-background px-2 text-xs"
+              />
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+          <p className="text-[10px] text-muted-foreground">
+            Total comments ≈ {config.videosToSample * config.commentsPerVideo}
+            {" · "}Avatars capped at {config.videosToSample * config.commentsPerVideo}
+          </p>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex items-center gap-1 rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:bg-foreground/90 disabled:opacity-50"
+          >
+            {saving && <Loader2 className="h-3 w-3 animate-spin" />}
+            Save
+          </button>
+        </div>
       </div>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        {fields.map((f) => (
-          <div key={f.key}>
-            <label className="block text-[10px] font-medium text-muted-foreground">
-              {f.label}
-            </label>
-            <input
-              type="number"
-              min={f.min}
-              max={f.max}
-              value={config[f.key]}
-              onChange={(e) =>
-                setConfig({ ...config, [f.key]: Number(e.target.value) })
-              }
-              className="mt-1 h-7 w-full rounded border bg-background px-2 text-xs"
-            />
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 flex justify-end">
-        <button
-          onClick={save}
-          disabled={saving}
-          className="flex items-center gap-1 rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:bg-foreground/90 disabled:opacity-50"
-        >
-          {saving && <Loader2 className="h-3 w-3 animate-spin" />}
-          Save
-        </button>
-      </div>
-    </div>
+    </UITooltipProvider>
   );
 }
 

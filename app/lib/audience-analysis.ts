@@ -5,13 +5,17 @@ import type { AnalysisMode } from "@prisma/client";
 import { logApiUsage, estimateGeminiCost, estimateTokensFromText } from "./usage-tracking";
 import { checkBudgetOrThrow, BudgetExceededError } from "./budget-guard";
 import { isGcsUrl, readGcsImage } from "./gcs-media";
+import { runWithConcurrency } from "./concurrency";
+
+// Gemini Flash allows ~2000 RPM on paid tier. 10 concurrent = well within limits
+// and gives a ~10× speedup on batched NLP/Vision calls vs. sequential.
+const GEMINI_CONCURRENCY = 10;
 
 // ─── Types ──────────────────────────────────────────────────
 
 export interface AnalysisConfig {
   videosToSample: number;
   commentsPerVideo: number;
-  maxTotalComments: number;
   avatarsToAnalyze: number;
   commentBatchSize: number;
   geminiModel: string;
@@ -20,7 +24,6 @@ export interface AnalysisConfig {
 export const DEFAULT_CONFIG: AnalysisConfig = {
   videosToSample: 20,
   commentsPerVideo: 50,
-  maxTotalComments: 1000,
   avatarsToAnalyze: 100,
   commentBatchSize: 200,
   geminiModel: "gemini-2.5-flash",
@@ -450,12 +453,13 @@ export async function analyzeAudienceComments(
   }
 
   const batchResults: (AudienceNlpResult & { count: number })[] = [];
+  let completedBatches = 0;
 
-  for (let i = 0; i < batches.length; i++) {
-    onProgress?.(i, batches.length);
-
+  // Parallelize with bounded concurrency — was sequential with 1s sleep between
+  // calls, which on a 2500-comment dataset with batchSize=10 took 20+ minutes.
+  await runWithConcurrency(batches, GEMINI_CONCURRENCY, async (batch, i) => {
     try {
-      const prompt = buildNlpPrompt(username, batches[i]);
+      const prompt = buildNlpPrompt(username, batch);
       const rawText = await callGeminiText(prompt, geminiModel);
       const parsed = JSON.parse(rawText);
 
@@ -470,18 +474,16 @@ export async function analyzeAudienceComments(
         sentiment: parsed.sentiment ?? { positive: 25, negative: 25, neutral: 25, humorous: 25 },
         commentTopics: parsed.commentTopics ?? [],
         commentSummary: parsed.commentSummary ?? "",
-        count: batches[i].length,
+        count: batch.length,
       });
     } catch (err) {
       console.error(`[Audience NLP] Batch ${i + 1}/${batches.length} failed:`, err);
       // Continue with other batches — partial results are OK
+    } finally {
+      completedBatches += 1;
+      onProgress?.(completedBatches, batches.length);
     }
-
-    // Rate limiting: 1s between calls
-    if (i < batches.length - 1) {
-      await sleep(1000);
-    }
-  }
+  });
 
   if (batchResults.length === 0) {
     throw new Error("All NLP batches failed");
@@ -654,28 +656,29 @@ export async function analyzeCommenterAvatars(
   ].join("\n");
 
   const allResults: (AvatarAnalysisResult & { count: number })[] = [];
+  let completedVisionBatches = 0;
 
-  for (let i = 0; i < batches.length; i++) {
-    onProgress?.(i, batches.length);
-
+  // Parallelize Vision batches — was sequential with 1.5s sleep between calls.
+  // Vision is slower per call but 10 concurrent is still well under Gemini's
+  // rate limit, and gives ~10× speedup on large avatar sets.
+  await runWithConcurrency(batches, GEMINI_CONCURRENCY, async (batch, i) => {
     try {
-      const rawText = await callGeminiVision(prompt, batches[i], model);
+      const rawText = await callGeminiVision(prompt, batch, model);
       const parsed = JSON.parse(rawText);
 
       allResults.push({
         genderBreakdown: parsed.genderBreakdown ?? { male: 33, female: 33, unknown: 34 },
         ageBrackets: parsed.ageBrackets ?? {},
         ethnicityBreakdown: parsed.ethnicityBreakdown ?? {},
-        count: parsed.totalAnalyzed ?? batches[i].length,
+        count: parsed.totalAnalyzed ?? batch.length,
       });
     } catch (err) {
       console.error(`[Avatar Analysis] Batch ${i + 1}/${batches.length} failed:`, err);
+    } finally {
+      completedVisionBatches += 1;
+      onProgress?.(completedVisionBatches, batches.length);
     }
-
-    if (i < batches.length - 1) {
-      await sleep(1500); // Vision calls are heavier, more delay
-    }
-  }
+  });
 
   if (allResults.length === 0) {
     throw new Error("All avatar analysis batches failed");
@@ -884,11 +887,13 @@ export async function scrapeComments(
       throw new Error(`Comment scraping ${status}: ${reason}`);
     }
 
-    onProgress?.(0, config.maxTotalComments);
+    // Total comments is bounded by videosToSample × commentsPerVideo
+    onProgress?.(0, config.videosToSample * config.commentsPerVideo);
   }
 
-  // Fetch results
-  const datasetUrl = `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apiKey}&limit=${config.maxTotalComments}`;
+  // Fetch results — cap at videosToSample × commentsPerVideo (theoretical max)
+  const totalCap = config.videosToSample * config.commentsPerVideo;
+  const datasetUrl = `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apiKey}&limit=${totalCap}`;
   const dataRes = await fetch(datasetUrl);
   if (!dataRes.ok) {
     throw new Error(`Failed to fetch comment results: ${dataRes.status}`);
@@ -921,6 +926,6 @@ export async function scrapeComments(
   }
 
   console.log(`[Comment Scraper] Parsed ${comments.length} valid comments`);
-  onProgress?.(comments.length, config.maxTotalComments);
-  return comments.slice(0, config.maxTotalComments);
+  onProgress?.(comments.length, totalCap);
+  return comments.slice(0, totalCap);
 }

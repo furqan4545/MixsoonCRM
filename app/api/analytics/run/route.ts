@@ -28,7 +28,6 @@ export async function loadConfig(): Promise<AnalysisConfig & { defaultMode: Anal
   return {
     videosToSample: cfg.videosToSample,
     commentsPerVideo: cfg.commentsPerVideo,
-    maxTotalComments: cfg.maxTotalComments,
     avatarsToAnalyze: cfg.avatarsToAnalyze,
     commentBatchSize: cfg.commentBatchSize,
     geminiModel: cfg.geminiModel,
@@ -430,7 +429,6 @@ export async function POST(request: NextRequest) {
       config: {
         videosToSample: config.videosToSample,
         commentsPerVideo: config.commentsPerVideo,
-        maxTotalComments: config.maxTotalComments,
         avatarsToAnalyze: config.avatarsToAnalyze,
         commentBatchSize: config.commentBatchSize,
       },

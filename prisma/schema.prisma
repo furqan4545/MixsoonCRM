@@ -928,12 +928,19 @@ model AnalysisConfig {
   id                  String   @id @default("default")
   videosToSample      Int      @default(20)
   commentsPerVideo    Int      @default(50)
-  maxTotalComments    Int      @default(1000)
   avatarsToAnalyze    Int      @default(100)
   commentBatchSize    Int      @default(200)
   defaultMode         AnalysisMode @default(HYBRID)
   geminiModel         String   @default("gemini-2.5-flash")
   updatedAt           DateTime @updatedAt
+}
+
+// Global scraping settings — applies platform-wide to all Apify calls
+// (video scraper, profile scraper, comment scraper, etc).
+model ScrapingConfig {
+  id          String   @id @default("default")
+  concurrency Int      @default(10)
+  updatedAt   DateTime @updatedAt
 }
 
 // ─── API USAGE & BILLING ────────────────────────────────

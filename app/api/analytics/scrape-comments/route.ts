@@ -31,7 +31,6 @@ export async function POST(request: NextRequest) {
     ...DEFAULT_CONFIG,
     videosToSample: cfg?.videosToSample ?? DEFAULT_CONFIG.videosToSample,
     commentsPerVideo: cfg?.commentsPerVideo ?? DEFAULT_CONFIG.commentsPerVideo,
-    maxTotalComments: cfg?.maxTotalComments ?? DEFAULT_CONFIG.maxTotalComments,
   };
 
   after(async () => {
