@@ -187,7 +187,7 @@ export async function scoreWithGemini(
     throw new Error("GEMINI_API_KEY is missing");
   }
 
-  const model = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
+  const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const videoList = influencer.videos.slice(0, 15);

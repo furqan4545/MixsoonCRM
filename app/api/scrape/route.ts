@@ -117,6 +117,34 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Runs `fn` over `items` with at most `concurrency` in flight.
+ * Preserves output order. No external deps.
+ */
+async function runWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  const poolSize = Math.max(1, Math.min(concurrency, items.length));
+  let cursor = 0;
+  const workers = Array.from({ length: poolSize }, async () => {
+    while (true) {
+      const idx = cursor++;
+      if (idx >= items.length) return;
+      results[idx] = await fn(items[idx], idx);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+function clampConcurrency(n: unknown, fallback = 10): number {
+  const v = typeof n === "number" && Number.isFinite(n) ? Math.floor(n) : fallback;
+  return Math.max(1, Math.min(50, v));
+}
+
 function normalizeUsername(value: string | undefined | null): string | null {
   if (!value || typeof value !== "string") return null;
   const normalized = value.toLowerCase().trim().replace(/^@/, "");
@@ -688,6 +716,7 @@ export async function POST(request: NextRequest) {
       videoCount: requestedVideoCount,
       refreshSkippedProfiles = false,
       runAnalysis = false,
+      concurrency: requestedConcurrency,
     } = body as {
       importId: string;
       toScrape?: string[];
@@ -696,7 +725,9 @@ export async function POST(request: NextRequest) {
       videoCount?: number;
       refreshSkippedProfiles?: boolean;
       runAnalysis?: boolean;
+      concurrency?: number;
     };
+    const concurrency = clampConcurrency(requestedConcurrency, 10);
 
     importId = id;
 
@@ -872,48 +903,58 @@ export async function POST(request: NextRequest) {
 
           send({
             type: "stage",
-            message: `Running initial scrape for ${normalizedTargetUsernames.length} influencers...`,
+            message: `Running initial scrape for ${normalizedTargetUsernames.length} influencers (concurrency=${concurrency})...`,
           });
-          for (
-            let i = 0;
-            i < normalizedTargetUsernames.length;
-            i += BATCH_SIZE
-          ) {
-            const batch = normalizedTargetUsernames.slice(i, i + BATCH_SIZE);
-            const items = await runApifyForUsernames(batch, videoCount);
-
-            // ── RAW APIFY RESPONSE DEBUG ──
-            // Log the first item's FULL channel object to see all fields Apify returns
-            if (i === 0 && items.length > 0) {
-              const sampleItem = items[0];
-              console.log(`\n[APIFY-RAW-DEBUG] ━━━ First raw item from Apify ━━━`);
-              console.log(`[APIFY-RAW-DEBUG] Top-level keys:`, Object.keys(sampleItem));
-              if (sampleItem.channel) {
-                console.log(`[APIFY-RAW-DEBUG] channel keys:`, Object.keys(sampleItem.channel));
-                console.log(`[APIFY-RAW-DEBUG] channel FULL object:`, JSON.stringify(sampleItem.channel, null, 2));
-              } else {
-                console.log(`[APIFY-RAW-DEBUG] WARNING: No 'channel' key! Full item keys:`, Object.keys(sampleItem));
-                console.log(`[APIFY-RAW-DEBUG] Full first item:`, JSON.stringify(sampleItem, null, 2).slice(0, 3000));
-              }
-              // Also log 2nd and 3rd items if they have different channel structures
-              for (let si = 1; si < Math.min(3, items.length); si++) {
-                const otherItem = items[si];
-                const otherUsername = normalizeUsername(otherItem.channel?.username);
-                if (otherUsername && otherItem.channel) {
-                  console.log(`[APIFY-RAW-DEBUG] Item #${si + 1} (@${otherUsername}) channel keys:`, Object.keys(otherItem.channel));
-                }
-              }
-              send({
-                type: "apify_raw_debug",
-                topLevelKeys: Object.keys(sampleItem),
-                channelKeys: sampleItem.channel ? Object.keys(sampleItem.channel) : [],
-                channelFull: sampleItem.channel ?? null,
-                totalItems: items.length,
-              });
+          {
+            const batches: string[][] = [];
+            for (
+              let i = 0;
+              i < normalizedTargetUsernames.length;
+              i += BATCH_SIZE
+            ) {
+              batches.push(normalizedTargetUsernames.slice(i, i + BATCH_SIZE));
             }
-            // ── END RAW APIFY DEBUG ──
+            let completedBatches = 0;
+            const totalBatches = batches.length;
+            await runWithConcurrency(batches, concurrency, async (batch, batchIdx) => {
+              const items = await runApifyForUsernames(batch, videoCount);
 
-            mergeItemsIntoInfluencerMap(items);
+              // ── RAW APIFY RESPONSE DEBUG ── (only for batch index 0)
+              if (batchIdx === 0 && items.length > 0) {
+                const sampleItem = items[0];
+                console.log(`\n[APIFY-RAW-DEBUG] ━━━ First raw item from Apify ━━━`);
+                console.log(`[APIFY-RAW-DEBUG] Top-level keys:`, Object.keys(sampleItem));
+                if (sampleItem.channel) {
+                  console.log(`[APIFY-RAW-DEBUG] channel keys:`, Object.keys(sampleItem.channel));
+                  console.log(`[APIFY-RAW-DEBUG] channel FULL object:`, JSON.stringify(sampleItem.channel, null, 2));
+                } else {
+                  console.log(`[APIFY-RAW-DEBUG] WARNING: No 'channel' key! Full item keys:`, Object.keys(sampleItem));
+                  console.log(`[APIFY-RAW-DEBUG] Full first item:`, JSON.stringify(sampleItem, null, 2).slice(0, 3000));
+                }
+                for (let si = 1; si < Math.min(3, items.length); si++) {
+                  const otherItem = items[si];
+                  const otherUsername = normalizeUsername(otherItem.channel?.username);
+                  if (otherUsername && otherItem.channel) {
+                    console.log(`[APIFY-RAW-DEBUG] Item #${si + 1} (@${otherUsername}) channel keys:`, Object.keys(otherItem.channel));
+                  }
+                }
+                send({
+                  type: "apify_raw_debug",
+                  topLevelKeys: Object.keys(sampleItem),
+                  channelKeys: sampleItem.channel ? Object.keys(sampleItem.channel) : [],
+                  channelFull: sampleItem.channel ?? null,
+                  totalItems: items.length,
+                });
+              }
+              // ── END RAW APIFY DEBUG ──
+
+              mergeItemsIntoInfluencerMap(items);
+              completedBatches += 1;
+              send({
+                type: "stage",
+                message: `Scrape batches: ${completedBatches}/${totalBatches} complete`,
+              });
+            });
           }
 
           for (let attempt = 1; attempt <= MAX_INFLUENCER_RETRIES; attempt++) {
@@ -924,16 +965,21 @@ export async function POST(request: NextRequest) {
 
             send({
               type: "stage",
-              message: `Retrying incomplete influencers: ${usernamesMissingVideos.length} remaining (attempt ${attempt}/${MAX_INFLUENCER_RETRIES})`,
+              message: `Retrying incomplete influencers: ${usernamesMissingVideos.length} remaining (attempt ${attempt}/${MAX_INFLUENCER_RETRIES}, concurrency=${concurrency})`,
             });
-            for (
-              let i = 0;
-              i < usernamesMissingVideos.length;
-              i += BATCH_SIZE
-            ) {
-              const batch = usernamesMissingVideos.slice(i, i + BATCH_SIZE);
-              const retryItems = await runApifyForUsernames(batch, videoCount);
-              mergeItemsIntoInfluencerMap(retryItems);
+            {
+              const retryBatches: string[][] = [];
+              for (
+                let i = 0;
+                i < usernamesMissingVideos.length;
+                i += BATCH_SIZE
+              ) {
+                retryBatches.push(usernamesMissingVideos.slice(i, i + BATCH_SIZE));
+              }
+              await runWithConcurrency(retryBatches, concurrency, async (batch) => {
+                const retryItems = await runApifyForUsernames(batch, videoCount);
+                mergeItemsIntoInfluencerMap(retryItems);
+              });
             }
 
             // Track which usernames still have 0 videos after this attempt
@@ -969,24 +1015,34 @@ export async function POST(request: NextRequest) {
           try {
             send({
               type: "stage",
-              message: `Enriching profiles for ${normalizedTargetUsernames.length} influencers (fetching bio links)...`,
+              message: `Enriching profiles for ${normalizedTargetUsernames.length} influencers (fetching bio links, concurrency=${concurrency})...`,
             });
-            for (
-              let i = 0;
-              i < normalizedTargetUsernames.length;
-              i += PROFILE_BATCH_SIZE
-            ) {
-              const batch = normalizedTargetUsernames.slice(i, i + PROFILE_BATCH_SIZE);
-              const batchMap = await runApifyProfileScraper(batch);
-              for (const [k, v] of batchMap) {
-                profileDataMap.set(k, v);
+            {
+              const profileBatches: string[][] = [];
+              for (
+                let i = 0;
+                i < normalizedTargetUsernames.length;
+                i += PROFILE_BATCH_SIZE
+              ) {
+                profileBatches.push(
+                  normalizedTargetUsernames.slice(i, i + PROFILE_BATCH_SIZE),
+                );
               }
-              if (i + PROFILE_BATCH_SIZE < normalizedTargetUsernames.length) {
-                send({
-                  type: "stage",
-                  message: `Enriching profiles... (${Math.min(i + PROFILE_BATCH_SIZE, normalizedTargetUsernames.length)}/${normalizedTargetUsernames.length})`,
-                });
-              }
+              let completedProfileBatches = 0;
+              const totalProfileBatches = profileBatches.length;
+              await runWithConcurrency(profileBatches, concurrency, async (batch) => {
+                const batchMap = await runApifyProfileScraper(batch);
+                for (const [k, v] of batchMap) {
+                  profileDataMap.set(k, v);
+                }
+                completedProfileBatches += 1;
+                if (completedProfileBatches < totalProfileBatches) {
+                  send({
+                    type: "stage",
+                    message: `Enriching profiles... (batches ${completedProfileBatches}/${totalProfileBatches})`,
+                  });
+                }
+              });
             }
             console.log(`[PROFILE-SCRAPER] Total enriched profiles: ${profileDataMap.size}/${normalizedTargetUsernames.length}`);
             send({

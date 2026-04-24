@@ -22,7 +22,7 @@ export const DEFAULT_CONFIG: AnalysisConfig = {
   maxTotalComments: 1000,
   avatarsToAnalyze: 100,
   commentBatchSize: 200,
-  geminiModel: "gemini-2.0-flash",
+  geminiModel: "gemini-2.5-flash",
 };
 
 export interface ProfileAnalysisResult {

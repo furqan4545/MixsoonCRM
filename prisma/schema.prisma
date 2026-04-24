@@ -182,7 +182,7 @@ model AiFilterRun {
   okishCount    Int @default(0)
   rejectedCount Int @default(0)
   failedCount   Int @default(0)
-  model         String   @default("gemini-2.0-flash")
+  model         String   @default("gemini-2.5-flash")
   errorMessage  String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -932,7 +932,7 @@ model AnalysisConfig {
   avatarsToAnalyze    Int      @default(100)
   commentBatchSize    Int      @default(200)
   defaultMode         AnalysisMode @default(HYBRID)
-  geminiModel         String   @default("gemini-2.0-flash")
+  geminiModel         String   @default("gemini-2.5-flash")
   updatedAt           DateTime @updatedAt
 }
 

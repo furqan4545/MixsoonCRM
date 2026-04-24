@@ -60,6 +60,7 @@ export default function DataScraperPage() {
   const [file, setFile] = useState<File | null>(null);
   const [usernameLimit, setUsernameLimit] = useState<number>(50);
   const [videoCount, setVideoCount] = useState<number>(20);
+  const [concurrency, setConcurrency] = useState<number>(10);
   const [runAnalysis, setRunAnalysis] = useState(false);
   const [importData, setImportData] = useState<ImportData | null>(null);
   const [uploadResponse, setUploadResponse] = useState<UploadResponse | null>(
@@ -171,6 +172,7 @@ export default function DataScraperPage() {
           videoCount: uploadResponse.videoCount,
           refreshSkippedProfiles,
           runAnalysis,
+          concurrency,
         }),
       });
 
@@ -372,7 +374,7 @@ export default function DataScraperPage() {
               />
             </label>
 
-            <div className="mt-6 grid grid-cols-2 gap-4">
+            <div className="mt-6 grid grid-cols-3 gap-4">
               <div>
                 <label
                   htmlFor="username-limit"
@@ -407,6 +409,30 @@ export default function DataScraperPage() {
                 />
                 <span className="mt-1 block text-xs text-muted-foreground">
                   Thumbnails per influencer
+                </span>
+              </div>
+              <div>
+                <label
+                  htmlFor="concurrency"
+                  className="mb-1 block text-sm font-medium"
+                >
+                  Concurrency
+                </label>
+                <input
+                  id="concurrency"
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={concurrency}
+                  onChange={(e) =>
+                    setConcurrency(
+                      Math.max(1, Math.min(50, Number(e.target.value) || 1)),
+                    )
+                  }
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none"
+                />
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Parallel Apify runs (1–50, default 10)
                 </span>
               </div>
             </div>
