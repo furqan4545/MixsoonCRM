@@ -19,6 +19,7 @@ import {
   Truck,
   Banknote,
   BarChart3,
+  Activity,
   UserCog,
   Users,
 } from "lucide-react";
@@ -67,6 +68,7 @@ const workspaceItems = [
   { title: "Alerts", href: "/alerts", icon: AlertTriangle },
   { title: "Trash", href: "/trash", icon: Trash2 },
   { title: "Billing", href: "/billing", icon: CreditCard },
+  { title: "Monitoring", href: "/monitoring", icon: Activity },
 ];
 
 
@@ -175,6 +177,34 @@ function usePendingPaymentCount(canSee: boolean) {
   return count;
 }
 
+type HealthStatus = "loading" | "ok" | "error";
+
+function useHealthStatus(): HealthStatus {
+  const [status, setStatus] = useState<HealthStatus>("loading");
+
+  const check = useCallback(async () => {
+    try {
+      const res = await fetch("/api/monitoring/health", { cache: "no-store" });
+      if (!res.ok) {
+        setStatus("error");
+        return;
+      }
+      const data = (await res.json()) as { ok?: boolean };
+      setStatus(data.ok ? "ok" : "error");
+    } catch {
+      setStatus("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    check();
+    const id = setInterval(check, 180_000);
+    return () => clearInterval(id);
+  }, [check]);
+
+  return status;
+}
+
 function useViralAlertCount(canSee: boolean) {
   const [count, setCount] = useState(0);
 
@@ -217,6 +247,7 @@ export function AppSidebar() {
   const viralAlertCount = useViralAlertCount(canSeeTracking);
   const canSeePayments = canSeeNavItem("/payments", permissions);
   const pendingPaymentCount = usePendingPaymentCount(canSeePayments);
+  const healthStatus = useHealthStatus();
 
   return (
     <Sidebar collapsible="icon">
@@ -292,6 +323,18 @@ export function AppSidebar() {
                           >
                             {activeAlertCount}
                           </Badge>
+                        ) : null}
+                        {item.href === "/monitoring" ? (
+                          <span
+                            className={`ml-auto h-2 w-2 shrink-0 rounded-full ${
+                              healthStatus === "ok"
+                                ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]"
+                                : healthStatus === "error"
+                                  ? "bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.7)] animate-pulse"
+                                  : "bg-muted-foreground/40"
+                            }`}
+                            aria-label={`Health: ${healthStatus}`}
+                          />
                         ) : null}
                       </Link>
                     </SidebarMenuButton>
