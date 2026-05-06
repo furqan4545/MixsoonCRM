@@ -79,6 +79,7 @@ export default function InfluencersPage() {
       <InfluencersDashboard
         influencers={influencers}
         onRefresh={() => fetchPage(null)}
+        onPatchInfluencers={(patcher) => setInfluencers(patcher)}
       />
       {nextCursor && (
         <div className="flex justify-center px-6 pb-6">

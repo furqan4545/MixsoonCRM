@@ -1725,11 +1725,11 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
       if (!res.ok) throw new Error();
       const user = picUsers?.find((u) => u.id === userId);
       if (user) setPicList((prev) => [...prev, { id: user.id, name: user.name, email: user.email }]);
-      toast.success("PIC assigned");
+      toast.success("Shared with " + (user?.name ?? user?.email ?? "user"));
       setShowPicPicker(false);
       setPicSearch("");
     } catch {
-      toast.error("Failed to assign PIC");
+      toast.error("Failed to share");
     }
   };
 
@@ -1742,9 +1742,9 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
       });
       if (!res.ok) throw new Error();
       setPicList((prev) => prev.filter((p) => p.id !== userId));
-      toast.success("PIC removed");
+      toast.success("Access removed");
     } catch {
-      toast.error("Failed to remove PIC");
+      toast.error("Failed to remove access");
     }
   };
 
@@ -2103,10 +2103,10 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
             </div>
           </section>
 
-          {/* Person in Charge */}
+          {/* Shared with */}
           <section>
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Person in Charge
+              Shared with
             </h3>
             <div className="flex flex-wrap items-center gap-2">
               {picList.map((pic) => (
@@ -2172,7 +2172,7 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
                   className="flex items-center gap-1 rounded-full border border-dashed px-3 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
                 >
                   <Plus className="h-3 w-3" />
-                  Add PIC
+                  Share with…
                 </button>
               )}
             </div>

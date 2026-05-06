@@ -150,6 +150,7 @@ export async function GET(request: NextRequest) {
           aiScore: true,
           savedAt: true,
           createdAt: true,
+          createdById: true,
           importId: true,
           _count: { select: { videos: true, emailMessages: true } },
           // AI evals needed for queue tabs (Approved/Ok-ish/Rejected/Saved)
@@ -165,6 +166,12 @@ export async function GET(request: NextRequest) {
               matchedSignals: true,
               riskSignals: true,
               run: { select: { campaign: { select: { name: true } } } },
+            },
+          },
+          // PIC assignments — needed for "Assigned to" column
+          pics: {
+            select: {
+              user: { select: { id: true, name: true, email: true } },
             },
           },
         },
@@ -222,10 +229,15 @@ export async function GET(request: NextRequest) {
         activityLogs: [],
         campaignAssignments: [],
         analytics: null,
-        pics: [],
+        pics: inf.pics.map((p) => ({
+          id: p.user.id,
+          name: p.user.name,
+          email: p.user.email,
+        })),
         importFilename: null,
         savedAt: inf.savedAt?.toISOString() ?? null,
         createdAt: inf.createdAt.toISOString(),
+        createdById: inf.createdById,
       };
     });
 

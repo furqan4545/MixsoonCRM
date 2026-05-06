@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Search,
   SlidersHorizontal,
@@ -101,6 +102,7 @@ export interface InfluencerRow {
   pics: { id: string; name: string | null; email: string }[];
   savedAt: string | null;
   createdAt: string;
+  createdById: string | null;
 }
 
 function formatNumber(n: number | null): string {
@@ -357,14 +359,137 @@ function Avatar({
   );
 }
 
+function AssignedToCell({
+  pics,
+  influencerId,
+  ownerId,
+  onRemovePic,
+}: {
+  pics: { id: string; name: string | null; email: string }[];
+  influencerId: string;
+  ownerId: string | null;
+  onRemovePic: (influencerId: string, userId: string) => void;
+}) {
+  if (pics.length === 0) {
+    return <span className="text-muted-foreground text-xs">—</span>;
+  }
+  // Owner first, then everyone else
+  const sorted = [...pics].sort((a, b) => {
+    if (a.id === ownerId) return -1;
+    if (b.id === ownerId) return 1;
+    return 0;
+  });
+  const visible = sorted.slice(0, 4);
+  const overflow = sorted.length - visible.length;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          onClick={(e) => e.stopPropagation()}
+          className="flex items-center rounded-md px-1.5 py-1 -mx-1.5 -my-1 hover:bg-accent transition-colors"
+          title={`Assigned to ${pics.length} ${pics.length === 1 ? "person" : "people"} — click to manage`}
+        >
+          <div className="flex -space-x-1.5">
+            {visible.map((p) => {
+              const label = p.name ?? p.email;
+              return (
+                <div
+                  key={p.id}
+                  className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold ring-2 ring-card ${getAvatarColor(label)}`}
+                  title={label}
+                >
+                  {label.charAt(0).toUpperCase()}
+                </div>
+              );
+            })}
+            {overflow > 0 && (
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground ring-2 ring-card">
+                +{overflow}
+              </div>
+            )}
+          </div>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="w-64 p-1"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-2 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Assigned to ({sorted.length})
+        </div>
+        {sorted.map((p) => {
+          const label = p.name ?? p.email;
+          const isOwner = p.id === ownerId;
+          return (
+            <div
+              key={p.id}
+              className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
+            >
+              <div
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${getAvatarColor(label)}`}
+              >
+                {label.charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="flex items-center gap-1.5">
+                  <p className="truncate text-xs font-medium">{p.name ?? "—"}</p>
+                  {isOwner && (
+                    <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+                      Owner
+                    </span>
+                  )}
+                </div>
+                <p className="truncate text-[10px] text-muted-foreground">
+                  {p.email}
+                </p>
+              </div>
+              {isOwner ? (
+                <span
+                  className="shrink-0 text-[10px] text-muted-foreground italic"
+                  title="The owner created this data and can't be unshared"
+                >
+                  locked
+                </span>
+              ) : (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemovePic(influencerId, p.id);
+                  }}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-60 hover:bg-red-100 hover:text-red-700 hover:opacity-100 group-hover:opacity-100"
+                  title={`Unshare with ${label}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 interface Props {
   influencers: InfluencerRow[];
   onRefresh?: () => void;
+  onPatchInfluencers?: (
+    patcher: (prev: InfluencerRow[]) => InfluencerRow[],
+  ) => void;
 }
 
-export function InfluencersDashboard({ influencers, onRefresh }: Props) {
+export function InfluencersDashboard({
+  influencers,
+  onRefresh,
+  onPatchInfluencers,
+}: Props) {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { data: session } = useSession();
+  const currentUserId = session?.user?.id;
+  const currentUserName = session?.user?.name ?? session?.user?.email ?? "me";
   const importIdFilter = searchParams.get("importId");
   const importCsvName = searchParams.get("csv");
   const [deletingImport, setDeletingImport] = useState(false);
@@ -629,44 +754,6 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
     }
   }, [campaigns]);
 
-  // Select by Import
-  const [imports, setImports] = useState<
-    { id: string; sourceFilename: string; rowCount: number }[] | null
-  >(null);
-  const [loadingImports, setLoadingImports] = useState(false);
-
-  const fetchImports = useCallback(async () => {
-    if (imports) return;
-    setLoadingImports(true);
-    try {
-      const res = await fetch("/api/imports");
-      if (res.ok) {
-        const data = await res.json();
-        setImports(data.filter?.((i: { status: string }) => i.status === "COMPLETED") ?? data);
-      }
-    } catch {
-      toast.error("Failed to load imports");
-    } finally {
-      setLoadingImports(false);
-    }
-  }, [imports]);
-
-  const selectByImport = useCallback(
-    async (importId: string) => {
-      try {
-        const res = await fetch(`/api/influencers?importId=${importId}&limit=2000&minimal=true`);
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        const ids = (data.influencers ?? []).map((i: { id: string }) => i.id);
-        setSelectedRows(new Set(ids));
-        toast.info(`Selected ${ids.length} influencers from import`);
-      } catch {
-        toast.error("Failed to load influencers for this import");
-      }
-    },
-    [],
-  );
-
   // PIC assignment
   const [picUsers, setPicUsers] = useState<{ id: string; name: string | null; email: string; role: string }[] | null>(null);
   const [loadingPicUsers, setLoadingPicUsers] = useState(false);
@@ -684,28 +771,78 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
     }
   }, [picUsers]);
 
+  const removePic = useCallback(
+    async (influencerId: string, userId: string) => {
+      // Optimistic — drop locally first
+      onPatchInfluencers?.((prev) =>
+        prev.map((inf) =>
+          inf.id === influencerId
+            ? { ...inf, pics: inf.pics.filter((p) => p.id !== userId) }
+            : inf,
+        ),
+      );
+      detailCacheRef.current.clear();
+
+      try {
+        const res = await fetch("/api/influencers/pics", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ influencerIds: [influencerId], userId }),
+        });
+        if (!res.ok) throw new Error();
+        toast.success("Unshared");
+      } catch {
+        toast.error("Failed to unshare — refreshing");
+        onRefresh?.();
+      }
+    },
+    [onPatchInfluencers, onRefresh],
+  );
+
   const assignPic = useCallback(
     async (userId: string) => {
+      const targetIds = [...selectedRows];
+      const targetUser = picUsers?.find((u) => u.id === userId);
+      if (!targetUser) {
+        toast.error("User not found");
+        return;
+      }
+      const newPic = {
+        id: targetUser.id,
+        name: targetUser.name,
+        email: targetUser.email,
+      };
+
+      // Optimistic update — patch local state immediately, no refetch
+      onPatchInfluencers?.((prev) =>
+        prev.map((inf) => {
+          if (!targetIds.includes(inf.id)) return inf;
+          if (inf.pics.some((p) => p.id === userId)) return inf; // already a PIC
+          return { ...inf, pics: [...inf.pics, newPic] };
+        }),
+      );
+      setSelectedRows(new Set());
+      detailCacheRef.current.clear();
+
       setMoving(true);
       try {
         const res = await fetch("/api/influencers/pics", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ influencerIds: [...selectedRows], userIds: [userId] }),
+          body: JSON.stringify({ influencerIds: targetIds, userIds: [userId] }),
         });
         if (!res.ok) throw new Error();
         const data = await res.json();
         toast.success(data.message);
-        setSelectedRows(new Set());
-        clearDetailCache();
-        onRefresh?.();
       } catch {
-        toast.error("Failed to assign PIC");
+        toast.error("Failed to share — refreshing");
+        // Rollback by refetching authoritative state
+        onRefresh?.();
       } finally {
         setMoving(false);
       }
     },
-    [selectedRows, onRefresh],
+    [selectedRows, picUsers, onPatchInfluencers, onRefresh],
   );
 
   const runAiFilter = useCallback(
@@ -1132,11 +1269,22 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
 
           {/* Bulk actions bar */}
           {selectedRows.size > 0 && (
-            <div className="mb-3 flex items-center gap-2 rounded-lg border bg-accent/50 px-4 py-2">
-              <span className="text-sm font-medium">
-                {selectedRows.size} selected
-              </span>
-              <div className="ml-auto flex items-center gap-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border bg-accent/50 px-4 py-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">
+                  {selectedRows.size} selected
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setSelectedRows(new Set())}
+                >
+                  <X className="h-3 w-3 mr-0.5" />
+                  Clear
+                </Button>
+              </div>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
                 {/* Move to queue buttons — visible when scored influencers are selected */}
                 {selectedEvalIds.length > 0 && (
                   <>
@@ -1209,13 +1357,14 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                     variant="outline"
                     size="sm"
                     onClick={() => removeFromQueue(selectedEvalIds)}
-                    className="gap-1.5 text-xs text-red-700 border-red-300 hover:bg-red-50"
+                    className="gap-1.5 text-xs"
+                    title="Removes the AI score so they go back to the Unscored tab"
                   >
-                    <Trash2 className="h-3 w-3" />
-                    Remove from Queue
+                    <ArrowRightLeft className="h-3 w-3" />
+                    Move to Unscored
                   </Button>
                 )}
-                {/* Assign PIC */}
+                {/* Share with team */}
                 <DropdownMenu onOpenChange={(open) => open && fetchPicUsers()}>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -1223,25 +1372,28 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                       size="sm"
                       disabled={moving}
                       className="gap-1.5 text-xs text-blue-700 border-blue-300 hover:bg-blue-50"
+                      title="Give a teammate access to these influencers and all their data"
                     >
-                      <UserPlus className="h-3 w-3" />
-                      Assign PIC ({selectedRows.size})
+                      <Share2 className="h-3 w-3" />
+                      Share ({selectedRows.size})
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
                     {loadingPicUsers && <DropdownMenuItem disabled>Loading users...</DropdownMenuItem>}
                     {picUsers && picUsers.length === 0 && <DropdownMenuItem disabled>No users found</DropdownMenuItem>}
-                    {picUsers?.map((u) => (
-                      <DropdownMenuItem key={u.id} onClick={() => assignPic(u.id)}>
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[8px] font-bold text-white">
-                            {(u.name ?? u.email).charAt(0).toUpperCase()}
+                    {picUsers
+                      ?.filter((u) => u.id !== currentUserId)
+                      .map((u) => (
+                        <DropdownMenuItem key={u.id} onClick={() => assignPic(u.id)}>
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[8px] font-bold text-white">
+                              {(u.name ?? u.email).charAt(0).toUpperCase()}
+                            </div>
+                            <span>{u.name ?? u.email}</span>
+                            <span className="text-[10px] text-muted-foreground">{u.role}</span>
                           </div>
-                          <span>{u.name ?? u.email}</span>
-                          <span className="text-[10px] text-muted-foreground">{u.role}</span>
-                        </div>
-                      </DropdownMenuItem>
-                    ))}
+                        </DropdownMenuItem>
+                      ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
                 {/* Move to Trash */}
@@ -1299,42 +1451,6 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                {/* Select by Import */}
-                <DropdownMenu onOpenChange={(open) => open && fetchImports()}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 text-xs text-muted-foreground"
-                    >
-                      Select by Import
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
-                    {loadingImports && (
-                      <DropdownMenuItem disabled>Loading imports…</DropdownMenuItem>
-                    )}
-                    {imports && imports.length === 0 && (
-                      <DropdownMenuItem disabled>No imports found</DropdownMenuItem>
-                    )}
-                    {imports?.map((imp) => (
-                      <DropdownMenuItem
-                        key={imp.id}
-                        onClick={() => selectByImport(imp.id)}
-                      >
-                        {imp.sourceFilename} ({imp.rowCount})
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedRows(new Set())}
-                  className="text-xs"
-                >
-                  Deselect
-                </Button>
               </div>
             </div>
           )}
@@ -1393,7 +1509,7 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                       Last Posted
                     </th>
                     <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      PIC
+                      Assigned to
                     </th>
                     {queueFilter === "ALL" && (
                       <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1480,27 +1596,13 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                             );
                           })()}
                         </td>
-                        <td className="px-4 py-3">
-                          {inf.pics.length > 0 ? (
-                            <div className="flex -space-x-1.5">
-                              {inf.pics.slice(0, 3).map((pic) => (
-                                <div
-                                  key={pic.id}
-                                  title={pic.name ?? pic.email}
-                                  className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[9px] font-bold text-white ring-2 ring-card"
-                                >
-                                  {(pic.name ?? pic.email).charAt(0).toUpperCase()}
-                                </div>
-                              ))}
-                              {inf.pics.length > 3 && (
-                                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[9px] font-bold ring-2 ring-card">
-                                  +{inf.pics.length - 3}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">—</span>
-                          )}
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <AssignedToCell
+                            pics={inf.pics}
+                            influencerId={inf.id}
+                            ownerId={inf.createdById}
+                            onRemovePic={removePic}
+                          />
                         </td>
                         {queueFilter === "ALL" && (
                           <td className="px-4 py-3">

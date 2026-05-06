@@ -297,6 +297,10 @@ export default function DataScraperPage() {
 
   const handleDiscard = useCallback(async () => {
     if (!importData) return;
+    const ok = window.confirm(
+      `Delete "${importData.sourceFilename}" and all ${importData.processedCount} influencers it created?\n\nThis is permanent. Their videos, contracts, and any other data will also be removed.`,
+    );
+    if (!ok) return;
     setError("");
     try {
       await fetch(`/api/imports/${importData.id}/delete-with-data`, {
@@ -308,7 +312,7 @@ export default function DataScraperPage() {
       setUploadResponse(null);
       setSaved(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to discard import");
+      setError(err instanceof Error ? err.message : "Failed to delete import");
     }
   }, [importData]);
 
@@ -322,10 +326,10 @@ export default function DataScraperPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Data Scraper</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Import CSV</h1>
         <p className="text-sm text-muted-foreground">
-          Upload a CSV or Excel file with TikTok usernames to scrape influencer
-          data.
+          Upload a list of TikTok usernames. We'll scrape their videos, contact
+          info, and stats, then add them to your influencers.
         </p>
       </div>
 
@@ -535,102 +539,95 @@ export default function DataScraperPage() {
       {/* Results Step */}
       {step === "results" && importData && (
         <div>
-          <div className="mb-6 flex items-center justify-between rounded-xl border bg-card px-6 py-4">
-            <div className="flex items-center gap-6">
-              <div>
-                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  File
-                </span>
-                <p className="text-sm font-semibold">
-                  {importData.sourceFilename}
-                </p>
+          {/* Done banner */}
+          <div className="mb-6 rounded-xl border-2 border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/50 dark:bg-emerald-950/20 px-6 py-5">
+            <div className="flex items-start justify-between gap-6 flex-wrap">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40">
+                  {saving ? (
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-300 border-t-emerald-700" />
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-emerald-700 dark:text-emerald-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold text-emerald-900 dark:text-emerald-100">
+                    {saving ? "Saving to cloud…" : `${importData.processedCount} influencers ready`}
+                  </h2>
+                  <p className="text-sm text-emerald-700/80 dark:text-emerald-300/80 truncate">
+                    {saving
+                      ? `Caching avatars and thumbnails for ${importData.sourceFilename}`
+                      : `From ${importData.sourceFilename} — already saved automatically.`}
+                  </p>
+                </div>
               </div>
-              <div>
-                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Influencers
-                </span>
-                <p className="text-sm font-semibold">
-                  {importData.processedCount}
-                </p>
-              </div>
-              <div>
-                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Status
-                </span>
-                <Badge
-                  variant={saved ? "default" : saving ? "outline" : "secondary"}
-                >
-                  {saved
-                    ? "SAVED"
-                    : saving
-                      ? "SAVING TO CLOUD…"
-                      : "Scraping done — review & save"}
-                </Badge>
-              </div>
+              <Button
+                size="lg"
+                onClick={() => router.push(`/influencers?importId=${importData.id}&csv=${encodeURIComponent(importData.sourceFilename)}`)}
+                className="shrink-0"
+              >
+                View {importData.processedCount} Influencer{importData.processedCount !== 1 ? "s" : ""}
+                <svg xmlns="http://www.w3.org/2000/svg" className="ml-1 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </Button>
             </div>
-            {/* PIC assignment */}
-            <div className="flex items-center gap-3 mt-3 p-3 rounded-lg border bg-muted/30">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Assign PIC</span>
+          </div>
+
+          {/* Quiet secondary actions */}
+          <div className="mb-6 flex items-center justify-between rounded-lg border bg-card px-4 py-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="pic-select">
+                Share with:
+              </label>
               <select
+                id="pic-select"
                 value={selectedPicId ?? ""}
                 onChange={(e) => setSelectedPicId(e.target.value || null)}
                 className="h-8 rounded-md border bg-background px-2 text-sm"
               >
-                <option value="">None (Admin sees all)</option>
+                <option value="">Just me</option>
                 {picUsers?.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name ?? u.email} ({u.role})</option>
+                  <option key={u.id} value={u.id}>{u.name ?? u.email}</option>
                 ))}
               </select>
               {selectedPicId && (
                 <span className="text-xs text-muted-foreground">
-                  {saved ? (assigningPic ? "Assigning..." : "Assigned") : "Will assign on save"}
+                  {assigningPic ? "Sharing…" : saved ? "Shared ✓" : "Will share on save"}
                 </span>
               )}
+              <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                — they'll see these influencers and all their videos, contracts, payments and notes.
+              </span>
             </div>
-            <div className="flex items-center gap-2 mt-3">
-              {error && (
-                <span className="text-sm text-destructive">{error}</span>
-              )}
-              {saved ? (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={() => router.push("/influencers")}
-                  >
-                    View Influencers
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setStep("upload");
-                      setFile(null);
-                      setImportData(null);
-                      setUploadResponse(null);
-                      setSaved(false);
-                    }}
-                  >
-                    New Import
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <span className="flex items-center gap-1.5 text-sm text-emerald-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    Auto-saved to cloud
-                  </span>
-                  <Button variant="outline" onClick={handleDiscard}>
-                    Discard
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => router.push("/influencers")}
-                  >
-                    View Influencers
-                  </Button>
-                </>
-              )}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setStep("upload");
+                  setFile(null);
+                  setImportData(null);
+                  setUploadResponse(null);
+                  setSaved(false);
+                }}
+              >
+                + Import another CSV
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDiscard}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+              >
+                Delete this import
+              </Button>
             </div>
           </div>
+
+          {error && (
+            <div className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
 
           <div className="space-y-6">
             {importData.influencers.map((influencer) => (

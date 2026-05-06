@@ -90,6 +90,20 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "influencerIds and userId are required" }, { status: 400 });
     }
 
+    // Owners cannot be unshared — they own the data
+    const ownedCount = await prisma.influencer.count({
+      where: { id: { in: influencerIds }, createdById: userId },
+    });
+    if (ownedCount > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Cannot remove the owner from data they created. Owners always retain access.",
+        },
+        { status: 400 },
+      );
+    }
+
     // Non-admin can only remove themselves or PICs from their assigned influencers
     if (user.role !== "Admin" && userId !== user.id) {
       const existingCount = await prisma.influencerPic.count({
