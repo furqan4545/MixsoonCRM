@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { encrypt } from "@/app/lib/crypto";
+import { notifySubmissionReceived } from "@/app/lib/submission-notify";
 
 // POST /api/onboarding/submit — Public: submit onboarding form (token-based auth)
 export async function POST(request: Request) {
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
     // Validate token
     const record = await prisma.onboardingToken.findUnique({
       where: { token },
-      include: { influencer: { select: { id: true, username: true } } },
+      include: { influencer: { select: { id: true, username: true, displayName: true } } },
     });
 
     if (!record) {
@@ -94,6 +95,9 @@ export async function POST(request: Request) {
       data: { usedAt: new Date() },
     });
 
+    const influencerName =
+      record.influencer.displayName || record.influencer.username;
+
     // Log activity
     await prisma.activityLog.create({
       data: {
@@ -102,6 +106,16 @@ export async function POST(request: Request) {
         title: "Onboarding form submitted",
         detail: `${record.influencer.username} submitted bank details and shipping address`,
       },
+    });
+
+    // Email the user who originally sent this onboarding link
+    await notifySubmissionReceived({
+      createdById: record.createdById,
+      influencerName,
+      influencerId: record.influencerId,
+      title: "Onboarding submitted",
+      detail: `${influencerName} submitted their bank details and shipping address.`,
+      hint: "Review the details and confirm everything looks right in the dashboard.",
     });
 
     return NextResponse.json({ success: true });

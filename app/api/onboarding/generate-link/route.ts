@@ -5,8 +5,9 @@ import { requirePermission } from "@/app/lib/rbac";
 
 // POST /api/onboarding/generate-link — Generate a magic link for influencer onboarding/contract/content/payment
 export async function POST(request: Request) {
+  let currentUser;
   try {
-    await requirePermission("influencers", "write");
+    currentUser = await requirePermission("influencers", "write");
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Forbidden" },
@@ -71,6 +72,7 @@ export async function POST(request: Request) {
         requireScode: requireScode,
         submissionLabel: submissionLabel || null,
         expiresAt,
+        createdById: currentUser.id,
       },
     });
 

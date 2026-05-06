@@ -14,10 +14,13 @@ import {
   ExternalLink,
   Eye,
   FileText,
+  FileVideo,
   Loader2,
   Mail,
+  Maximize2,
   PenLine,
   Phone,
+  Play,
   RefreshCw,
   Search,
 } from "lucide-react";
@@ -54,9 +57,17 @@ interface ContractRow {
   template: { id: string; name: string } | null;
 }
 
+interface SubmissionVideoFile {
+  gcsPath: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
 interface SubmissionRow {
   id: string;
   videoLinks: string[];
+  videoFiles: SubmissionVideoFile[];
   notes: string | null;
   sCode: string | null;
   submissionLabel: string | null;
@@ -172,7 +183,8 @@ export function ContractsPage({
     // Add submissions (split by content vs payment)
     if (typeFilter === "ALL" || typeFilter === "CONTENT" || typeFilter === "PAYMENT") {
       for (const s of submissions) {
-        const isPayment = s.includePayment && s.videoLinks.length === 0;
+        const hasVideos = s.videoLinks.length > 0 || s.videoFiles.length > 0;
+        const isPayment = s.includePayment && !hasVideos;
         if (typeFilter === "PAYMENT" && !isPayment) continue;
         if (typeFilter === "CONTENT" && isPayment) continue;
         items.push({ kind: "submission", data: s });
@@ -431,14 +443,20 @@ export function ContractsPage({
                     <span className="text-sm font-medium">
                       {s.submissionLabel
                         ? s.submissionLabel
-                        : s.videoLinks.length > 0 ? "Content Submission" : "Payment Form"}
+                        : s.videoLinks.length > 0 || s.videoFiles.length > 0 ? "Content Submission" : "Payment Form"}
                     </span>
                     {s.sCode && (
                       <span className="inline-flex items-center rounded bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 text-[9px] font-medium text-indigo-600">
                         S-Code: {s.sCode}
                       </span>
                     )}
-                    {s.includePayment && s.videoLinks.length > 0 && (
+                    {s.videoFiles.length > 0 && (
+                      <span className="inline-flex items-center rounded bg-purple-50 border border-purple-200 px-1.5 py-0.5 text-[9px] font-medium text-purple-700">
+                        <FileVideo className="mr-0.5 h-2.5 w-2.5" />
+                        {s.videoFiles.length} file{s.videoFiles.length !== 1 ? "s" : ""}
+                      </span>
+                    )}
+                    {s.includePayment && (s.videoLinks.length > 0 || s.videoFiles.length > 0) && (
                       <span className="inline-flex items-center rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-medium text-amber-600">
                         + Payment
                       </span>
@@ -477,7 +495,7 @@ export function ContractsPage({
                     {/* Video links */}
                     {s.videoLinks.length > 0 && (
                       <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Submitted Videos</p>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Submitted Links</p>
                         <div className="space-y-1">
                           {s.videoLinks.map((link, i) => (
                             <a
@@ -491,6 +509,23 @@ export function ContractsPage({
                               <ExternalLink className="h-3 w-3 shrink-0" />
                               {link}
                             </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Uploaded video files */}
+                    {s.videoFiles.length > 0 && (
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Uploaded Videos</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {s.videoFiles.map((vf, i) => (
+                            <SubmissionVideoCard
+                              key={vf.gcsPath}
+                              submissionId={s.id}
+                              index={i}
+                              file={vf}
+                            />
                           ))}
                         </div>
                       </div>
@@ -613,4 +648,111 @@ export function ContractsPage({
       </Dialog>
     </div>
   );
+}
+
+function SubmissionVideoCard({
+  submissionId,
+  index,
+  file,
+}: {
+  submissionId: string;
+  index: number;
+  file: SubmissionVideoFile;
+}) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const fetchUrl = async () => {
+    if (url) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await fetch(
+        `/api/content-submissions/${submissionId}/video-url?index=${index}`,
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to load video");
+      }
+      const data = (await res.json()) as { url: string };
+      setUrl(data.url);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to load video");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(true);
+          fetchUrl();
+        }}
+        className="group relative flex flex-col overflow-hidden rounded-lg border bg-muted/40 hover:bg-muted/70 transition-colors text-left"
+      >
+        <div className="relative aspect-video bg-black/80 flex items-center justify-center">
+          <FileVideo className="h-8 w-8 text-white/40" />
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/95 shadow-md">
+              <Play className="h-4 w-4 text-black ml-0.5" fill="currentColor" />
+            </div>
+          </div>
+        </div>
+        <div className="p-2">
+          <p className="text-xs font-medium truncate">{file.name}</p>
+          <p className="text-[10px] text-muted-foreground">
+            {file.size > 0 ? formatBytes(file.size) : ""}
+          </p>
+        </div>
+      </button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 truncate">
+              <Maximize2 className="h-4 w-4 shrink-0" />
+              <span className="truncate">{file.name}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="aspect-video w-full overflow-hidden rounded-md bg-black">
+            {loading && (
+              <div className="flex h-full items-center justify-center text-white">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            )}
+            {err && (
+              <div className="flex h-full items-center justify-center px-6 text-center text-sm text-red-200">
+                {err}
+              </div>
+            )}
+            {!loading && !err && url && (
+              <video
+                src={url}
+                controls
+                autoPlay
+                className="h-full w-full"
+                preload="metadata"
+              />
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {file.size > 0 ? `${formatBytes(file.size)} · ` : ""}
+            {file.type}
+          </p>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }

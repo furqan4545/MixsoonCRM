@@ -13,8 +13,9 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let currentUser;
   try {
-    await requirePermission("influencers", "write");
+    currentUser = await requirePermission("influencers", "write");
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Forbidden" },
@@ -50,8 +51,10 @@ export async function POST(
       );
     }
 
-    // Get the first email account for sending
-    const emailAccount = await prisma.emailAccount.findFirst();
+    // Prefer the sender's own email account; fall back to any configured account
+    const emailAccount =
+      (await prisma.emailAccount.findUnique({ where: { userId: currentUser.id } })) ??
+      (await prisma.emailAccount.findFirst());
 
     if (!emailAccount) {
       return NextResponse.json(
@@ -71,6 +74,7 @@ export async function POST(
         type: "CONTRACT",
         contractId: contract.id,
         expiresAt,
+        createdById: currentUser.id,
       },
     });
 

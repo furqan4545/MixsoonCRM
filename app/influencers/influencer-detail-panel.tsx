@@ -47,15 +47,23 @@ import {
   FileText,
   ClipboardCheck,
   Download,
+  FileVideo,
   MapPin,
   Maximize2,
   Minimize2,
   Package,
+  Play,
   Star,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ThumbnailImage } from "@/components/thumbnail-image";
 import type { InfluencerRow } from "./influencers-dashboard";
@@ -571,9 +579,17 @@ type ContractField_JSON = {
   height: number;
 };
 
+interface SubmissionVideoFileItem {
+  gcsPath: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
 interface ContentSubmissionItem {
   id: string;
   videoLinks: string[];
+  videoFiles: SubmissionVideoFileItem[];
   notes: string | null;
   sCode: string | null;
   submissionLabel: string | null;
@@ -1004,21 +1020,30 @@ function DocumentsTab({
             {formPreview.type === "content" && (
               <div className="rounded-lg border bg-background p-4 space-y-3">
                 <div>
-                  <h4 className="text-sm font-semibold">Video Links</h4>
+                  <h4 className="text-sm font-semibold">Submitted Videos</h4>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Influencer submits links to posted videos. Can add multiple links.
+                    Influencer can paste video links, upload files directly to your bucket, or both.
                   </p>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                      https://www.tiktok.com/@username/video/...
-                    </div>
+                <div className="flex gap-1 rounded-md bg-muted p-0.5 text-xs">
+                  <div className="flex-1 rounded bg-background px-2 py-1 text-center font-medium shadow-sm">
+                    Paste Link
                   </div>
-                  <div className="flex items-center gap-2 opacity-50">
-                    <div className="flex-1 rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                      + Add Another Video Link
-                    </div>
+                  <div className="flex-1 px-2 py-1 text-center text-muted-foreground">
+                    Upload File
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                    https://www.tiktok.com/@username/video/...
+                  </div>
+                  <div className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground opacity-60">
+                    + Add Another Video Link
+                  </div>
+                  <div className="flex flex-col items-center justify-center gap-1.5 rounded-md border-2 border-dashed bg-muted/20 px-3 py-4 text-center">
+                    <FileVideo className="h-5 w-5 text-muted-foreground" />
+                    <p className="text-xs font-medium">Drop video files here or click to browse</p>
+                    <p className="text-[10px] text-muted-foreground">MP4, MOV, WebM, MKV — up to 500 MB per file</p>
                   </div>
                 </div>
                 <div>
@@ -1430,14 +1455,19 @@ function DocumentsTab({
                 <div className="flex items-center gap-2">
                   <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">
-                    {s.submissionLabel || (s.videoLinks.length > 0 ? "Content Submission" : "Payment Form")}
+                    {s.submissionLabel || (s.videoLinks.length > 0 || s.videoFiles.length > 0 ? "Content Submission" : "Payment Form")}
                   </span>
                   {s.sCode && (
                     <span className="inline-flex items-center rounded bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 text-[9px] font-medium text-indigo-600">
                       S-Code: {s.sCode}
                     </span>
                   )}
-                  {s.includePayment && s.videoLinks.length > 0 && (
+                  {s.videoFiles.length > 0 && (
+                    <span className="inline-flex items-center rounded bg-purple-50 border border-purple-200 px-1.5 py-0.5 text-[9px] font-medium text-purple-700">
+                      {s.videoFiles.length} file{s.videoFiles.length !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                  {s.includePayment && (s.videoLinks.length > 0 || s.videoFiles.length > 0) && (
                     <span className="inline-flex items-center rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-medium text-amber-600">
                       + Payment
                     </span>
@@ -1467,6 +1497,20 @@ function DocumentsTab({
                     >
                       {link}
                     </a>
+                  ))}
+                </div>
+              )}
+
+              {/* Uploaded video files */}
+              {s.videoFiles.length > 0 && s.status !== "PENDING" && (
+                <div className="grid grid-cols-2 gap-2">
+                  {s.videoFiles.map((vf, i) => (
+                    <SubmissionVideoPreview
+                      key={vf.gcsPath}
+                      submissionId={s.id}
+                      index={i}
+                      file={vf}
+                    />
                   ))}
                 </div>
               )}
@@ -2463,5 +2507,111 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function formatVideoBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function SubmissionVideoPreview({
+  submissionId,
+  index,
+  file,
+}: {
+  submissionId: string;
+  index: number;
+  file: SubmissionVideoFileItem;
+}) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const fetchUrl = async () => {
+    if (url) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await fetch(
+        `/api/content-submissions/${submissionId}/video-url?index=${index}`,
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to load video");
+      }
+      const data = (await res.json()) as { url: string };
+      setUrl(data.url);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to load video");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(true);
+          fetchUrl();
+        }}
+        className="group relative flex flex-col overflow-hidden rounded-md border bg-muted/40 hover:bg-muted/70 transition-colors text-left"
+      >
+        <div className="relative aspect-video bg-black/80 flex items-center justify-center">
+          <FileVideo className="h-6 w-6 text-white/40" />
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 shadow">
+              <Play className="h-3 w-3 text-black ml-0.5" fill="currentColor" />
+            </div>
+          </div>
+        </div>
+        <div className="p-1.5">
+          <p className="text-[11px] font-medium truncate">{file.name}</p>
+          {file.size > 0 && (
+            <p className="text-[9px] text-muted-foreground">
+              {formatVideoBytes(file.size)}
+            </p>
+          )}
+        </div>
+      </button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="truncate">{file.name}</DialogTitle>
+          </DialogHeader>
+          <div className="aspect-video w-full overflow-hidden rounded-md bg-black">
+            {loading && (
+              <div className="flex h-full items-center justify-center text-white">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            )}
+            {err && (
+              <div className="flex h-full items-center justify-center px-6 text-center text-sm text-red-200">
+                {err}
+              </div>
+            )}
+            {!loading && !err && url && (
+              <video
+                src={url}
+                controls
+                autoPlay
+                className="h-full w-full"
+                preload="metadata"
+              />
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {file.size > 0 ? `${formatVideoBytes(file.size)} · ` : ""}
+            {file.type}
+          </p>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

@@ -299,6 +299,7 @@ model User {
   shipmentsCreated     Shipment[]       @relation("ShipmentCreator")
   paymentsCreated      Payment[]        @relation("PaymentCreator")
   notifications        Notification[]   @relation("UserNotifications")
+  onboardingTokensCreated OnboardingToken[] @relation("OnboardingTokensCreated")
 
   @@index([roleId])
   @@index([status])
@@ -685,10 +686,13 @@ model OnboardingToken {
   usedAt       DateTime?
   openedAt     DateTime?  // When the influencer first opened the link
   createdAt    DateTime  @default(now())
+  createdById  String?   // User who sent the form — used to route submission notifications back
+  createdBy    User?     @relation("OnboardingTokensCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([token])
   @@index([influencerId])
   @@index([type])
+  @@index([createdById])
 }
 
 model InfluencerOnboarding {
@@ -810,6 +814,7 @@ model ContentSubmission {
   campaignId     String?
 
   videoLinks     Json     @default("[]") // string[] of video URLs
+  videoFiles     Json     @default("[]") // [{ gcsPath, name, size, type }] uploaded directly to our bucket
   notes          String?
   sCode          String?  // Internal tracking code (S-code)
   submissionLabel String? // e.g. "1st video", "Week 3", manual label

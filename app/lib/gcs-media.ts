@@ -110,7 +110,8 @@ async function fetchRemoteImage(url: string): Promise<RemoteImage | null> {
         );
         return { buffer: out, contentType: "image/jpeg" };
       } catch {
-        continue;
+        // URL says .heic but content is already browser-compatible — use as-is
+        return { buffer: raw, contentType: contentType || "image/jpeg" };
       }
     }
 

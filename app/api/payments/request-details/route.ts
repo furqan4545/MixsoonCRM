@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
       includePayment: true,
       contentSubmissionId: submission.id,
       expiresAt,
+      createdById: currentUser.id,
     },
   });
 

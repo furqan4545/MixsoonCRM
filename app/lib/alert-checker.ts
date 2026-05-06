@@ -417,7 +417,7 @@ async function checkEmailNoReplyUs(
     distinct: ["influencerId"],
     include: {
       influencer: { select: { username: true, displayName: true, email: true } },
-      account: { select: { emailAddress: true, smtpHost: true, smtpPort: true, smtpUser: true, smtpPass: true } },
+      account: true,
     },
   });
 
@@ -458,12 +458,7 @@ async function checkEmailNoReplyUs(
       // Auto-send reminder email to ourselves
       if (inbox.account?.emailAddress && inbox.account?.smtpHost) {
         try {
-          const transport = getSmtpTransport({
-            host: inbox.account.smtpHost,
-            port: inbox.account.smtpPort ?? 587,
-            user: inbox.account.smtpUser ?? inbox.account.emailAddress,
-            pass: inbox.account.smtpPass ?? "",
-          });
+          const transport = getSmtpTransport(inbox.account);
           await transport.sendMail({
             from: inbox.account.emailAddress,
             to: inbox.account.emailAddress,

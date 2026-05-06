@@ -67,6 +67,7 @@ export default async function ContractsPageWrapper() {
   const serializedSubmissions = submissions.map((s) => ({
     id: s.id,
     videoLinks: s.videoLinks as string[],
+    videoFiles: (s.videoFiles as Array<{ gcsPath: string; name: string; size: number; type: string }>) ?? [],
     notes: s.notes,
     sCode: s.sCode,
     submissionLabel: s.submissionLabel,

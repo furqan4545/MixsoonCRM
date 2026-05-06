@@ -139,24 +139,17 @@ export async function GET(request: NextRequest) {
             "Cache-Control": "public, max-age=86400, s-maxage=604800",
           },
         });
-      } catch (convertErr) {
-        const jpegUrl = url.replace(/\.heic(\?|$)/, ".jpeg$1");
-        if (jpegUrl !== url) {
-          const jpegRes = await fetch(jpegUrl, { headers: TIKTOK_HEADERS });
-          if (jpegRes.ok) {
-            const buf = await jpegRes.arrayBuffer();
-            setCache(url, buf, "image/jpeg");
-            return new NextResponse(buf, {
-              status: 200,
-              headers: {
-                "Content-Type": "image/jpeg",
-                "Cache-Control": "public, max-age=86400, s-maxage=604800",
-              },
-            });
-          }
-        }
-        console.error("Thumbnail HEIC convert error:", convertErr);
-        return thumbnailError();
+      } catch {
+        // URL says .heic but content is already JPEG/PNG/WebP — serve as-is
+        const fallbackType = contentType || "image/jpeg";
+        setCache(url, arrayBuffer, fallbackType);
+        return new NextResponse(arrayBuffer, {
+          status: 200,
+          headers: {
+            "Content-Type": fallbackType,
+            "Cache-Control": "public, max-age=86400, s-maxage=604800",
+          },
+        });
       }
     }
 
