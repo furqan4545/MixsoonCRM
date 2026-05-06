@@ -1,15 +1,20 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
+import { assertCanAccess } from "@/app/lib/ownership";
 import { prisma } from "../../../../../lib/prisma";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let currentUser;
   try {
-    await requirePermission("ai-filter", "read");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    currentUser = await requirePermission("ai-filter", "read");
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
   }
   try {
     const { id } = await params;
@@ -68,6 +73,21 @@ export async function GET(
 
     if (!run) {
       return NextResponse.json({ error: "Run not found" }, { status: 404 });
+    }
+
+    try {
+      await assertCanAccess({
+        resourceType: "AiFilterRun",
+        resourceId: id,
+        user: currentUser,
+        ownerId: run.createdById,
+        required: "read",
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Forbidden" },
+        { status: 403 },
+      );
     }
 
     return NextResponse.json(run);

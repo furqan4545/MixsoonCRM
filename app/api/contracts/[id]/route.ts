@@ -1,14 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
+import { assertCanAccess } from "@/app/lib/ownership";
 
 // GET /api/contracts/[id]
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let currentUser;
   try {
-    await requirePermission("influencers", "read");
+    currentUser = await requirePermission("influencers", "read");
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Forbidden" },
@@ -33,6 +35,21 @@ export async function GET(
     return NextResponse.json({ error: "Contract not found" }, { status: 404 });
   }
 
+  try {
+    await assertCanAccess({
+      resourceType: "Contract",
+      resourceId: id,
+      user: currentUser,
+      ownerId: contract.createdById,
+      required: "read",
+    });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
+  }
+
   return NextResponse.json({ contract });
 }
 
@@ -55,6 +72,28 @@ export async function PATCH(
   const body = await request.json();
 
   try {
+    const existingForAccess = await prisma.contract.findUnique({
+      where: { id },
+      select: { createdById: true },
+    });
+    if (!existingForAccess) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    try {
+      await assertCanAccess({
+        resourceType: "Contract",
+        resourceId: id,
+        user,
+        ownerId: existingForAccess.createdById,
+        required: "write",
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Forbidden" },
+        { status: 403 },
+      );
+    }
+
     const updateData: Record<string, unknown> = {};
     if (body.status !== undefined) updateData.status = body.status;
     if (body.pdfUrl !== undefined) updateData.pdfUrl = body.pdfUrl;

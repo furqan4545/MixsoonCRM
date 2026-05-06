@@ -1,15 +1,20 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
+import { assertCanAccess } from "@/app/lib/ownership";
 import { prisma } from "../../../lib/prisma";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let currentUser;
   try {
-    await requirePermission("ai-filter", "read");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    currentUser = await requirePermission("ai-filter", "read");
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
   }
   try {
     const { id } = await params;
@@ -18,6 +23,20 @@ export async function GET(
       return NextResponse.json(
         { error: "Campaign not found" },
         { status: 404 },
+      );
+    }
+    try {
+      await assertCanAccess({
+        resourceType: "Campaign",
+        resourceId: id,
+        user: currentUser,
+        ownerId: campaign.createdById,
+        required: "read",
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Forbidden" },
+        { status: 403 },
       );
     }
     return NextResponse.json(campaign);
@@ -34,13 +53,40 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let currentUser;
   try {
-    await requirePermission("ai-filter", "write");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    currentUser = await requirePermission("ai-filter", "write");
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
   }
   try {
     const { id } = await params;
+
+    const existing = await prisma.campaign.findUnique({
+      where: { id },
+      select: { createdById: true },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    try {
+      await assertCanAccess({
+        resourceType: "Campaign",
+        resourceId: id,
+        user: currentUser,
+        ownerId: existing.createdById,
+        required: "write",
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Forbidden" },
+        { status: 403 },
+      );
+    }
+
     const body = await request.json();
     const {
       name,
@@ -120,14 +166,52 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let currentUser;
   try {
-    await requirePermission("ai-filter", "delete");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    currentUser = await requirePermission("ai-filter", "delete");
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
   }
   try {
     const { id } = await params;
+
+    const existing = await prisma.campaign.findUnique({
+      where: { id },
+      select: { createdById: true, name: true },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    try {
+      await assertCanAccess({
+        resourceType: "Campaign",
+        resourceId: id,
+        user: currentUser,
+        ownerId: existing.createdById,
+        required: "admin",
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Forbidden" },
+        { status: 403 },
+      );
+    }
+
     await prisma.campaign.delete({ where: { id } });
+
+    await prisma.notification.create({
+      data: {
+        type: "campaign_deleted",
+        status: "warning",
+        title: `Campaign deleted: ${existing.name}`,
+        message: `${currentUser.name ?? currentUser.email ?? "user"} deleted campaign "${existing.name}".`,
+        userId: currentUser.id,
+      },
+    }).catch(() => {});
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Delete campaign error:", error);

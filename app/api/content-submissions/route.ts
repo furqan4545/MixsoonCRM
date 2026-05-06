@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
+import { ownershipWhere } from "@/app/lib/ownership";
 
 // GET /api/content-submissions?influencerId=xxx
 export async function GET(request: Request) {
+  let currentUser;
   try {
-    await requirePermission("influencers", "read");
+    currentUser = await requirePermission("influencers", "read");
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Forbidden" },
@@ -17,7 +19,10 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const influencerId = searchParams.get("influencerId");
 
-    const where = influencerId ? { influencerId } : {};
+    const ownership = await ownershipWhere("ContentSubmission", currentUser);
+    const where: Record<string, unknown> = {};
+    if (influencerId) where.influencerId = influencerId;
+    if (ownership) Object.assign(where, ownership);
 
     const submissions = await prisma.contentSubmission.findMany({
       where,

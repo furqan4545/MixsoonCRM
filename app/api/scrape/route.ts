@@ -1299,6 +1299,7 @@ export async function POST(request: NextRequest) {
                 country: resolvedCountry,
                 sourceFilename,
                 importId,
+                createdById: currentUser?.id ?? null,
               },
               update: {
                 profileUrl: channel.url ?? null,

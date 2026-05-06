@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
+import { ownershipWhere } from "@/app/lib/ownership";
 import { prisma } from "../../lib/prisma";
 
 // POST /api/imports — Upload CSV, parse usernames, create import record
@@ -147,6 +148,7 @@ export async function POST(request: NextRequest) {
         status: "PENDING",
         usernameLimit,
         videoCount,
+        createdById: currentUser.id,
       },
     });
 
@@ -201,10 +203,23 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   try {
-    const isAdmin = currentUser.role === "Admin";
-    const where = !isAdmin && currentUser.id
-      ? { influencers: { some: { pics: { some: { userId: currentUser.id } } } } }
-      : undefined;
+    // Per-user isolation: admin-with-no-isolation gets unrestricted; otherwise
+    // owned + shared + (legacy) PIC-assigned.
+    const ownership = await ownershipWhere("Import", currentUser);
+    const where: Record<string, unknown> = {};
+    if (ownership !== null) {
+      const orClauses: Record<string, unknown>[] = [
+        { createdById: currentUser.id },
+        // Legacy fallback: imports whose influencers the user manages as PIC
+        { influencers: { some: { pics: { some: { userId: currentUser.id } } } } },
+      ];
+      if ("OR" in ownership) {
+        for (const clause of ownership.OR) {
+          if ("id" in clause) orClauses.push(clause);
+        }
+      }
+      where.OR = orClauses;
+    }
 
     const imports = await prisma.import.findMany({
       where,

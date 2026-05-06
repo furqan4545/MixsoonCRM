@@ -8,6 +8,7 @@ import {
   Trash2,
   Calendar,
   DollarSign,
+  Share2,
   Users,
   UserPlus,
   X,
@@ -27,6 +28,7 @@ import type {
 import { StatusBadge } from "./campaigns-dashboard";
 import { CampaignDialog } from "./campaign-dialog";
 import { AssignInfluencersDialog } from "./assign-influencers-dialog";
+import { ShareDialog } from "@/components/share-dialog";
 
 /* ───────────── helpers ───────────── */
 
@@ -100,6 +102,7 @@ export function CampaignDetailPanel({
   const router = useRouter();
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
 
@@ -186,6 +189,15 @@ export function CampaignDetailPanel({
             Back
           </button>
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={() => setShowShareDialog(true)}
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              Share
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -460,6 +472,15 @@ export function CampaignDetailPanel({
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Share Dialog */}
+      <ShareDialog
+        open={showShareDialog}
+        onOpenChange={setShowShareDialog}
+        resourceType="Campaign"
+        resourceId={campaign.id}
+        resourceLabel={`"${campaign.name}"`}
+      />
 
       {/* Edit Dialog */}
       <CampaignDialog

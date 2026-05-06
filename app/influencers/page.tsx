@@ -1,42 +1,50 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { InfluencersDashboard } from "./influencers-dashboard";
 import type { InfluencerRow } from "./influencers-dashboard";
 
 export default function InfluencersPage() {
+  const searchParams = useSearchParams();
+  const importId = searchParams.get("importId");
+
   const [influencers, setInfluencers] = useState<InfluencerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchPage = useCallback(async (cursor?: string | null) => {
-    const isFirst = !cursor;
-    if (isFirst) setLoading(true);
-    else setLoadingMore(true);
+  const fetchPage = useCallback(
+    async (cursor?: string | null) => {
+      const isFirst = !cursor;
+      if (isFirst) setLoading(true);
+      else setLoadingMore(true);
 
-    try {
-      const params = new URLSearchParams({ limit: "500" });
-      if (cursor) params.set("cursor", cursor);
-      const res = await fetch(`/api/influencers?${params}`);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
+      try {
+        const params = new URLSearchParams({ limit: "500" });
+        if (cursor) params.set("cursor", cursor);
+        if (importId) params.set("importId", importId);
+        const res = await fetch(`/api/influencers?${params}`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
 
-      if (isFirst) {
-        setInfluencers(data.influencers ?? []);
-      } else {
-        setInfluencers((prev) => [...prev, ...(data.influencers ?? [])]);
+        if (isFirst) {
+          setInfluencers(data.influencers ?? []);
+        } else {
+          setInfluencers((prev) => [...prev, ...(data.influencers ?? [])]);
+        }
+        setNextCursor(data.nextCursor ?? null);
+        setTotalCount(data.totalCount ?? 0);
+      } catch {
+        if (isFirst) setInfluencers([]);
+      } finally {
+        if (isFirst) setLoading(false);
+        else setLoadingMore(false);
       }
-      setNextCursor(data.nextCursor ?? null);
-      setTotalCount(data.totalCount ?? 0);
-    } catch {
-      if (isFirst) setInfluencers([]);
-    } finally {
-      if (isFirst) setLoading(false);
-      else setLoadingMore(false);
-    }
-  }, []);
+    },
+    [importId],
+  );
 
   useEffect(() => {
     fetchPage(null);

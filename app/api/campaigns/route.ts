@@ -1,15 +1,22 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
+import { ownershipWhere } from "@/app/lib/ownership";
 import { prisma } from "../../lib/prisma";
 
 export async function GET() {
+  let currentUser;
   try {
-    await requirePermission("ai-filter", "read");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    currentUser = await requirePermission("ai-filter", "read");
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
   }
   try {
+    const ownership = await ownershipWhere("Campaign", currentUser);
     const campaigns = await prisma.campaign.findMany({
+      where: ownership ?? undefined,
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json(campaigns);
@@ -23,10 +30,14 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  let currentUser;
   try {
-    await requirePermission("ai-filter", "write");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    currentUser = await requirePermission("ai-filter", "write");
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
   }
   try {
     const body = await request.json();
@@ -77,6 +88,7 @@ export async function POST(request: NextRequest) {
             : normalizePositiveInt(maxDaysSinceLastPost),
         minFollowers: normalizePositiveInt(minFollowers),
         minVideoCount: normalizePositiveInt(minVideoCount),
+        createdById: currentUser.id,
       },
     });
 

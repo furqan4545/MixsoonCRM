@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
+import { isAdminIsolationEnabled } from "@/app/lib/ownership";
 
 function fixThumbnailUrl(url: string | null): string | null {
   if (!url) return null;
@@ -49,17 +50,40 @@ export async function GET(request: NextRequest) {
     if (pipelineStage) {
       where.pipelineStage = pipelineStage;
     }
-    if (search) {
-      where.OR = [
-        { username: { contains: search, mode: "insensitive" } },
-        { displayName: { contains: search, mode: "insensitive" } },
-        { email: { contains: search, mode: "insensitive" } },
+    const searchOr = search
+      ? [
+          { username: { contains: search, mode: "insensitive" as const } },
+          { displayName: { contains: search, mode: "insensitive" as const } },
+          { email: { contains: search, mode: "insensitive" as const } },
+        ]
+      : null;
+
+    // Per-user isolation: admins see all by default; non-admins (or admins
+    // when admin-isolation flag is on) see only owned + shared + PIC-assigned
+    // influencers.
+    const adminIsolated = await isAdminIsolationEnabled();
+    const restrict = currentUser.role !== "Admin" || adminIsolated;
+    let ownershipOr: Record<string, unknown>[] | null = null;
+    if (restrict) {
+      const shares = await prisma.resourceShare.findMany({
+        where: { userId: currentUser.id, resourceType: "Influencer" },
+        select: { resourceId: true },
+      });
+      const sharedIds = shares.map((s) => s.resourceId);
+      ownershipOr = [
+        { createdById: currentUser.id },
+        { pics: { some: { userId: currentUser.id } } },
+        ...(sharedIds.length > 0 ? [{ id: { in: sharedIds } }] : []),
       ];
     }
 
-    // PIC isolation: non-Admin users only see influencers assigned to them
-    if (currentUser.role !== "Admin") {
-      where.pics = { some: { userId: currentUser.id } };
+    // Combine the search OR (if any) with the ownership OR (if any) under AND
+    if (searchOr && ownershipOr) {
+      where.AND = [{ OR: searchOr }, { OR: ownershipOr }];
+    } else if (searchOr) {
+      where.OR = searchOr;
+    } else if (ownershipOr) {
+      where.OR = ownershipOr;
     }
 
     // Minimal mode: for selects & approval dialogs

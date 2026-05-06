@@ -10,42 +10,42 @@ datasource db {
 // ─── INFLUENCERS ───────────────────────────────────────────
 
 model Influencer {
-  id             String   @id @default(cuid())
-  username       String   @unique
-  displayName    String?  // full name, e.g. "Emma Chen"
+  id             String  @id @default(cuid())
+  username       String  @unique
+  displayName    String? // full name, e.g. "Emma Chen"
   profileUrl     String?
-  avatarUrl      String?  // profile picture URL
-  biolink        String?  // raw bio text
-  bioLinkUrl     String?  // main link in bio (e.g. linktree)
+  avatarUrl      String? // profile picture URL
+  biolink        String? // raw bio text
+  bioLinkUrl     String? // main link in bio (e.g. linktree)
   followers      Int?
   email          String?
   phone          String?
-  socialLinks    String?  // JSON array of URLs
-  sourceFilename String?  // which CSV file this influencer came from
+  socialLinks    String? // JSON array of URLs
+  sourceFilename String? // which CSV file this influencer came from
 
   // CRM fields
-  platform       String?          // TikTok, Instagram, YouTube, etc.
-  engagementRate Float?           // e.g. 4.8 for 4.8%
-  rate           Float?           // payment rate in USD
-  language       String?          // detected from profile (e.g. "en", "ko")
-  country        String?          // e.g. "US", "KR"
-  pipelineStage  PipelineStage    @default(PROSPECT)
-  tags           String[]         // e.g. ["skincare", "beauty", "routine"]
-  notes          String?          // internal notes
-  aiScore        Int?             // 0-100 AI relevance score
+  platform       String? // TikTok, Instagram, YouTube, etc.
+  engagementRate Float? // e.g. 4.8 for 4.8%
+  rate           Float? // payment rate in USD
+  language       String? // detected from profile (e.g. "en", "ko")
+  country        String? // e.g. "US", "KR"
+  pipelineStage  PipelineStage @default(PROSPECT)
+  tags           String[] // e.g. ["skincare", "beauty", "routine"]
+  notes          String? // internal notes
+  aiScore        Int? // 0-100 AI relevance score
 
-  savedAt        DateTime?              // when set, influencer is starred/saved by CEO
-  trashedAt      DateTime?              // soft-delete: when set, influencer is in Trash queue
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  savedAt   DateTime? // when set, influencer is starred/saved by CEO
+  trashedAt DateTime? // soft-delete: when set, influencer is in Trash queue
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  videos   Video[]
-  import   Import? @relation(fields: [importId], references: [id], onDelete: SetNull)
-  importId String?
-  aiEvaluations InfluencerAiEvaluation[]
-  emailMessages EmailMessage[]
-  emailAlerts   EmailAlert[]
-  activityLogs  ActivityLog[]
+  videos              Video[]
+  import              Import?                  @relation(fields: [importId], references: [id], onDelete: SetNull)
+  importId            String?
+  aiEvaluations       InfluencerAiEvaluation[]
+  emailMessages       EmailMessage[]
+  emailAlerts         EmailAlert[]
+  activityLogs        ActivityLog[]
   campaignAssignments CampaignInfluencer[]
   approvalRequests    ApprovalRequest[]
   onboarding          InfluencerOnboarding?
@@ -61,12 +61,16 @@ model Influencer {
   viralAlerts         ViralAlert[]
   payments            Payment[]
 
+  createdById String?
+  createdBy   User?   @relation("InfluencersCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
   @@index([username])
   @@index([importId])
   @@index([pipelineStage])
   @@index([trashedAt])
   @@index([createdAt])
   @@index([trashedAt, createdAt])
+  @@index([createdById])
 }
 
 enum PipelineStage {
@@ -80,35 +84,38 @@ enum PipelineStage {
 // ─── ACTIVITY LOG ─────────────────────────────────────────
 
 model ActivityLog {
-  id           String   @id @default(cuid())
+  id           String     @id @default(cuid())
   influencerId String
   influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
-  type         String   // "ai_score", "pipeline_change", "email_extracted", "tag_added", "note_added", "campaign_assigned", etc.
-  title        String   // e.g. "AI Score assigned"
-  detail       String?  // e.g. "Score: 92/100"
-  createdAt    DateTime @default(now())
+  type         String // "ai_score", "pipeline_change", "email_extracted", "tag_added", "note_added", "campaign_assigned", etc.
+  title        String // e.g. "AI Score assigned"
+  detail       String? // e.g. "Score: 92/100"
+  createdAt    DateTime   @default(now())
+  createdById  String?
+  createdBy    User?      @relation("ActivityLogsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([influencerId])
   @@index([createdAt])
+  @@index([createdById])
 }
 
 // ─── VIDEOS ────────────────────────────────────────────────
 
 model Video {
-  id           String   @id @default(cuid())
+  id           String     @id @default(cuid())
   influencerId String
   influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
 
-  username     String   // denormalized for easy lookup
+  username String // denormalized for easy lookup
 
-  title        String?  // "signature" from Apify
+  title        String? // "signature" from Apify
   views        Int?
   bookmarks    Int?
   uploadedAt   DateTime?
-  thumbnailUrl String?  // video cover image URL
-  videoUrl     String?  // full TikTok video URL (https://www.tiktok.com/@user/video/123)
-  tiktokId     String?  // TikTok video ID (aweme_id / itemId)
-  createdAt    DateTime @default(now())
+  thumbnailUrl String? // video cover image URL
+  videoUrl     String? // full TikTok video URL (https://www.tiktok.com/@user/video/123)
+  tiktokId     String? // TikTok video ID (aweme_id / itemId)
+  createdAt    DateTime  @default(now())
 
   @@index([influencerId])
   @@index([username])
@@ -129,9 +136,13 @@ model Import {
   errorMessage   String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+  createdById    String?
+  createdBy      User?        @relation("ImportsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
-  influencers Influencer[]
+  influencers  Influencer[]
   aiFilterRuns AiFilterRun[]
+
+  @@index([createdById])
 }
 
 enum ImportStatus {
@@ -145,67 +156,73 @@ enum ImportStatus {
 // ─── AI FILTERING ───────────────────────────────────────────
 
 model Campaign {
-  id              String   @id @default(cuid())
-  name            String
-  targetKeywords  String[]
-  avoidKeywords   String[]
-  notes           String?
-  strictnessDefault Int    @default(50)
+  id                   String   @id @default(cuid())
+  name                 String
+  targetKeywords       String[]
+  avoidKeywords        String[]
+  notes                String?
+  strictnessDefault    Int      @default(50)
   // Deterministic pre-filters. Null = disabled. Evaluated before AI scoring;
   // rejections here never hit the LLM.
-  maxDaysSinceLastPost Int? @default(30) // recency: exclude if latest video older than N days
-  minFollowers         Int?              // follower floor
-  minVideoCount        Int?              // minimum videos on profile
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  maxDaysSinceLastPost Int?     @default(30) // recency: exclude if latest video older than N days
+  minFollowers         Int? // follower floor
+  minVideoCount        Int? // minimum videos on profile
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  createdById          String?
+  createdBy            User?    @relation("CampaignsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   aiFilterRuns AiFilterRun[]
 
   @@index([name])
+  @@index([createdById])
 }
 
 model AiFilterRun {
-  id            String   @id @default(cuid())
-  campaignId    String
-  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  importId      String?
-  import        Import?  @relation(fields: [importId], references: [id], onDelete: SetNull)
-  strictness    Int
-  status        AiFilterRunStatus @default(PENDING)
-  totalCount    Int @default(0)
-  aiProcessedCount Int @default(0)
-  reviewQueueCount Int @default(0)
-  approvedCount Int @default(0)
-  okishCount    Int @default(0)
-  rejectedCount Int @default(0)
-  failedCount   Int @default(0)
-  model         String   @default("gemini-2.5-flash")
-  errorMessage  String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id               String            @id @default(cuid())
+  campaignId       String
+  campaign         Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  importId         String?
+  import           Import?           @relation(fields: [importId], references: [id], onDelete: SetNull)
+  strictness       Int
+  status           AiFilterRunStatus @default(PENDING)
+  totalCount       Int               @default(0)
+  aiProcessedCount Int               @default(0)
+  reviewQueueCount Int               @default(0)
+  approvedCount    Int               @default(0)
+  okishCount       Int               @default(0)
+  rejectedCount    Int               @default(0)
+  failedCount      Int               @default(0)
+  model            String            @default("gemini-2.5-flash")
+  errorMessage     String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  createdById      String?
+  createdBy        User?             @relation("AiFilterRunsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   evaluations InfluencerAiEvaluation[]
 
   @@index([campaignId])
   @@index([importId])
   @@index([status])
+  @@index([createdById])
 }
 
 model InfluencerAiEvaluation {
-  id            String   @id @default(cuid())
-  runId         String
-  run           AiFilterRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-  influencerId  String
-  influencer    Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  id             String         @id @default(cuid())
+  runId          String
+  run            AiFilterRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  influencerId   String
+  influencer     Influencer     @relation(fields: [influencerId], references: [id], onDelete: Cascade)
   prefilterLabel PreFilterLabel
-  score         Int?
-  bucket        AiBucket
-  reasons       String?
+  score          Int?
+  bucket         AiBucket
+  reasons        String?
   matchedSignals String?
-  riskSignals   String?
-  reviewStatus  ReviewStatus @default(NOT_REVIEWED)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  riskSignals    String?
+  reviewStatus   ReviewStatus   @default(NOT_REVIEWED)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@unique([runId, influencerId])
   @@index([runId])
@@ -247,7 +264,7 @@ enum ReviewStatus {
 
 model Notification {
   id         String   @id @default(cuid())
-  type       String   // e.g. "import_save", "ai_filter", "payment_due"
+  type       String // e.g. "import_save", "ai_filter", "payment_due"
   status     String   @default("info") // "success" | "error" | "info"
   title      String
   message    String?
@@ -257,9 +274,9 @@ model Notification {
   userId     String?
   user       User?    @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
   importId   String?
-  runId      String?  // AiFilterRun id when type is ai_filter
-  approvalId String?  // ApprovalRequest id when type is approval
-  paymentId  String?  // Payment id when type is payment_due / payment_submitted
+  runId      String? // AiFilterRun id when type is ai_filter
+  approvalId String? // ApprovalRequest id when type is approval
+  paymentId  String? // Payment id when type is payment_due / payment_submitted
   createdAt  DateTime @default(now())
 
   @@index([read])
@@ -287,16 +304,41 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  emailAccount EmailAccount?
-  submittedApprovals ApprovalRequest[] @relation("SubmittedApprovals")
-  reviewedApprovals  ApprovalRequest[] @relation("ReviewedApprovals")
-  picAssignments     InfluencerPic[]
-  adminSignedContracts Contract[]      @relation("AdminSignedContracts")
-  contractComments     ContractComment[] @relation("ContractComments")
-  shipmentsCreated     Shipment[]       @relation("ShipmentCreator")
-  paymentsCreated      Payment[]        @relation("PaymentCreator")
-  notifications        Notification[]   @relation("UserNotifications")
+  emailAccount            EmailAccount?
+  submittedApprovals      ApprovalRequest[] @relation("SubmittedApprovals")
+  reviewedApprovals       ApprovalRequest[] @relation("ReviewedApprovals")
+  picAssignments          InfluencerPic[]
+  adminSignedContracts    Contract[]        @relation("AdminSignedContracts")
+  contractComments        ContractComment[] @relation("ContractComments")
+  shipmentsCreated        Shipment[]        @relation("ShipmentCreator")
+  paymentsCreated         Payment[]         @relation("PaymentCreator")
+  notifications           Notification[]    @relation("UserNotifications")
   onboardingTokensCreated OnboardingToken[] @relation("OnboardingTokensCreated")
+
+  // ── Per-user ownership (Phase 1) — every owned resource points back here
+  influencersCreated        Influencer[]        @relation("InfluencersCreated")
+  importsCreated            Import[]            @relation("ImportsCreated")
+  campaignsCreated          Campaign[]          @relation("CampaignsCreated")
+  contractsCreated          Contract[]          @relation("ContractsCreated")
+  contractTemplatesCreated  ContractTemplate[]  @relation("ContractTemplatesCreated")
+  contentSubmissionsCreated ContentSubmission[] @relation("ContentSubmissionsCreated")
+  emailTemplatesCreated     EmailTemplate[]     @relation("EmailTemplatesCreated")
+  emailAlertsCreated        EmailAlert[]        @relation("EmailAlertsCreated")
+  alertRulesCreated         AlertRule[]         @relation("AlertRulesCreated")
+  marketingCampaignsCreated MarketingCampaign[] @relation("MarketingCampaignsCreated")
+  aiFilterRunsCreated       AiFilterRun[]       @relation("AiFilterRunsCreated")
+  analysisRunsCreated       AnalysisRun[]       @relation("AnalysisRunsCreated")
+  viralAlertConfigsCreated  ViralAlertConfig[]  @relation("ViralAlertConfigsCreated")
+  budgetConfigsCreated      BudgetConfig[]      @relation("BudgetConfigsCreated")
+  scrapingConfigsCreated    ScrapingConfig[]    @relation("ScrapingConfigsCreated")
+  analysisConfigsCreated    AnalysisConfig[]    @relation("AnalysisConfigsCreated")
+  activityLogsCreated       ActivityLog[]       @relation("ActivityLogsCreated")
+  trackedVideosCreated      TrackedVideo[]      @relation("TrackedVideosCreated")
+  productsCreated           Product[]           @relation("ProductsCreated")
+
+  // ── Resource sharing (Phase 1)
+  sharedResources       ResourceShare[] @relation("ShareRecipient")
+  resourceSharesCreated ResourceShare[] @relation("ShareGrantor")
 
   @@index([roleId])
   @@index([status])
@@ -324,9 +366,9 @@ model Permission {
 // ─── EMAIL ──────────────────────────────────────────────
 
 model EmailAccount {
-  id           String   @id @default(cuid())
-  userId       String   @unique
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String  @id @default(cuid())
+  userId       String  @unique
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   emailAddress String
   displayName  String?
   signature    String?
@@ -346,19 +388,19 @@ model EmailAccount {
 }
 
 model EmailMessage {
-  id        String  @id @default(cuid())
+  id        String       @id @default(cuid())
   accountId String
   account   EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   messageId String? // RFC 2822 Message-ID header for threading
   inReplyTo String? // Message-ID this is a reply to
 
-  from    String
-  to      String[]
-  cc      String[]   @default([])
-  subject String
-  bodyHtml String?
-  bodyText String?
+  from            String
+  to              String[]
+  cc              String[] @default([])
+  subject         String
+  bodyHtml        String?
+  bodyText        String?
   attachmentsJson String? // JSON array for persisted attachment metadata
 
   folder    EmailFolder @default(INBOX)
@@ -397,15 +439,15 @@ enum EmailFolder {
 // ─── MARKETING CAMPAIGNS ──────────────────────────────────
 
 model MarketingCampaign {
-  id          String   @id @default(cuid())
-  name        String   // e.g. "Prime Day 2026", "Black Friday"
+  id          String         @id @default(cuid())
+  name        String // e.g. "Prime Day 2026", "Black Friday"
   description String?
-  budget      Float?   // total budget in USD
+  budget      Float? // total budget in USD
   startDate   DateTime?
   endDate     DateTime?
   status      CampaignStatus @default(PLANNING)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
   influencers      CampaignInfluencer[]
   approvalRequests ApprovalRequest[]
@@ -414,17 +456,21 @@ model MarketingCampaign {
   trackedVideos    TrackedVideo[]
   payments         Payment[]
 
+  createdById String?
+  createdBy   User?   @relation("MarketingCampaignsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
   @@index([status])
   @@index([name])
+  @@index([createdById])
 }
 
 model CampaignInfluencer {
-  id           String   @id @default(cuid())
+  id           String            @id @default(cuid())
   campaignId   String
   campaign     MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   influencerId String
-  influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
-  assignedAt   DateTime @default(now())
+  influencer   Influencer        @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  assignedAt   DateTime          @default(now())
 
   @@unique([campaignId, influencerId])
   @@index([campaignId])
@@ -432,12 +478,12 @@ model CampaignInfluencer {
 }
 
 model InfluencerPic {
-  id            String     @id @default(cuid())
-  influencerId  String
-  influencer    Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
-  userId        String
-  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assignedAt    DateTime   @default(now())
+  id           String     @id @default(cuid())
+  influencerId String
+  influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedAt   DateTime   @default(now())
 
   @@unique([influencerId, userId])
   @@index([userId])
@@ -461,62 +507,62 @@ enum ApprovalStatus {
 }
 
 enum FeedbackStatus {
-  REQUESTED       // 피드백 요청
-  CEO_REVIEWED    // 대표님 피드백
-  APPLIED         // 피드백 반영 완료
-  SPECIAL         // 특별 관리
+  REQUESTED // 피드백 요청
+  CEO_REVIEWED // 대표님 피드백
+  APPLIED // 피드백 반영 완료
+  SPECIAL // 특별 관리
 }
 
 enum ContractStatus {
-  NEGOTIATE       // Negotiate
-  APPROVED        // Approved
-  DROP            // Drop
-  FINAL_DROP      // Final Drop Notice
+  NEGOTIATE // Negotiate
+  APPROVED // Approved
+  DROP // Drop
+  FINAL_DROP // Final Drop Notice
 }
 
 model ApprovalRequest {
-  id             String         @id @default(cuid())
-  influencerId   String
-  influencer     Influencer     @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  id           String     @id @default(cuid())
+  influencerId String
+  influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
 
-  submittedById  String
-  submittedBy    User           @relation("SubmittedApprovals", fields: [submittedById], references: [id])
+  submittedById String
+  submittedBy   User   @relation("SubmittedApprovals", fields: [submittedById], references: [id])
 
   // Negotiation terms
-  rate           Float
-  currency       String         @default("USD")
-  deliverables   String
-  notes          String?
+  rate         Float
+  currency     String  @default("USD")
+  deliverables String
+  notes        String?
 
   // Pricing details (from client spreadsheet)
-  videosPerBundle Int?           // 번들 당 영상 갯수
-  ratePerVideo    Float?         // $/Video (VAT포함)
-  totalPriceLocal Float?         // 인플루언서 제시 총 가격 (local currency)
-  totalPriceUsd   Float?         // 인플루언서 제시 총 가격 ($)
-  profileLink     String?        // 프로필 링크
+  videosPerBundle Int? // 번들 당 영상 갯수
+  ratePerVideo    Float? // $/Video (VAT포함)
+  totalPriceLocal Float? // 인플루언서 제시 총 가격 (local currency)
+  totalPriceUsd   Float? // 인플루언서 제시 총 가격 ($)
+  profileLink     String? // 프로필 링크
 
   // Feedback
-  picFeedback    String?        // 담당자 피드백
-  ceoFeedback    String?        // 주업님 Feedback
-  feedbackStatus FeedbackStatus @default(REQUESTED)  // 피드백 진행 사항
-  contractStatus ContractStatus @default(NEGOTIATE)   // 계약현황
+  picFeedback    String? // 담당자 피드백
+  ceoFeedback    String? // 주업님 Feedback
+  feedbackStatus FeedbackStatus @default(REQUESTED) // 피드백 진행 사항
+  contractStatus ContractStatus @default(NEGOTIATE) // 계약현황
 
   // Optional campaign link
-  campaignId     String?
-  campaign       MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignId String?
+  campaign   MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
   // Review
-  status         ApprovalStatus @default(PENDING)
-  reviewedById   String?
-  reviewedBy     User?          @relation("ReviewedApprovals", fields: [reviewedById], references: [id])
-  reviewedAt     DateTime?
+  status       ApprovalStatus @default(PENDING)
+  reviewedById String?
+  reviewedBy   User?          @relation("ReviewedApprovals", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
 
   // Counter-offer
-  counterRate    Float?
-  counterNotes   String?
+  counterRate  Float?
+  counterNotes String?
 
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([submittedById])
   @@index([status])
@@ -529,20 +575,20 @@ model ApprovalRequest {
 // ─── ALERTS & REMINDERS ───────────────────────────────────
 
 enum AlertType {
-  APPROVAL_PENDING          // Approval not reviewed in X days
+  APPROVAL_PENDING // Approval not reviewed in X days
   EMAIL_NO_REPLY_INFLUENCER // Influencer hasn't replied in X days
-  EMAIL_NO_REPLY_US         // We haven't replied to influencer in X days
-  CONTRACT_EXPIRING         // Contract ending within X days
-  CONTENT_OVERDUE           // Content submission not received in X days
-  FOLLOW_UP_REMINDER        // General follow-up reminder
-  VIRAL_VIDEO               // Video crossed viral threshold
+  EMAIL_NO_REPLY_US // We haven't replied to influencer in X days
+  CONTRACT_EXPIRING // Contract ending within X days
+  CONTENT_OVERDUE // Content submission not received in X days
+  FOLLOW_UP_REMINDER // General follow-up reminder
+  VIRAL_VIDEO // Video crossed viral threshold
 }
 
 enum AlertSeverity {
-  LOW       // Info level — sidebar only
-  MEDIUM    // Warning — sidebar + badge
-  HIGH      // Urgent — sidebar + badge + in-app notification
-  CRITICAL  // Critical — all above + email to admin
+  LOW // Info level — sidebar only
+  MEDIUM // Warning — sidebar + badge
+  HIGH // Urgent — sidebar + badge + in-app notification
+  CRITICAL // Critical — all above + email to admin
 }
 
 enum AlertEventStatus {
@@ -552,10 +598,10 @@ enum AlertEventStatus {
 }
 
 model AlertRule {
-  id            String    @id @default(cuid())
-  type          AlertType @unique // one rule per alert type
-  thresholdDays Int       @default(3)
-  enabled       Boolean   @default(true)
+  id            String         @id @default(cuid())
+  type          AlertType      @unique // one rule per alert type
+  thresholdDays Int            @default(3)
+  enabled       Boolean        @default(true)
   templateId    String?
   template      EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   severity      AlertSeverity  @default(MEDIUM)
@@ -564,37 +610,40 @@ model AlertRule {
   // e.g. [{ "days": 3, "severity": "LOW", "notifyRole": "PIC", "action": "badge" },
   //       { "days": 7, "severity": "HIGH", "notifyRole": "ADMIN", "action": "email" },
   //       { "days": 14, "severity": "CRITICAL", "notifyRole": "ADMIN", "action": "email+badge" }]
-  escalationLayers Json   @default("[]")
+  escalationLayers Json @default("[]")
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+  createdBy   User?    @relation("AlertRulesCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   events AlertEvent[]
 
   @@index([type])
+  @@index([createdById])
 }
 
 model AlertEvent {
-  id           String           @id @default(cuid())
-  ruleId       String
-  rule         AlertRule        @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-  status       AlertEventStatus @default(ACTIVE)
-  severity     AlertSeverity    @default(MEDIUM)
-  escalationLevel Int           @default(0) // which layer triggered (0 = base rule)
+  id              String           @id @default(cuid())
+  ruleId          String
+  rule            AlertRule        @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  status          AlertEventStatus @default(ACTIVE)
+  severity        AlertSeverity    @default(MEDIUM)
+  escalationLevel Int              @default(0) // which layer triggered (0 = base rule)
 
   // Polymorphic reference — exactly one is set
   approvalId   String?
-  emailId      String?          // EmailMessage id
-  influencerId String?          // For quick lookups
-  contractId   String?          // For contract-related alerts
+  emailId      String? // EmailMessage id
+  influencerId String? // For quick lookups
+  contractId   String? // For contract-related alerts
 
-  title        String
-  message      String?
-  daysSince    Int              // Computed at creation time
+  title     String
+  message   String?
+  daysSince Int // Computed at creation time
 
-  dismissedAt  DateTime?
-  resolvedAt   DateTime?
-  createdAt    DateTime         @default(now())
+  dismissedAt DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
 
   @@unique([ruleId, approvalId])
   @@unique([ruleId, emailId])
@@ -605,17 +654,20 @@ model AlertEvent {
 }
 
 model EmailTemplate {
-  id        String   @id @default(cuid())
-  name      String
-  subject   String
-  bodyHtml  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  name        String
+  subject     String
+  bodyHtml    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+  createdBy   User?    @relation("EmailTemplatesCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   alertRules  AlertRule[]
   emailAlerts EmailAlert[]
 
   @@index([name])
+  @@index([createdById])
 }
 
 // ── Per-Email Follow-up Alerts ─────────────────────────────
@@ -628,35 +680,38 @@ enum EmailAlertStatus {
 }
 
 model EmailAlert {
-  id              String           @id @default(cuid())
+  id String @id @default(cuid())
 
-  emailMessageId  String
-  emailMessage    EmailMessage     @relation(fields: [emailMessageId], references: [id], onDelete: Cascade)
+  emailMessageId String
+  emailMessage   EmailMessage @relation(fields: [emailMessageId], references: [id], onDelete: Cascade)
 
-  influencerId    String?
-  influencer      Influencer?      @relation(fields: [influencerId], references: [id], onDelete: SetNull)
+  influencerId String?
+  influencer   Influencer? @relation(fields: [influencerId], references: [id], onDelete: SetNull)
 
-  thresholdDays   Int
+  thresholdDays Int
 
-  templateId      String?
-  template        EmailTemplate?   @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateId String?
+  template   EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
-  status          EmailAlertStatus @default(WAITING)
+  status EmailAlertStatus @default(WAITING)
 
-  triggerAt        DateTime
-  triggeredAt      DateTime?
-  resolvedAt       DateTime?
-  cancelledAt      DateTime?
-  followUpEmailId  String?
+  triggerAt       DateTime
+  triggeredAt     DateTime?
+  resolvedAt      DateTime?
+  cancelledAt     DateTime?
+  followUpEmailId String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+  createdBy   User?    @relation("EmailAlertsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([triggerAt])
   @@index([emailMessageId])
   @@index([influencerId])
   @@index([status, triggerAt])
+  @@index([createdById])
 }
 
 // ─── ONBOARDING & CONTRACTS ──────────────────────────────
@@ -669,22 +724,22 @@ enum TokenType {
 }
 
 model OnboardingToken {
-  id           String    @id @default(cuid())
-  token        String    @unique
-  influencerId String
-  influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
-  type         TokenType @default(ONBOARDING)
-  contractId   String?   // For CONTRACT type tokens
-  contentSubmissionId String?  // For CONTENT type tokens
-  includePayment Boolean @default(false) // Whether to include payment form with content submission
-  requireScode   Boolean @default(false) // Whether S-code field is required
-  submissionLabel String? // Pre-set label for this submission (e.g. "1st video")
-  expiresAt    DateTime
-  usedAt       DateTime?
-  openedAt     DateTime?  // When the influencer first opened the link
-  createdAt    DateTime  @default(now())
-  createdById  String?   // User who sent the form — used to route submission notifications back
-  createdBy    User?     @relation("OnboardingTokensCreated", fields: [createdById], references: [id], onDelete: SetNull)
+  id                  String     @id @default(cuid())
+  token               String     @unique
+  influencerId        String
+  influencer          Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  type                TokenType  @default(ONBOARDING)
+  contractId          String? // For CONTRACT type tokens
+  contentSubmissionId String? // For CONTENT type tokens
+  includePayment      Boolean    @default(false) // Whether to include payment form with content submission
+  requireScode        Boolean    @default(false) // Whether S-code field is required
+  submissionLabel     String? // Pre-set label for this submission (e.g. "1st video")
+  expiresAt           DateTime
+  usedAt              DateTime?
+  openedAt            DateTime? // When the influencer first opened the link
+  createdAt           DateTime   @default(now())
+  createdById         String? // User who sent the form — used to route submission notifications back
+  createdBy           User?      @relation("OnboardingTokensCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([token])
   @@index([influencerId])
@@ -693,13 +748,13 @@ model OnboardingToken {
 }
 
 model InfluencerOnboarding {
-  id           String   @id @default(cuid())
-  influencerId String   @unique
+  id           String     @id @default(cuid())
+  influencerId String     @unique
   influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
 
   // Bank details (account number is encrypted)
   bankName      String
-  accountNumber String   // AES-256 encrypted
+  accountNumber String // AES-256 encrypted
   accountHolder String
   bankCode      String?
 
@@ -709,25 +764,28 @@ model InfluencerOnboarding {
   addressLine2 String?
   city         String
   postalCode   String
-  country      String   @default("South Korea")
+  country      String  @default("South Korea")
 
-  submittedAt  DateTime @default(now())
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  submittedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([influencerId])
 }
 
 model ContractTemplate {
-  id        String   @id @default(cuid())
-  name      String
-  content   String   // HTML with {{placeholders}}
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  name        String
+  content     String // HTML with {{placeholders}}
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+  createdBy   User?    @relation("ContractTemplatesCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   contracts Contract[]
 
   @@index([name])
+  @@index([createdById])
 }
 
 enum ContractDocStatus {
@@ -739,46 +797,49 @@ enum ContractDocStatus {
 }
 
 model Contract {
-  id             String   @id @default(cuid())
-  influencerId   String
-  influencer     Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
-  campaignId     String?
-  campaign       MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  templateId     String?
-  template       ContractTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  id           String             @id @default(cuid())
+  influencerId String
+  influencer   Influencer         @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  campaignId   String?
+  campaign     MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  templateId   String?
+  template     ContractTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
-  filledContent    String?  // HTML content (legacy flow)
-  pdfUrl           String?  // GCS URL to source PDF (DocuSign flow)
-  fields           Json?    // Field placements: [{ id, type, page, x, y, width, height }]
-  rate             Float?
-  currency         String   @default("USD")
-  deliverables     String?
-  startDate        DateTime?
-  endDate          DateTime?
+  filledContent String? // HTML content (legacy flow)
+  pdfUrl        String? // GCS URL to source PDF (DocuSign flow)
+  fields        Json? // Field placements: [{ id, type, page, x, y, width, height }]
+  rate          Float?
+  currency      String    @default("USD")
+  deliverables  String?
+  startDate     DateTime?
+  endDate       DateTime?
 
   requireBankDetails     Boolean @default(false)
   requireShippingAddress Boolean @default(false)
 
-  signatureDataUrl String?  // base64 of drawn/uploaded signature (influencer side)
-  signedPdfUrl     String?  // GCS path of signed PDF
+  signatureDataUrl String? // base64 of drawn/uploaded signature (influencer side)
+  signedPdfUrl     String? // GCS path of signed PDF
   signedAt         DateTime?
 
   // Admin counter-signature
-  adminSignatureUrl String?  // base64 of admin drawn/uploaded signature or stamp
+  adminSignatureUrl String? // base64 of admin drawn/uploaded signature or stamp
   adminSignedById   String?
-  adminSignedBy     User?    @relation("AdminSignedContracts", fields: [adminSignedById], references: [id], onDelete: SetNull)
+  adminSignedBy     User?     @relation("AdminSignedContracts", fields: [adminSignedById], references: [id], onDelete: SetNull)
   adminSignedAt     DateTime?
 
-  status           ContractDocStatus @default(DRAFT)
+  status ContractDocStatus @default(DRAFT)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+  createdBy   User?    @relation("ContractsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
-  comments  ContractComment[]
+  comments ContractComment[]
 
   @@index([influencerId])
   @@index([campaignId])
   @@index([status])
+  @@index([createdById])
 }
 
 model ContractComment {
@@ -787,7 +848,7 @@ model ContractComment {
   contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
   userId     String
   user       User     @relation("ContractComments", fields: [userId], references: [id], onDelete: Cascade)
-  body       String   // Comment text
+  body       String // Comment text
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -805,75 +866,81 @@ enum ContentSubmissionStatus {
 }
 
 model ContentSubmission {
-  id             String   @id @default(cuid())
-  influencerId   String
-  influencer     Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
-  campaignId     String?
+  id           String     @id @default(cuid())
+  influencerId String
+  influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  campaignId   String?
 
-  videoLinks     Json     @default("[]") // string[] of video URLs
-  videoFiles     Json     @default("[]") // [{ gcsPath, name, size, type }] uploaded directly to our bucket
-  notes          String?
-  sCode          String?  // Internal tracking code (S-code)
+  videoLinks      Json    @default("[]") // string[] of video URLs
+  videoFiles      Json    @default("[]") // [{ gcsPath, name, size, type }] uploaded directly to our bucket
+  notes           String?
+  sCode           String? // Internal tracking code (S-code)
   submissionLabel String? // e.g. "1st video", "Week 3", manual label
 
   // Payment details (optional — only when payment form is included)
-  includePayment  Boolean @default(false)
-  bankName        String?
-  accountNumber   String?  // AES-256 encrypted
-  accountHolder   String?
-  bankCode        String?
+  includePayment Boolean @default(false)
+  bankName       String?
+  accountNumber  String? // AES-256 encrypted
+  accountHolder  String?
+  bankCode       String?
 
-  status         ContentSubmissionStatus @default(PENDING)
-  submittedAt    DateTime?
-  verifiedAt     DateTime?
-  verifiedById   String?
+  status       ContentSubmissionStatus @default(PENDING)
+  submittedAt  DateTime?
+  verifiedAt   DateTime?
+  verifiedById String?
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+  createdBy   User?    @relation("ContentSubmissionsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([influencerId])
   @@index([status])
   @@index([campaignId])
+  @@index([createdById])
 }
 
 // ─── AUDIENCE ANALYTICS ─────────────────────────────────
 
 model Comment {
-  id             String    @id @default(cuid())
-  influencerId   String
-  influencer     Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
-  videoUrl       String?
-  text           String
-  username       String?
-  avatarUrl      String?   // commenter's profile pic (scraped for avatar sample)
-  likes          Int       @default(0)
-  replyCount     Int       @default(0)
-  commentedAt    DateTime?
-  createdAt      DateTime  @default(now())
+  id           String     @id @default(cuid())
+  influencerId String
+  influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  videoUrl     String?
+  text         String
+  username     String?
+  avatarUrl    String? // commenter's profile pic (scraped for avatar sample)
+  likes        Int        @default(0)
+  replyCount   Int        @default(0)
+  commentedAt  DateTime?
+  createdAt    DateTime   @default(now())
 
   @@index([influencerId])
 }
 
 model AnalysisRun {
-  id             String            @id @default(cuid())
-  influencerId   String
-  influencer     Influencer        @relation(fields: [influencerId], references: [id], onDelete: Cascade)
-  status         AnalysisRunStatus @default(PENDING)
-  mode           AnalysisMode      @default(HYBRID)
-  batchId        String?           // links runs together in a bulk analysis batch
-  commentCount   Int               @default(0)
-  avatarCount    Int               @default(0)
-  analyzedCount  Int               @default(0)
-  progress       Int               @default(0)   // 0-100
-  progressMsg    String?                         // current step message for SSE
-  errorMessage   String?
-  config         Json?             // snapshot of { videosToSample, commentsPerVideo, avatarsToAnalyze }
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  id            String            @id @default(cuid())
+  influencerId  String
+  influencer    Influencer        @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  status        AnalysisRunStatus @default(PENDING)
+  mode          AnalysisMode      @default(HYBRID)
+  batchId       String? // links runs together in a bulk analysis batch
+  commentCount  Int               @default(0)
+  avatarCount   Int               @default(0)
+  analyzedCount Int               @default(0)
+  progress      Int               @default(0) // 0-100
+  progressMsg   String? // current step message for SSE
+  errorMessage  String?
+  config        Json? // snapshot of { videosToSample, commentsPerVideo, avatarsToAnalyze }
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  createdById   String?
+  createdBy     User?             @relation("AnalysisRunsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([influencerId])
   @@index([status])
   @@index([batchId])
+  @@index([createdById])
 }
 
 enum AnalysisRunStatus {
@@ -892,49 +959,53 @@ enum AnalysisMode {
 }
 
 model InfluencerAnalytics {
-  id                   String   @id @default(cuid())
-  influencerId         String   @unique
-  influencer           Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  id           String     @id @default(cuid())
+  influencerId String     @unique
+  influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
 
   // Influencer profile (from their own profile pic via Gemini Vision)
-  influencerGender     String?  // "male" | "female" | "unknown"
-  influencerAgeRange   String?  // e.g. "25-34"
-  influencerEthnicity  String?  // e.g. "East Asian", "South Asian", "White/Caucasian", "Black", "Latino", "Middle Eastern", "Southeast Asian", "Central Asian", "Mixed"
-  influencerCountry    String?  // AI-estimated country e.g. "US|United States", "KR|South Korea"
+  influencerGender    String? // "male" | "female" | "unknown"
+  influencerAgeRange  String? // e.g. "25-34"
+  influencerEthnicity String? // e.g. "East Asian", "South Asian", "White/Caucasian", "Black", "Latino", "Middle Eastern", "Southeast Asian", "Central Asian", "Mixed"
+  influencerCountry   String? // AI-estimated country e.g. "US|United States", "KR|South Korea"
 
   // Audience demographics (from NLP + commenter avatars)
-  genderBreakdown      Json     // { male: %, female: %, unknown: % }
-  ageBrackets          Json     // { "13-17": %, "18-24": %, "25-34": %, "35-44": %, "45+": % }
-  topCountries         Json     // [{ country, countryName, percentage }]
-  ethnicityBreakdown   Json?    // { "East Asian": %, "White/Caucasian": %, ... }
-  topInterests         Json     // [{ category, score }]
-  audienceQuality      Float?   // 0-100
-  sentiment            Json?    // { positive: %, negative: %, neutral: %, humorous: % }
-  commentTopics        Json?    // [{ topic, percentage, sentiment, sampleComments }]
-  commentSummary       String?  // 2-3 sentence marketing summary
+  genderBreakdown    Json // { male: %, female: %, unknown: % }
+  ageBrackets        Json // { "13-17": %, "18-24": %, "25-34": %, "35-44": %, "45+": % }
+  topCountries       Json // [{ country, countryName, percentage }]
+  ethnicityBreakdown Json? // { "East Asian": %, "White/Caucasian": %, ... }
+  topInterests       Json // [{ category, score }]
+  audienceQuality    Float? // 0-100
+  sentiment          Json? // { positive: %, negative: %, neutral: %, humorous: % }
+  commentTopics      Json? // [{ topic, percentage, sentiment, sampleComments }]
+  commentSummary     String? // 2-3 sentence marketing summary
 
   // Metadata
-  mode              AnalysisMode @default(HYBRID)
-  confidence        Float    @default(0)  // 0-1
-  commentCount      Int      @default(0)
-  avatarsSampled    Int      @default(0)
-  lastAnalyzedAt    DateTime @default(now())
-  analysisRunId     String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  mode           AnalysisMode @default(HYBRID)
+  confidence     Float        @default(0) // 0-1
+  commentCount   Int          @default(0)
+  avatarsSampled Int          @default(0)
+  lastAnalyzedAt DateTime     @default(now())
+  analysisRunId  String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@index([influencerId])
 }
 
 model AnalysisConfig {
-  id                  String   @id @default("default")
-  videosToSample      Int      @default(20)
-  commentsPerVideo    Int      @default(50)
-  avatarsToAnalyze    Int      @default(100)
-  commentBatchSize    Int      @default(200)
-  defaultMode         AnalysisMode @default(HYBRID)
-  geminiModel         String   @default("gemini-2.5-flash")
-  updatedAt           DateTime @updatedAt
+  id               String       @id @default("default")
+  videosToSample   Int          @default(20)
+  commentsPerVideo Int          @default(50)
+  avatarsToAnalyze Int          @default(100)
+  commentBatchSize Int          @default(200)
+  defaultMode      AnalysisMode @default(HYBRID)
+  geminiModel      String       @default("gemini-2.5-flash")
+  updatedAt        DateTime     @updatedAt
+  createdById      String?
+  createdBy        User?        @relation("AnalysisConfigsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 // Global scraping settings — applies platform-wide to all Apify calls
@@ -943,34 +1014,38 @@ model ScrapingConfig {
   id          String   @id @default("default")
   concurrency Int      @default(10)
   updatedAt   DateTime @updatedAt
+  createdById String?
+  createdBy   User?    @relation("ScrapingConfigsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 // ─── API USAGE & BILLING ────────────────────────────────
 
 model ApiUsageLog {
-  id             String   @id @default(cuid())
-  service        String   // "apify_video" | "apify_profile" | "apify_comments" | "gemini_nlp" | "gemini_vision"
-  action         String   // "scrape_videos" | "scrape_profiles" | "scrape_comments" | "analyze_comments" | "analyze_face"
+  id      String @id @default(cuid())
+  service String // "apify_video" | "apify_profile" | "apify_comments" | "gemini_nlp" | "gemini_vision"
+  action  String // "scrape_videos" | "scrape_profiles" | "scrape_comments" | "analyze_comments" | "analyze_face"
 
-  importId       String?
-  influencerId   String?
-  analysisRunId  String?
+  importId      String?
+  influencerId  String?
+  analysisRunId String?
 
-  apifyRunId     String?
-  apifyActorId   String?
+  apifyRunId   String?
+  apifyActorId String?
 
-  costUsd        Float    @default(0)
-  inputCount     Int      @default(0)
-  outputCount    Int      @default(0)
-  durationMs     Int      @default(0)
+  costUsd     Float @default(0)
+  inputCount  Int   @default(0)
+  outputCount Int   @default(0)
+  durationMs  Int   @default(0)
 
-  inputTokens    Int      @default(0)
-  outputTokens   Int      @default(0)
+  inputTokens  Int @default(0)
+  outputTokens Int @default(0)
 
-  status         String   @default("success") // "success" | "failed" | "partial"
-  errorMessage   String?
+  status       String  @default("success") // "success" | "failed" | "partial"
+  errorMessage String?
 
-  createdAt      DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([service])
   @@index([importId])
@@ -983,16 +1058,20 @@ model ApiUsageLog {
 
 model BudgetConfig {
   id                String    @id @default("default")
-  monthlyCapUsd     Float     @default(0)       // 0 = no cap set
-  isBlocked         Boolean   @default(false)    // true = all external API calls blocked
+  monthlyCapUsd     Float     @default(0) // 0 = no cap set
+  isBlocked         Boolean   @default(false) // true = all external API calls blocked
   blockedAt         DateTime?
   blockedByUserId   String?
   unblockedAt       DateTime?
   unblockedByUserId String?
-  blockReason       String?                      // "budget_exceeded" | "manual"
-  gcpManualCostUsd  Float     @default(0)        // admin enters monthly GCP cost
+  blockReason       String? // "budget_exceeded" | "manual"
+  gcpManualCostUsd  Float     @default(0) // admin enters monthly GCP cost
   gcpCostUpdatedAt  DateTime?
   updatedAt         DateTime  @updatedAt
+  createdById       String?
+  createdBy         User?     @relation("BudgetConfigsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 // ─── INVENTORY & SHIPPING ─────────────────────────────────
@@ -1004,16 +1083,19 @@ model Product {
   description String?
   category    String?
   imageUrl    String?
-  quantity    Int      @default(0)   // total stock
-  reserved    Int      @default(0)   // assigned but not yet delivered
-  unitCost    Float?                 // cost per unit in USD
+  quantity    Int      @default(0) // total stock
+  reserved    Int      @default(0) // assigned but not yet delivered
+  unitCost    Float? // cost per unit in USD
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  createdById String?
+  createdBy   User?    @relation("ProductsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
-  shipments   Shipment[]
+  shipments Shipment[]
 
   @@index([sku])
   @@index([category])
+  @@index([createdById])
 }
 
 enum ShippingCarrier {
@@ -1025,40 +1107,40 @@ enum ShippingCarrier {
 }
 
 enum ShipmentStatus {
-  PENDING      // product assigned, not shipped yet
-  SHIPPED      // carrier picked up
-  IN_TRANSIT   // in transit
-  DELIVERED    // delivered to influencer
-  RETURNED     // returned/undeliverable
-  FAILED       // shipment failed
+  PENDING // product assigned, not shipped yet
+  SHIPPED // carrier picked up
+  IN_TRANSIT // in transit
+  DELIVERED // delivered to influencer
+  RETURNED // returned/undeliverable
+  FAILED // shipment failed
 }
 
 model Shipment {
-  id               String          @id @default(cuid())
-  productId        String
-  product          Product         @relation(fields: [productId], references: [id])
-  influencerId     String
-  influencer       Influencer      @relation(fields: [influencerId], references: [id], onDelete: Cascade)
-  campaignId       String?
-  campaign         MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  id           String             @id @default(cuid())
+  productId    String
+  product      Product            @relation(fields: [productId], references: [id])
+  influencerId String
+  influencer   Influencer         @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  campaignId   String?
+  campaign     MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
-  quantity         Int             @default(1)  // number of units in this shipment
+  quantity         Int             @default(1) // number of units in this shipment
   carrier          ShippingCarrier @default(OTHER)
   trackingNumber   String?
-  trackingUrl      String?         // auto-generated clickable link
+  trackingUrl      String? // auto-generated clickable link
   status           ShipmentStatus  @default(PENDING)
-  shippingAddress  Json?           // snapshot of influencer address at creation
-  lastTrackingData Json?           // cached carrier API response
+  shippingAddress  Json? // snapshot of influencer address at creation
+  lastTrackingData Json? // cached carrier API response
   lastTrackedAt    DateTime?
   notes            String?
 
-  shippedAt        DateTime?
-  deliveredAt      DateTime?
+  shippedAt   DateTime?
+  deliveredAt DateTime?
 
-  createdById      String?
-  createdBy        User?           @relation("ShipmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  createdById String?
+  createdBy   User?    @relation("ShipmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([influencerId])
   @@index([productId])
@@ -1070,50 +1152,53 @@ model Shipment {
 // ─── TIKTOK PERFORMANCE TRACKING ──────────────────────────
 
 model TrackedVideo {
-  id                  String   @id @default(cuid())
-  videoUrl            String   @unique  // TikTok video URL
-  tiktokId            String?           // extracted video ID
+  id                  String             @id @default(cuid())
+  videoUrl            String             @unique // TikTok video URL
+  tiktokId            String? // extracted video ID
   influencerId        String
-  influencer          Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  influencer          Influencer         @relation(fields: [influencerId], references: [id], onDelete: Cascade)
   campaignId          String?
   campaign            MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   contentSubmissionId String?
 
-  title               String?
-  thumbnailUrl        String?
+  title        String?
+  thumbnailUrl String?
 
   // Current stats (updated on each refresh)
-  currentViews        Int      @default(0)
-  currentLikes        Int      @default(0)
-  currentComments     Int      @default(0)
-  currentSaves        Int      @default(0)
-  currentShares       Int      @default(0)
+  currentViews    Int @default(0)
+  currentLikes    Int @default(0)
+  currentComments Int @default(0)
+  currentSaves    Int @default(0)
+  currentShares   Int @default(0)
 
-  isTracking          Boolean  @default(true)
-  lastTrackedAt       DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  isTracking    Boolean   @default(true)
+  lastTrackedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdById   String?
+  createdBy     User?     @relation("TrackedVideosCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
-  snapshots           VideoSnapshot[]
-  viralAlerts         ViralAlert[]
+  snapshots   VideoSnapshot[]
+  viralAlerts ViralAlert[]
 
   @@index([influencerId])
   @@index([isTracking])
   @@index([campaignId])
+  @@index([createdById])
 }
 
 model VideoSnapshot {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   trackedVideoId String
   trackedVideo   TrackedVideo @relation(fields: [trackedVideoId], references: [id], onDelete: Cascade)
 
-  views          Int      @default(0)
-  likes          Int      @default(0)
-  comments       Int      @default(0)
-  saves          Int      @default(0)
-  shares         Int      @default(0)
+  views    Int @default(0)
+  likes    Int @default(0)
+  comments Int @default(0)
+  saves    Int @default(0)
+  shares   Int @default(0)
 
-  recordedAt     DateTime // date of this snapshot
+  recordedAt DateTime // date of this snapshot
 
   @@unique([trackedVideoId, recordedAt])
   @@index([trackedVideoId])
@@ -1127,19 +1212,19 @@ enum ViralAlertStatus {
 }
 
 model ViralAlert {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   trackedVideoId String
   trackedVideo   TrackedVideo @relation(fields: [trackedVideoId], references: [id], onDelete: Cascade)
   influencerId   String
-  influencer     Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  influencer     Influencer   @relation(fields: [influencerId], references: [id], onDelete: Cascade)
 
-  metric         String   // "views", "likes", "comments", "saves", "shares"
-  threshold      Int      // what threshold was crossed
-  valueAtAlert   Int      // actual value when alert fired
-  status         ViralAlertStatus @default(ACTIVE)
+  metric       String // "views", "likes", "comments", "saves", "shares"
+  threshold    Int // what threshold was crossed
+  valueAtAlert Int // actual value when alert fired
+  status       ViralAlertStatus @default(ACTIVE)
 
-  createdAt      DateTime @default(now())
-  dismissedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  dismissedAt DateTime?
 
   @@index([trackedVideoId])
   @@index([influencerId])
@@ -1147,57 +1232,90 @@ model ViralAlert {
 }
 
 model ViralAlertConfig {
-  id               String   @id @default("default")
-  viewsThreshold   Int      @default(100000)
-  likesThreshold   Int      @default(10000)
-  commentsThreshold Int     @default(5000)
-  savesThreshold   Int      @default(5000)
-  sharesThreshold  Int      @default(5000)
-  pollIntervalHours Int     @default(5)   // how often cron refreshes stats (hours)
-  enabled          Boolean  @default(true)
-  updatedAt        DateTime @updatedAt
+  id                String   @id @default("default")
+  viewsThreshold    Int      @default(100000)
+  likesThreshold    Int      @default(10000)
+  commentsThreshold Int      @default(5000)
+  savesThreshold    Int      @default(5000)
+  sharesThreshold   Int      @default(5000)
+  pollIntervalHours Int      @default(5) // how often cron refreshes stats (hours)
+  enabled           Boolean  @default(true)
+  updatedAt         DateTime @updatedAt
+  createdById       String?
+  createdBy         User?    @relation("ViralAlertConfigsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 // ─── PAYMENT MANAGEMENT ──────────────────────────────────
 
 enum PaymentStatus {
-  PENDING      // payment created, not yet processed
-  PROCESSING   // being processed by finance
-  SENT         // payment sent to influencer
-  RECEIVED     // influencer confirmed receipt
-  FAILED       // payment failed
+  PENDING // payment created, not yet processed
+  PROCESSING // being processed by finance
+  SENT // payment sent to influencer
+  RECEIVED // influencer confirmed receipt
+  FAILED // payment failed
 }
 
 model Payment {
-  id              String          @id @default(cuid())
-  influencerId    String
-  influencer      Influencer      @relation(fields: [influencerId], references: [id], onDelete: Cascade)
-  campaignId      String?
-  campaign        MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  id           String             @id @default(cuid())
+  influencerId String
+  influencer   Influencer         @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  campaignId   String?
+  campaign     MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
-  amount          Float
-  currency        String          @default("KRW")
-  status          PaymentStatus   @default(PENDING)
+  amount   Float
+  currency String        @default("KRW")
+  status   PaymentStatus @default(PENDING)
 
   // Bank details snapshot (copied from InfluencerOnboarding at creation)
-  bankName        String?
-  accountNumber   String?         // AES-256 encrypted
-  accountHolder   String?
-  bankCode        String?
+  bankName      String?
+  accountNumber String? // AES-256 encrypted
+  accountHolder String?
+  bankCode      String?
 
-  invoiceNumber   String?
-  notes           String?
+  invoiceNumber String?
+  notes         String?
 
-  paidAt          DateTime?       // when status becomes SENT
-  confirmedAt     DateTime?       // when status becomes RECEIVED
+  paidAt      DateTime? // when status becomes SENT
+  confirmedAt DateTime? // when status becomes RECEIVED
 
-  createdById     String?
-  createdBy       User?           @relation("PaymentCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdById String?
+  createdBy   User?    @relation("PaymentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([influencerId])
   @@index([campaignId])
   @@index([status])
   @@index([createdAt])
+}
+
+// ─── PER-USER ISOLATION (Phase 1) ─────────────────────────
+
+// Resource-level sharing. Lets a user grant access to one of their owned
+// resources (e.g. an Import, a Campaign, a Contract) to another user.
+model ResourceShare {
+  id           String   @id @default(cuid())
+  resourceType String // "Import" | "Campaign" | "Influencer" | "Contract" | etc.
+  resourceId   String
+  userId       String // recipient
+  user         User     @relation("ShareRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  permission   String   @default("read") // "read" | "write" | "admin"
+  sharedById   String? // who granted the share
+  sharedBy     User?    @relation("ShareGrantor", fields: [sharedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+
+  @@unique([resourceType, resourceId, userId])
+  @@index([userId])
+  @@index([resourceType, resourceId])
+  @@index([sharedById])
+}
+
+// Global system-level settings. Currently used to flag whether admins
+// see-everything or are isolated like other users.
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

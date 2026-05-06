@@ -20,6 +20,7 @@ import {
   Banknote,
   BarChart3,
   Activity,
+  Lock,
   UserCog,
   Users,
 } from "lucide-react";
@@ -363,6 +364,18 @@ export function AppSidebar() {
                       <Link href="/admin/roles">
                         <ShieldCheck className="h-4 w-4" />
                         <span>Roles & permissions</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      tooltip="System settings"
+                      isActive={pathname.startsWith("/admin/settings")}
+                    >
+                      <Link href="/admin/settings">
+                        <Lock className="h-4 w-4" />
+                        <span>System settings</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

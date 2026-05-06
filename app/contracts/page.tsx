@@ -1,19 +1,50 @@
 import { prisma } from "../lib/prisma";
 import { decrypt } from "../lib/crypto";
 import { getCurrentUser } from "../lib/rbac";
+import { isAdminIsolationEnabled } from "../lib/ownership";
 import { ContractsPage } from "./contracts-page";
 
 export const dynamic = "force-dynamic";
 
 export default async function ContractsPageWrapper() {
-  let isAdmin = false;
-  try {
-    const user = await getCurrentUser();
-    if (user?.role === "Admin") isAdmin = true;
-  } catch {}
+  const user = await getCurrentUser();
+  const isAdmin = user?.role === "Admin";
+  const adminIsolated = await isAdminIsolationEnabled();
+  const restrict = (!isAdmin || adminIsolated) && !!user?.id;
+
+  // Per-user isolation: filter contracts + submissions by ownership
+  let contractWhere: Record<string, unknown> | undefined;
+  let submissionWhere: Record<string, unknown> | undefined;
+  if (restrict && user?.id) {
+    const [contractShares, submissionShares] = await Promise.all([
+      prisma.resourceShare.findMany({
+        where: { userId: user.id, resourceType: "Contract" },
+        select: { resourceId: true },
+      }),
+      prisma.resourceShare.findMany({
+        where: { userId: user.id, resourceType: "ContentSubmission" },
+        select: { resourceId: true },
+      }),
+    ]);
+    const sharedContractIds = contractShares.map((s) => s.resourceId);
+    const sharedSubmissionIds = submissionShares.map((s) => s.resourceId);
+    contractWhere = {
+      OR: [
+        { createdById: user.id },
+        ...(sharedContractIds.length > 0 ? [{ id: { in: sharedContractIds } }] : []),
+      ],
+    };
+    submissionWhere = {
+      OR: [
+        { createdById: user.id },
+        ...(sharedSubmissionIds.length > 0 ? [{ id: { in: sharedSubmissionIds } }] : []),
+      ],
+    };
+  }
 
   const [contracts, submissions] = await Promise.all([
     prisma.contract.findMany({
+      where: contractWhere,
       orderBy: { createdAt: "desc" },
       include: {
         influencer: {
@@ -35,6 +66,7 @@ export default async function ContractsPageWrapper() {
       },
     }),
     prisma.contentSubmission.findMany({
+      where: submissionWhere,
       orderBy: { createdAt: "desc" },
       include: {
         influencer: {

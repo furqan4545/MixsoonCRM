@@ -13,8 +13,13 @@ import {
   Sparkles,
   Check,
   BarChart3,
+  FileSpreadsheet,
+  Loader2,
+  Share2,
   UserPlus,
+  X,
 } from "lucide-react";
+import { ShareDialog } from "@/components/share-dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -360,6 +365,10 @@ interface Props {
 export function InfluencersDashboard({ influencers, onRefresh }: Props) {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const importIdFilter = searchParams.get("importId");
+  const importCsvName = searchParams.get("csv");
+  const [deletingImport, setDeletingImport] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(
     searchParams.get("selected") ?? null,
@@ -679,20 +688,22 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
   );
 
   const runAiFilter = useCallback(
-    async (campaignId: string) => {
+    async (campaignId: string, importIdOverride?: string) => {
       setMoving(true);
       try {
+        const body = importIdOverride
+          ? { campaignId, importId: importIdOverride }
+          : { campaignId, influencerIds: selectedUnscoredIds };
         const res = await fetch("/api/ai/filter", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ campaignId, influencerIds: selectedUnscoredIds }),
+          body: JSON.stringify(body),
         });
         if (!res.ok) {
           const data = await res.json();
           throw new Error(data.error || "Failed");
         }
         const { runId, totalCount } = await res.json();
-        // Trigger progress indicator
         localStorage.setItem("mixsoon_active_ai_run", runId);
         window.dispatchEvent(
           new CustomEvent("ai-filter-started", { detail: runId }),
@@ -711,6 +722,38 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
       }
     },
     [selectedUnscoredIds, router],
+  );
+
+  const deleteImportWithData = useCallback(
+    async (importId: string, csvName: string | null) => {
+      const label = csvName ? `"${csvName}"` : "this CSV";
+      if (
+        !window.confirm(
+          `Delete ${label} and ALL its data?\n\nThis hard-deletes the import plus every influencer, video, contract, content submission, and payment that came from it. This cannot be undone.`,
+        )
+      ) {
+        return;
+      }
+      setDeletingImport(true);
+      try {
+        const res = await fetch(`/api/imports/${importId}/delete-with-data`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to delete import");
+        }
+        toast.success(`Deleted ${label} and its data`);
+        router.push("/");
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to delete import",
+        );
+      } finally {
+        setDeletingImport(false);
+      }
+    },
+    [router],
   );
 
   const runBulkAnalysis = useCallback(
@@ -795,6 +838,90 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
       {/* Main table area */}
       <div className="flex-1 overflow-auto">
         <div className="p-6">
+          {/* Filtered-by-import banner */}
+          {importIdFilter && (
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 dark:border-blue-900/40 dark:bg-blue-950/20">
+              <FileSpreadsheet className="h-4 w-4 shrink-0 text-blue-700 dark:text-blue-300" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
+                  Filtered by {importCsvName ? `"${importCsvName}"` : "import"}
+                </p>
+                <p className="text-xs text-blue-700/80 dark:text-blue-300/80">
+                  {influencers.length} influencer
+                  {influencers.length !== 1 ? "s" : ""} from this CSV
+                </p>
+              </div>
+              <DropdownMenu onOpenChange={(open) => open && fetchCampaigns()}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={moving || deletingImport || influencers.length === 0}
+                    className="gap-1.5 text-xs"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    Run AI Filter on whole CSV
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {loadingCampaigns && (
+                    <DropdownMenuItem disabled>Loading campaigns…</DropdownMenuItem>
+                  )}
+                  {campaigns && campaigns.length === 0 && (
+                    <DropdownMenuItem disabled>No campaigns found</DropdownMenuItem>
+                  )}
+                  {campaigns?.map((c) => (
+                    <DropdownMenuItem
+                      key={c.id}
+                      onClick={() => runAiFilter(c.id, importIdFilter)}
+                    >
+                      {c.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShareDialogOpen(true)}
+                className="gap-1.5 text-xs"
+              >
+                <Share2 className="h-3 w-3" />
+                Share
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={deletingImport}
+                onClick={() => deleteImportWithData(importIdFilter, importCsvName)}
+                className="gap-1.5 text-xs text-red-700 border-red-300 hover:bg-red-50 dark:text-red-300 dark:border-red-900"
+              >
+                {deletingImport ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3 w-3" />
+                )}
+                Delete CSV + Data
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push("/influencers")}
+                className="gap-1 text-xs text-muted-foreground"
+              >
+                <X className="h-3 w-3" />
+                Clear filter
+              </Button>
+              <ShareDialog
+                open={shareDialogOpen}
+                onOpenChange={setShareDialogOpen}
+                resourceType="Import"
+                resourceId={importIdFilter}
+                resourceLabel={importCsvName ? `"${importCsvName}"` : "this CSV"}
+              />
+            </div>
+          )}
+
           {/* Header */}
           <div className="mb-4 flex items-start justify-between">
             <div>

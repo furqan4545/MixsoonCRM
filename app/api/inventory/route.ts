@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
+import { ownershipWhere } from "@/app/lib/ownership";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/inventory — list products with search, category filter, pagination
 export async function GET(request: NextRequest) {
-  await requirePermission("inventory", "read");
+  const currentUser = await requirePermission("inventory", "read");
 
   const { searchParams } = request.nextUrl;
   const search = searchParams.get("search") || "";
@@ -17,16 +18,28 @@ export async function GET(request: NextRequest) {
 
   const where: Record<string, unknown> = {};
 
-  if (search) {
-    where.OR = [
-      { name: { contains: search, mode: "insensitive" } },
-      { sku: { contains: search, mode: "insensitive" } },
-      { description: { contains: search, mode: "insensitive" } },
-    ];
-  }
+  const searchOr = search
+    ? [
+        { name: { contains: search, mode: "insensitive" as const } },
+        { sku: { contains: search, mode: "insensitive" as const } },
+        { description: { contains: search, mode: "insensitive" as const } },
+      ]
+    : null;
 
   if (category) {
     where.category = category;
+  }
+
+  const ownership = await ownershipWhere("Product", currentUser);
+  const ownershipOr = ownership && "OR" in ownership ? ownership.OR : null;
+  const ownershipBare = ownership && !("OR" in ownership) ? ownership : null;
+  if (ownershipBare) Object.assign(where, ownershipBare);
+  if (searchOr && ownershipOr) {
+    where.AND = [{ OR: searchOr }, { OR: ownershipOr }];
+  } else if (searchOr) {
+    where.OR = searchOr;
+  } else if (ownershipOr) {
+    where.OR = ownershipOr;
   }
 
   const [products, total] = await Promise.all([
@@ -78,7 +91,7 @@ export async function GET(request: NextRequest) {
 
 // POST /api/inventory — create a single product
 export async function POST(request: NextRequest) {
-  await requirePermission("inventory", "write");
+  const currentUser = await requirePermission("inventory", "write");
 
   const body = await request.json();
   const { name, sku, description, category, imageUrl, quantity, unitCost } = body;
@@ -108,6 +121,7 @@ export async function POST(request: NextRequest) {
       imageUrl: imageUrl || null,
       quantity: parseInt(quantity) || 0,
       unitCost: unitCost ? parseFloat(unitCost) : null,
+      createdById: currentUser.id,
     },
   });
 

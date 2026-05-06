@@ -237,11 +237,15 @@ async function runAiFilterBackground(params: {
 }
 
 export async function POST(request: NextRequest) {
+  let currentUser;
   try {
     const { requirePermission } = await import("@/app/lib/rbac");
-    await requirePermission("ai-filter", "write");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    currentUser = await requirePermission("ai-filter", "write");
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
   }
   try {
     // Budget check before any AI calls
@@ -334,6 +338,7 @@ export async function POST(request: NextRequest) {
         strictness: resolvedStrictness,
         status: "PROCESSING",
         totalCount: influencers.length,
+        createdById: currentUser.id,
       },
     });
 

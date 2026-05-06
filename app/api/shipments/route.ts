@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
+import { isAdminIsolationEnabled } from "@/app/lib/ownership";
 import { generateTrackingUrl } from "@/app/lib/tracking";
 import { ShippingCarrier } from "@prisma/client";
 
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 // GET /api/shipments — list shipments with filters
 export async function GET(request: NextRequest) {
-  await requirePermission("shipping", "read");
+  const currentUser = await requirePermission("shipping", "read");
 
   const { searchParams } = request.nextUrl;
   const status = searchParams.get("status") || "";
@@ -23,6 +24,12 @@ export async function GET(request: NextRequest) {
   if (status) where.status = status;
   if (campaignId) where.campaignId = campaignId;
   if (influencerId) where.influencerId = influencerId;
+
+  // Per-user isolation: filter on Shipment.createdById (already in schema)
+  const adminIsolated = await isAdminIsolationEnabled();
+  if (currentUser.role !== "Admin" || adminIsolated) {
+    where.createdById = currentUser.id;
+  }
 
   if (search) {
     where.OR = [

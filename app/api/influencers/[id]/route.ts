@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { PipelineStage } from "@prisma/client";
+import { requirePermission } from "@/app/lib/rbac";
+import { assertCanAccess } from "@/app/lib/ownership";
 
 const VALID_STAGES = Object.values(PipelineStage);
 
@@ -8,7 +10,40 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let currentUser;
+  try {
+    currentUser = await requirePermission("influencers", "write");
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
+  }
+
   const { id } = await params;
+
+  // Verify ownership/share before mutating
+  const existing = await prisma.influencer.findUnique({
+    where: { id },
+    select: { createdById: true },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  try {
+    await assertCanAccess({
+      resourceType: "Influencer",
+      resourceId: id,
+      user: currentUser,
+      ownerId: existing.createdById,
+      required: "write",
+    });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
+  }
 
   try {
     const body = await request.json();
@@ -107,6 +142,16 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let currentUser;
+  try {
+    currentUser = await requirePermission("influencers", "read");
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
+  }
+
   const { id } = await params;
 
   // Fire ALL queries in parallel — Prisma does them sequentially with include,
@@ -163,6 +208,21 @@ export async function GET(
 
   if (!influencer) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  try {
+    await assertCanAccess({
+      resourceType: "Influencer",
+      resourceId: id,
+      user: currentUser,
+      ownerId: influencer.createdById,
+      required: "read",
+    });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
   }
 
   const savedEval = aiEvaluations.find((e) => e.reviewStatus === "SAVED");

@@ -65,6 +65,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { ShareDialog } from "@/components/share-dialog";
+import { Share2 } from "lucide-react";
 import { ThumbnailImage } from "@/components/thumbnail-image";
 import type { InfluencerRow } from "./influencers-dashboard";
 import { InfluencerContactSection } from "@/components/influencer-contact-section";
@@ -1633,6 +1635,7 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
   const [picSearch, setPicSearch] = useState("");
   const [currentStage, setCurrentStage] = useState(influencer.pipelineStage);
   const [activeTab, setActiveTab] = useState("overview");
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
   const stageIndex = PIPELINE_STAGES.findIndex((s) => s.key === currentStage);
 
@@ -1768,6 +1771,15 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
               {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setShareDialogOpen(true)}
+            title="Share with another user"
+          >
+            <Share2 className="h-4 w-4" />
+          </Button>
           {influencer.email && (
             <Button asChild variant="ghost" size="icon" className="h-8 w-8">
               <a href={`/email/compose?to=${encodeURIComponent(influencer.email)}&influencerId=${influencer.id}`}>
@@ -2506,6 +2518,14 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
           )}
         </TabsContent>
       </Tabs>
+
+      <ShareDialog
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        resourceType="Influencer"
+        resourceId={influencer.id}
+        resourceLabel={`@${influencer.username}`}
+      />
     </div>
   );
 }

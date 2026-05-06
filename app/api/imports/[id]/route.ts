@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/app/lib/rbac";
+import { assertCanAccess } from "@/app/lib/ownership";
 import { prisma } from "../../../lib/prisma";
 
 // GET /api/imports/:id — Get single import with influencers and videos
@@ -7,10 +8,14 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let currentUser;
   try {
-    await requirePermission("imports", "read");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    currentUser = await requirePermission("imports", "read");
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
   }
   try {
     const { id } = await params;
@@ -32,6 +37,21 @@ export async function GET(
       return NextResponse.json({ error: "Import not found" }, { status: 404 });
     }
 
+    try {
+      await assertCanAccess({
+        resourceType: "Import",
+        resourceId: id,
+        user: currentUser,
+        ownerId: importRecord.createdById,
+        required: "read",
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Forbidden" },
+        { status: 403 },
+      );
+    }
+
     return NextResponse.json(importRecord);
   } catch (error) {
     console.error("Fetch import error:", error);
@@ -47,13 +67,39 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let currentUser;
   try {
-    await requirePermission("imports", "delete");
-  } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    currentUser = await requirePermission("imports", "delete");
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
   }
   try {
     const { id } = await params;
+
+    const importRow = await prisma.import.findUnique({
+      where: { id },
+      select: { createdById: true, sourceFilename: true },
+    });
+    if (!importRow) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    try {
+      await assertCanAccess({
+        resourceType: "Import",
+        resourceId: id,
+        user: currentUser,
+        ownerId: importRow.createdById,
+        required: "admin",
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Forbidden" },
+        { status: 403 },
+      );
+    }
 
     // Unlink influencers from this import (set importId to null)
     await prisma.influencer.updateMany({
@@ -63,6 +109,16 @@ export async function DELETE(
 
     // Delete the import record
     await prisma.import.delete({ where: { id } });
+
+    await prisma.notification.create({
+      data: {
+        type: "import_unlinked",
+        status: "info",
+        title: `Import unlinked: ${importRow.sourceFilename}`,
+        message: `${currentUser.name ?? currentUser.email ?? "user"} removed the import record (influencers preserved as orphans).`,
+        userId: currentUser.id,
+      },
+    }).catch(() => {});
 
     return NextResponse.json({ success: true, mode: "soft" });
   } catch (error) {

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
+import { isAdminIsolationEnabled } from "@/app/lib/ownership";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/tracked-videos — list tracked videos with stats + snapshots
 export async function GET(request: NextRequest) {
-  await requirePermission("tracking", "read");
+  const currentUser = await requirePermission("tracking", "read");
 
   const { searchParams } = request.nextUrl;
   const influencerId = searchParams.get("influencerId") || "";
@@ -18,6 +19,12 @@ export async function GET(request: NextRequest) {
   if (trackingOnly) where.isTracking = true;
   if (influencerId) where.influencerId = influencerId;
   if (campaignId) where.campaignId = campaignId;
+
+  const adminIsolated = await isAdminIsolationEnabled();
+  if (currentUser.role !== "Admin" || adminIsolated) {
+    where.createdById = currentUser.id;
+  }
+
   if (search) {
     where.OR = [
       { title: { contains: search, mode: "insensitive" } },
@@ -47,7 +54,7 @@ export async function GET(request: NextRequest) {
 
 // POST /api/tracked-videos — add URL(s) for tracking
 export async function POST(request: NextRequest) {
-  await requirePermission("tracking", "write");
+  const currentUser = await requirePermission("tracking", "write");
 
   const body = await request.json();
   const { videoUrls, influencerId, campaignId } = body as {
@@ -96,6 +103,7 @@ export async function POST(request: NextRequest) {
         influencerId,
         campaignId: campaignId || null,
         isTracking: true,
+        createdById: currentUser.id,
       },
     });
     created.push(url);

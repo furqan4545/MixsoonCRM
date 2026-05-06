@@ -23,7 +23,9 @@ import {
   Play,
   RefreshCw,
   Search,
+  Share2,
 } from "lucide-react";
+import { ShareDialog } from "@/components/share-dialog";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -138,6 +140,13 @@ export function ContractsPage({
   const [signingContractId, setSigningContractId] = useState<string | null>(null);
   const [adminSignature, setAdminSignature] = useState<string | null>(null);
   const [submittingSign, setSubmittingSign] = useState(false);
+
+  // Share
+  const [sharingResource, setSharingResource] = useState<{
+    type: string;
+    id: string;
+    label: string;
+  } | null>(null);
 
   const openCounterSign = (contractId: string) => {
     setSigningContractId(contractId);
@@ -416,7 +425,22 @@ export function ContractsPage({
                         Admin signed {c.adminSignedBy?.name || ""}
                       </span>
                     )}
-                    <Link href={`/influencers?selected=${c.influencer.id}&tab=contracts`} className="ml-auto">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs ml-auto"
+                      onClick={() =>
+                        setSharingResource({
+                          type: "Contract",
+                          id: c.id,
+                          label: `contract for @${c.influencer.username}`,
+                        })
+                      }
+                    >
+                      <Share2 className="mr-1 h-3 w-3" />
+                      Share
+                    </Button>
+                    <Link href={`/influencers?selected=${c.influencer.id}&tab=contracts`}>
                       <Button variant="ghost" size="sm" className="h-7 text-xs">
                         Open in Influencer
                       </Button>
@@ -599,7 +623,23 @@ export function ContractsPage({
                           Verified {new Date(s.verifiedAt).toLocaleDateString()}
                         </span>
                       )}
-                      <Link href={`/influencers?selected=${s.influencer.id}&tab=contracts`} className="ml-auto" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs ml-auto"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSharingResource({
+                            type: "ContentSubmission",
+                            id: s.id,
+                            label: `submission from @${s.influencer.username}`,
+                          });
+                        }}
+                      >
+                        <Share2 className="mr-1 h-3 w-3" />
+                        Share
+                      </Button>
+                      <Link href={`/influencers?selected=${s.influencer.id}&tab=contracts`} onClick={(e) => e.stopPropagation()}>
                         <Button variant="ghost" size="sm" className="h-7 text-xs">
                           Open in Influencer
                         </Button>
@@ -611,6 +651,19 @@ export function ContractsPage({
             );
           })}
         </div>
+      )}
+
+      {/* Share Dialog (Contracts and Submissions) */}
+      {sharingResource && (
+        <ShareDialog
+          open={!!sharingResource}
+          onOpenChange={(next) => {
+            if (!next) setSharingResource(null);
+          }}
+          resourceType={sharingResource.type}
+          resourceId={sharingResource.id}
+          resourceLabel={sharingResource.label}
+        />
       )}
 
       {/* Admin Counter-sign Dialog */}

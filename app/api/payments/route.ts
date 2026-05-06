@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
+import { ownershipWhere } from "@/app/lib/ownership";
 import { decrypt } from "@/app/lib/crypto";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ function maskAccount(encrypted: string | null): string {
 
 // GET /api/payments — list with filters
 export async function GET(request: NextRequest) {
-  await requirePermission("payments", "read");
+  const currentUser = await requirePermission("payments", "read");
 
   const { searchParams } = request.nextUrl;
   const status = searchParams.get("status") || "";
@@ -31,13 +32,27 @@ export async function GET(request: NextRequest) {
   if (status) where.status = status;
   if (influencerId) where.influencerId = influencerId;
   if (campaignId) where.campaignId = campaignId;
-  if (search) {
-    where.OR = [
-      { influencer: { username: { contains: search, mode: "insensitive" } } },
-      { influencer: { displayName: { contains: search, mode: "insensitive" } } },
-      { bankName: { contains: search, mode: "insensitive" } },
-      { invoiceNumber: { contains: search, mode: "insensitive" } },
-    ];
+
+  const searchOr = search
+    ? [
+        { influencer: { username: { contains: search, mode: "insensitive" as const } } },
+        { influencer: { displayName: { contains: search, mode: "insensitive" as const } } },
+        { bankName: { contains: search, mode: "insensitive" as const } },
+        { invoiceNumber: { contains: search, mode: "insensitive" as const } },
+      ]
+    : null;
+
+  const ownership = await ownershipWhere("Payment", currentUser);
+  const ownershipOr = ownership && "OR" in ownership ? ownership.OR : null;
+  const ownershipBare = ownership && !("OR" in ownership) ? ownership : null;
+
+  if (ownershipBare) Object.assign(where, ownershipBare);
+  if (searchOr && ownershipOr) {
+    where.AND = [{ OR: searchOr }, { OR: ownershipOr }];
+  } else if (searchOr) {
+    where.OR = searchOr;
+  } else if (ownershipOr) {
+    where.OR = ownershipOr;
   }
 
   const [payments, total] = await Promise.all([

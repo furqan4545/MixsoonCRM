@@ -1,11 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
+import { ownershipWhere } from "@/app/lib/ownership";
 
 // GET /api/contracts — List contracts, optionally filtered by influencerId
 export async function GET(request: NextRequest) {
+  let currentUser;
   try {
-    await requirePermission("influencers", "read");
+    currentUser = await requirePermission("influencers", "read");
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Forbidden" },
@@ -15,8 +17,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const influencerId = request.nextUrl.searchParams.get("influencerId");
+    const ownership = await ownershipWhere("Contract", currentUser);
     const where: Record<string, unknown> = {};
     if (influencerId) where.influencerId = influencerId;
+    if (ownership) Object.assign(where, ownership);
 
     const contracts = await prisma.contract.findMany({
       where,
@@ -43,8 +47,9 @@ export async function GET(request: NextRequest) {
 
 // POST /api/contracts — Create a new contract
 export async function POST(request: Request) {
+  let currentUser;
   try {
-    await requirePermission("influencers", "write");
+    currentUser = await requirePermission("influencers", "write");
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Forbidden" },
@@ -68,6 +73,7 @@ export async function POST(request: Request) {
         influencerId,
         campaignId: campaignId || null,
         status: "DRAFT",
+        createdById: currentUser.id,
       },
     });
 
