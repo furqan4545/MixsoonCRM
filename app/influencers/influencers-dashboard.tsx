@@ -387,7 +387,28 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
   const [filterPlatform, setFilterPlatform] = useState("");
   const [filterMinFollowers, setFilterMinFollowers] = useState("");
   const [filterMaxFollowers, setFilterMaxFollowers] = useState("");
+  const [availableCsvs, setAvailableCsvs] = useState<
+    { id: string; sourceFilename: string; influencerCount: number }[] | null
+  >(null);
   const activeFilterCount = [filterCountry, filterLanguage, filterPlatform, filterMinFollowers, filterMaxFollowers].filter(Boolean).length;
+
+  // Lazy-load the user's accessible CSVs the first time the filter panel opens
+  useEffect(() => {
+    if (!showFilters || availableCsvs !== null) return;
+    fetch("/api/imports")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setAvailableCsvs(
+          list.map((i: { id: string; sourceFilename: string; _count?: { influencers: number } }) => ({
+            id: i.id,
+            sourceFilename: i.sourceFilename,
+            influencerCount: i._count?.influencers ?? 0,
+          })),
+        );
+      })
+      .catch(() => setAvailableCsvs([]));
+  }, [showFilters, availableCsvs]);
 
   // Count per queue
   const queueCounts = useMemo(() => {
@@ -944,16 +965,16 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
                 />
               </div>
               <Button
-                variant={activeFilterCount > 0 ? "default" : "outline"}
+                variant={activeFilterCount > 0 || importIdFilter ? "default" : "outline"}
                 size="default"
                 className="gap-2"
                 onClick={() => setShowFilters(!showFilters)}
               >
                 <SlidersHorizontal className="h-4 w-4" />
                 Filter
-                {activeFilterCount > 0 && (
+                {(activeFilterCount > 0 || importIdFilter) && (
                   <span className="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-bold text-foreground">
-                    {activeFilterCount}
+                    {activeFilterCount + (importIdFilter ? 1 : 0)}
                   </span>
                 )}
               </Button>
@@ -970,6 +991,35 @@ export function InfluencersDashboard({ influencers, onRefresh }: Props) {
           {showFilters && (
             <div className="mb-4 rounded-lg border bg-muted/30 p-4">
               <div className="flex flex-wrap items-end gap-3">
+                <div className="min-w-[200px]">
+                  <label className="text-xs font-semibold text-muted-foreground">CSV file</label>
+                  <select
+                    value={importIdFilter ?? ""}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      if (!next) {
+                        router.push("/influencers");
+                        return;
+                      }
+                      const csv = availableCsvs?.find((c) => c.id === next);
+                      router.push(
+                        `/influencers?importId=${next}${csv ? `&csv=${encodeURIComponent(csv.sourceFilename)}` : ""}`,
+                      );
+                    }}
+                    className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                  >
+                    <option value="">All CSVs</option>
+                    {availableCsvs === null ? (
+                      <option disabled>Loading…</option>
+                    ) : (
+                      availableCsvs.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.sourceFilename} ({c.influencerCount})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
                 <div className="min-w-[140px]">
                   <label className="text-xs font-semibold text-muted-foreground">Country</label>
                   <select

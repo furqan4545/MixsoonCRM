@@ -57,11 +57,11 @@ export default function AiFilterPage() {
 
   // Deterministic pre-filters. Recency is enabled by default (30d); others opt-in.
   const [recencyEnabled, setRecencyEnabled] = useState(true);
-  const [recencyDays, setRecencyDays] = useState(30);
+  const [recencyDays, setRecencyDays] = useState<string>("30");
   const [minFollowersEnabled, setMinFollowersEnabled] = useState(false);
-  const [minFollowers, setMinFollowers] = useState(10000);
+  const [minFollowers, setMinFollowers] = useState<string>("10000");
   const [minVideoCountEnabled, setMinVideoCountEnabled] = useState(false);
-  const [minVideoCount, setMinVideoCount] = useState(5);
+  const [minVideoCount, setMinVideoCount] = useState<string>("5");
 
   // Run history state
   const [runs, setRuns] = useState<Run[]>([]);
@@ -90,9 +90,9 @@ export default function AiFilterPage() {
         targetKeywords: fromCsv(targetKeywords),
         avoidKeywords: fromCsv(avoidKeywords),
         notes,
-        maxDaysSinceLastPost: recencyEnabled ? recencyDays : null,
-        minFollowers: minFollowersEnabled ? minFollowers : null,
-        minVideoCount: minVideoCountEnabled ? minVideoCount : null,
+        maxDaysSinceLastPost: recencyEnabled ? (recencyDays.trim() === "" ? 30 : Number(recencyDays)) : null,
+        minFollowers: minFollowersEnabled ? (minFollowers.trim() === "" ? 0 : Number(minFollowers)) : null,
+        minVideoCount: minVideoCountEnabled ? (minVideoCount.trim() === "" ? 0 : Number(minVideoCount)) : null,
       };
 
       let res: Response;
@@ -139,11 +139,11 @@ export default function AiFilterPage() {
     setAvoidKeywords("");
     setNotes("");
     setRecencyEnabled(true);
-    setRecencyDays(30);
+    setRecencyDays("30");
     setMinFollowersEnabled(false);
-    setMinFollowers(10000);
+    setMinFollowers("10000");
     setMinVideoCountEnabled(false);
-    setMinVideoCount(5);
+    setMinVideoCount("5");
   }
 
   function startEdit(c: Campaign) {
@@ -154,11 +154,11 @@ export default function AiFilterPage() {
     setAvoidKeywords(toCsv(c.avoidKeywords));
     setNotes(c.notes ?? "");
     setRecencyEnabled(c.maxDaysSinceLastPost != null);
-    setRecencyDays(c.maxDaysSinceLastPost ?? 30);
+    setRecencyDays(String(c.maxDaysSinceLastPost ?? 30));
     setMinFollowersEnabled(c.minFollowers != null);
-    setMinFollowers(c.minFollowers ?? 10000);
+    setMinFollowers(String(c.minFollowers ?? 10000));
     setMinVideoCountEnabled(c.minVideoCount != null);
-    setMinVideoCount(c.minVideoCount ?? 5);
+    setMinVideoCount(String(c.minVideoCount ?? 5));
   }
 
   async function deleteFilter(id: string) {
@@ -264,7 +264,8 @@ export default function AiFilterPage() {
                       min={1}
                       disabled={!recencyEnabled}
                       value={recencyDays}
-                      onChange={(e) => setRecencyDays(Number(e.target.value))}
+                      onChange={(e) => setRecencyDays(e.target.value)}
+                      placeholder="30"
                       className="w-24 rounded-md border bg-background px-2 py-1 text-sm disabled:opacity-50"
                     />
                     <span className="text-muted-foreground">days</span>
@@ -281,7 +282,8 @@ export default function AiFilterPage() {
                       min={0}
                       disabled={!minFollowersEnabled}
                       value={minFollowers}
-                      onChange={(e) => setMinFollowers(Number(e.target.value))}
+                      onChange={(e) => setMinFollowers(e.target.value)}
+                      placeholder="10000"
                       className="w-28 rounded-md border bg-background px-2 py-1 text-sm disabled:opacity-50"
                     />
                   </label>
@@ -297,7 +299,8 @@ export default function AiFilterPage() {
                       min={0}
                       disabled={!minVideoCountEnabled}
                       value={minVideoCount}
-                      onChange={(e) => setMinVideoCount(Number(e.target.value))}
+                      onChange={(e) => setMinVideoCount(e.target.value)}
+                      placeholder="5"
                       className="w-24 rounded-md border bg-background px-2 py-1 text-sm disabled:opacity-50"
                     />
                   </label>

@@ -7,15 +7,30 @@ import { checkBudgetOrThrow, BudgetExceededError } from "@/app/lib/budget-guard"
 import { getScrapingConcurrency } from "@/app/lib/scraping-config";
 import { runWithConcurrency } from "@/app/lib/concurrency";
 // ELD (Efficient Language Detector) — NLP-based, neural n-gram detector, 60 languages
-// Loaded lazily since it needs async init
-let _eld: typeof import("eld").default | null = null;
-async function getEld() {
-  if (!_eld) {
-    const mod = await import("eld");
-    _eld = mod.default ?? mod;
-    await (_eld as { load?: (name: string) => Promise<boolean> }).load?.("large");
+// Loaded lazily since it needs async init. Uses a promise cache so concurrent
+// callers wait on the same load — otherwise a second caller could see _eld
+// set but the model still loading, and `.detect()` throws "No database loaded".
+let _eldPromise: Promise<typeof import("eld").default> | null = null;
+function getEld() {
+  if (!_eldPromise) {
+    _eldPromise = (async () => {
+      const mod = await import("eld");
+      const inst = (mod.default ?? mod) as typeof import("eld").default;
+      const ok = await (inst as { load?: (name: string) => Promise<boolean> })
+        .load?.("large");
+      if (ok === false) {
+        // Reset cache so we'll retry on the next call
+        _eldPromise = null;
+        throw new Error("ELD model failed to load");
+      }
+      return inst;
+    })();
+    // If the load itself rejects, clear the cache so we'll retry next time
+    _eldPromise.catch(() => {
+      _eldPromise = null;
+    });
   }
-  return _eld;
+  return _eldPromise;
 }
 
 const APIFY_API_KEY = process.env.APIFY_API_KEY!;
@@ -434,12 +449,18 @@ function extractBioLinkFromProfile(profile: ApifyProfileResult): string | null {
  */
 async function detectLanguageFromText(text: string | null | undefined): Promise<string | null> {
   if (!text || text.trim().length < 10) return null;
-  const eld = await getEld();
-  const result = (eld as { detect: (t: string) => { language: string; isReliable: () => boolean } }).detect(text.trim());
-  if (!result || !result.language || !result.isReliable()) return null;
-  // Skip English — we only tag non-English creators
-  if (result.language === "en") return null;
-  return result.language;
+  try {
+    const eld = await getEld();
+    const result = (eld as { detect: (t: string) => { language: string; isReliable: () => boolean } }).detect(text.trim());
+    if (!result || !result.language || !result.isReliable()) return null;
+    // Skip English — we only tag non-English creators
+    if (result.language === "en") return null;
+    return result.language;
+  } catch (err) {
+    // Don't kill the scrape if language detection misbehaves — just skip.
+    console.warn("[detectLanguageFromText] eld failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 /**

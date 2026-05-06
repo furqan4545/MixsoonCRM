@@ -58,8 +58,8 @@ export default function DataScraperPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("upload");
   const [file, setFile] = useState<File | null>(null);
-  const [usernameLimit, setUsernameLimit] = useState<number>(50);
-  const [videoCount, setVideoCount] = useState<number>(20);
+  const [usernameLimit, setUsernameLimit] = useState<string>("50");
+  const [videoCount, setVideoCount] = useState<string>("20");
   const [importData, setImportData] = useState<ImportData | null>(null);
   const [uploadResponse, setUploadResponse] = useState<UploadResponse | null>(
     null,
@@ -119,8 +119,11 @@ export default function DataScraperPage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("usernameLimit", String(usernameLimit));
-      formData.append("videoCount", String(videoCount));
+      // Empty input → use sensible defaults
+      const usernameLimitNum = usernameLimit.trim() === "" ? 50 : Number(usernameLimit);
+      const videoCountNum = videoCount.trim() === "" ? 20 : Number(videoCount);
+      formData.append("usernameLimit", String(usernameLimitNum));
+      formData.append("videoCount", String(videoCountNum));
 
       const uploadRes = await fetch("/api/imports", {
         method: "POST",
@@ -378,7 +381,8 @@ export default function DataScraperPage() {
                   id="username-limit"
                   type="number"
                   value={usernameLimit}
-                  onChange={(e) => setUsernameLimit(Number(e.target.value))}
+                  onChange={(e) => setUsernameLimit(e.target.value)}
+                  placeholder="50"
                   className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none"
                 />
                 <span className="mt-1 block text-xs text-muted-foreground">
@@ -396,7 +400,8 @@ export default function DataScraperPage() {
                   id="video-count"
                   type="number"
                   value={videoCount}
-                  onChange={(e) => setVideoCount(Number(e.target.value))}
+                  onChange={(e) => setVideoCount(e.target.value)}
+                  placeholder="20"
                   className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none"
                 />
                 <span className="mt-1 block text-xs text-muted-foreground">

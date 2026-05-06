@@ -504,14 +504,19 @@ function AlertRulesTab() {
                     </label>
                     <div className="flex items-center gap-1.5 mt-1">
                       <Input
+                        key={`thr-${rule.id}-${rule.thresholdDays}`}
                         type="number"
                         min={1}
                         max={90}
                         className="w-16 h-8 text-sm"
-                        value={rule.thresholdDays}
-                        onChange={(e) =>
-                          updateRule(rule.id, "thresholdDays", parseInt(e.target.value) || 1)
-                        }
+                        defaultValue={rule.thresholdDays}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim();
+                          const n = v === "" ? 1 : Math.max(1, parseInt(v, 10) || 1);
+                          if (n !== rule.thresholdDays) {
+                            updateRule(rule.id, "thresholdDays", n);
+                          }
+                        }}
                       />
                       <span className="text-xs text-muted-foreground">days</span>
                     </div>
@@ -549,13 +554,18 @@ function AlertRulesTab() {
                       <div key={idx} className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-1.5">
                         <span className="text-[10px] text-muted-foreground shrink-0">If still open after</span>
                         <Input
+                          key={`esc-${rule.id}-${idx}-${layer.days}`}
                           type="number"
                           min={1}
                           className="w-14 h-6 text-xs"
-                          value={layer.days}
-                          onChange={(e) =>
-                            updateEscalationLayer(rule.id, rule, idx, "days", parseInt(e.target.value) || 1)
-                          }
+                          defaultValue={layer.days}
+                          onBlur={(e) => {
+                            const v = e.target.value.trim();
+                            const n = v === "" ? 1 : Math.max(1, parseInt(v, 10) || 1);
+                            if (n !== layer.days) {
+                              updateEscalationLayer(rule.id, rule, idx, "days", n);
+                            }
+                          }}
                         />
                         <span className="text-[10px] text-muted-foreground shrink-0">days → send another reminder &amp; notify</span>
                         <Select

@@ -842,9 +842,16 @@ export function TrackingDashboard() {
                 <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
                 <Label className="w-20 shrink-0">{label}</Label>
                 <Input
+                  key={`thr-${key}-${config[key as keyof typeof config]}`}
                   type="number"
-                  value={config[key as keyof typeof config] as number}
-                  onChange={(e) => setConfig({ ...config, [key]: parseInt(e.target.value) || 0 })}
+                  defaultValue={config[key as keyof typeof config] as number}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    const n = v === "" ? 0 : Math.max(0, parseInt(v, 10) || 0);
+                    if (n !== (config[key as keyof typeof config] as number)) {
+                      setConfig({ ...config, [key]: n });
+                    }
+                  }}
                   className="flex-1"
                 />
               </div>
@@ -856,11 +863,18 @@ export function TrackingDashboard() {
                 <Label className="w-20 shrink-0">Poll Every</Label>
                 <div className="flex items-center gap-2 flex-1">
                   <Input
+                    key={`poll-${config.pollIntervalHours}`}
                     type="number"
                     min="1"
                     max="24"
-                    value={config.pollIntervalHours}
-                    onChange={(e) => setConfig({ ...config, pollIntervalHours: Math.max(1, parseInt(e.target.value) || 5) })}
+                    defaultValue={config.pollIntervalHours}
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      const n = v === "" ? 5 : Math.min(24, Math.max(1, parseInt(v, 10) || 5));
+                      if (n !== config.pollIntervalHours) {
+                        setConfig({ ...config, pollIntervalHours: n });
+                      }
+                    }}
                     className="w-20"
                   />
                   <span className="text-sm text-muted-foreground">hours</span>

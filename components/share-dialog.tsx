@@ -157,6 +157,18 @@ export function ShareDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground space-y-0.5">
+          <p>
+            <span className="font-medium text-foreground">Can view</span> — they can open and read it, nothing else.
+          </p>
+          <p>
+            <span className="font-medium text-foreground">Can edit</span> — view + modify (e.g. change influencer notes, contract fields).
+          </p>
+          <p>
+            <span className="font-medium text-foreground">Full access</span> — edit + re-share with others + delete.
+          </p>
+        </div>
+
         {/* Add new share */}
         <div className="rounded-lg border p-3 bg-muted/30">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
@@ -182,13 +194,28 @@ export function ShareDialog({
               </SelectContent>
             </Select>
             <Select value={pickedPermission} onValueChange={setPickedPermission}>
-              <SelectTrigger className="w-32">
+              <SelectTrigger className="w-44">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="read">View</SelectItem>
-                <SelectItem value="write">Edit</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="read">
+                  <div className="flex flex-col text-left">
+                    <span className="font-medium">Can view</span>
+                    <span className="text-[11px] text-muted-foreground">Read-only access</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="write">
+                  <div className="flex flex-col text-left">
+                    <span className="font-medium">Can edit</span>
+                    <span className="text-[11px] text-muted-foreground">View and modify</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="admin">
+                  <div className="flex flex-col text-left">
+                    <span className="font-medium">Full access</span>
+                    <span className="text-[11px] text-muted-foreground">Edit + re-share + delete</span>
+                  </div>
+                </SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -245,10 +272,10 @@ export function ShareDialog({
                   }
                 >
                   {s.permission === "admin"
-                    ? "Admin"
+                    ? "Full access"
                     : s.permission === "write"
-                      ? "Edit"
-                      : "View"}
+                      ? "Can edit"
+                      : "Can view"}
                 </Badge>
                 <Button
                   variant="ghost"
