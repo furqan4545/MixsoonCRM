@@ -60,7 +60,6 @@ export default function DataScraperPage() {
   const [file, setFile] = useState<File | null>(null);
   const [usernameLimit, setUsernameLimit] = useState<number>(50);
   const [videoCount, setVideoCount] = useState<number>(20);
-  const [runAnalysis, setRunAnalysis] = useState(false);
   const [importData, setImportData] = useState<ImportData | null>(null);
   const [uploadResponse, setUploadResponse] = useState<UploadResponse | null>(
     null,
@@ -99,10 +98,6 @@ export default function DataScraperPage() {
       .catch(() => {})
       .finally(() => setAssigningPic(false));
   }, [saved, selectedPicId, importData, assigningPic]);
-
-  useEffect(() => {
-    fetch("/api/imports/cleanup-drafts", { method: "POST" }).catch(() => {});
-  }, []);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -170,7 +165,6 @@ export default function DataScraperPage() {
           skipped: uploadResponse.skipped,
           videoCount: uploadResponse.videoCount,
           refreshSkippedProfiles,
-          runAnalysis,
         }),
       });
 
@@ -469,18 +463,6 @@ export default function DataScraperPage() {
               </label>
             )}
 
-            <label className="mt-4 flex cursor-pointer items-center gap-2">
-              <input
-                type="checkbox"
-                checked={runAnalysis}
-                onChange={(e) => setRunAnalysis(e.target.checked)}
-                className="h-4 w-4 rounded border-input"
-              />
-              <span className="text-sm">
-                Run audience analysis (adds ~2-5 min per influencer)
-              </span>
-            </label>
-
             {error && (
               <div className="mt-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 {error}
@@ -608,9 +590,9 @@ export default function DataScraperPage() {
                 <>
                   <Button
                     variant="outline"
-                    onClick={() => router.push(`/imports/${importData.id}`)}
+                    onClick={() => router.push("/influencers")}
                   >
-                    View in Imports
+                    View Influencers
                   </Button>
                   <Button
                     variant="outline"

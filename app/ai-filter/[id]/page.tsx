@@ -241,9 +241,9 @@ export default function AiFilterRunPage() {
         )}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
           {run.import && (
-            <Link href={`/imports/${run.import.id}`} className="underline">
+            <span className="text-muted-foreground">
               Import: {run.import.sourceFilename}
-            </Link>
+            </span>
           )}
           <Badge variant="default">Approved {run.approvedCount}</Badge>
           <Badge variant="secondary">Okish {run.okishCount}</Badge>

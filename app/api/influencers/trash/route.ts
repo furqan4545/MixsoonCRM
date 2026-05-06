@@ -33,19 +33,6 @@ export async function POST(request: NextRequest) {
     data: { trashedAt: new Date() },
   });
 
-  // Clear autoDeleteAt on linked imports (user took action)
-  const influencers = await prisma.influencer.findMany({
-    where: { id: { in: ids } },
-    select: { importId: true },
-  });
-  const importIds = [...new Set(influencers.map((i) => i.importId).filter(Boolean))] as string[];
-  if (importIds.length > 0) {
-    await prisma.import.updateMany({
-      where: { id: { in: importIds }, autoDeleteAt: { not: null } },
-      data: { autoDeleteAt: null },
-    });
-  }
-
   return NextResponse.json({
     trashed: result.count,
     message: `${result.count} influencer${result.count !== 1 ? "s" : ""} moved to trash`,

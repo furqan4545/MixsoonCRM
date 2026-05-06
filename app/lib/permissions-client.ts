@@ -30,7 +30,6 @@ export const NAV_FEATURE_MAP: Record<
 > = {
   "/": null,
   "/data-scraper": { feature: FEATURES.DATA_SCRAPER, action: "read" },
-  "/imports": { feature: FEATURES.IMPORTS, action: "read" },
   "/influencers": { feature: FEATURES.INFLUENCERS, action: "read" },
   "/campaigns": { feature: FEATURES.CAMPAIGNS, action: "read" },
   "/campaigns/filters": { feature: FEATURES.AI_FILTER, action: "read" },

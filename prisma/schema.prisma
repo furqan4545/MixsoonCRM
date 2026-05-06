@@ -127,14 +127,11 @@ model Import {
   saveProgress   Int          @default(0)
   saveTotal      Int          @default(0)
   errorMessage   String?
-  autoDeleteAt   DateTime?    // auto-delete unactioned imports after this date
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   influencers Influencer[]
   aiFilterRuns AiFilterRun[]
-
-  @@index([autoDeleteAt])
 }
 
 enum ImportStatus {

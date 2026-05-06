@@ -252,15 +252,7 @@ export default function NotificationsPage() {
                         View run
                       </Link>
                     )}
-                    {n.importId && !n.runId && (
-                      <Link
-                        href={`/imports/${n.importId}`}
-                        className="text-xs text-primary hover:underline"
-                      >
-                        View import
-                      </Link>
-                    )}
-                    {!n.runId && !n.importId && "—"}
+                    {!n.runId && "—"}
                   </TableCell>
                 </TableRow>
               ))}

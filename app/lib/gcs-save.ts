@@ -30,11 +30,6 @@ const SAVE_STOP_CHECK_INTERVAL_MS = Math.max(
   Number(process.env.SAVE_STOP_CHECK_INTERVAL_MS ?? 1_500) || 1_500,
 );
 
-const AUTO_DELETE_DAYS = Math.max(
-  0,
-  Number(process.env.AUTO_DELETE_DAYS ?? 3) || 3,
-);
-
 function notifyQuiet(
   data: Parameters<typeof prisma.notification.create>[0]["data"],
 ) {
@@ -257,15 +252,11 @@ export async function processGcsSave(id: string) {
       });
     }
 
-    // Set auto-delete timer (3 days by default) — cleared when user acts on the import
-    const autoDeleteAt = new Date(Date.now() + AUTO_DELETE_DAYS * 24 * 60 * 60 * 1000);
-
     await prisma.import.update({
       where: { id },
       data: {
         status: "COMPLETED",
         errorMessage: null,
-        autoDeleteAt: AUTO_DELETE_DAYS > 0 ? autoDeleteAt : null,
       },
     });
 
@@ -273,7 +264,7 @@ export async function processGcsSave(id: string) {
       type: "import_save",
       status: "success",
       title: `Save complete — ${importRecord.sourceFilename}`,
-      message: `All images for ${total} influencer${total === 1 ? "" : "s"} cached to cloud.${AUTO_DELETE_DAYS > 0 ? ` Auto-deletes in ${AUTO_DELETE_DAYS} days if no action taken.` : ""}`,
+      message: `All images for ${total} influencer${total === 1 ? "" : "s"} cached to cloud.`,
       importId: id,
     });
 
