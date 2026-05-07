@@ -2,6 +2,7 @@
 // Gemini-powered NLP + Vision pipeline for demographic estimation
 
 import type { AnalysisMode } from "@prisma/client";
+import convert from "heic-convert";
 import { logApiUsage, estimateGeminiCost, estimateTokensFromText } from "./usage-tracking";
 import { checkBudgetOrThrow, BudgetExceededError } from "./budget-guard";
 import { isGcsUrl, readGcsImage } from "./gcs-media";
@@ -156,10 +157,15 @@ async function callGeminiVision(
   // Supports both HTTP(S) URLs and gcs:// URIs — avatars are cached to GCS at
   // scrape time to avoid TikTok's expiring signed URLs, so most imageUrls here
   // will be gcs:// which Node's fetch() can't handle directly.
-  const imageParts: { inlineData: { mimeType: string; data: string } }[] = [];
+  //
+  // Downloads run in parallel with bounded concurrency — sequential downloads
+  // were the dominant cost for batches with one slow CDN (4-min batches seen
+  // in practice).
   const skipReasons: string[] = [];
+  const IMAGE_DL_CONCURRENCY = 10;
 
-  for (const url of imageUrls) {
+  type ImagePart = { inlineData: { mimeType: string; data: string } };
+  const downloadOne = async (url: string): Promise<ImagePart | null> => {
     try {
       let buffer: ArrayBuffer | null = null;
       let contentType = "image/jpeg";
@@ -168,7 +174,7 @@ async function callGeminiVision(
         const img = await readGcsImage(url);
         if (!img) {
           skipReasons.push(`gcs-not-found:${url.slice(0, 80)}`);
-          continue;
+          return null;
         }
         buffer = img.body;
         contentType = img.contentType;
@@ -176,15 +182,15 @@ async function callGeminiVision(
         const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
         if (!res.ok) {
           skipReasons.push(`http-${res.status}:${url.slice(0, 80)}`);
-          continue;
+          return null;
         }
         buffer = await res.arrayBuffer();
         contentType = res.headers.get("content-type") || "image/jpeg";
       }
 
-      // Gemini Vision supports: image/png, image/jpeg, image/webp, image/heic, image/heif
-      // Normalize weird/missing content-types by sniffing magic bytes.
+      // Sniff actual format from magic bytes — content-type headers lie
       const u8 = new Uint8Array(buffer);
+      let isHeic = false;
       if (u8[0] === 0xff && u8[1] === 0xd8) contentType = "image/jpeg";
       else if (u8[0] === 0x89 && u8[1] === 0x50) contentType = "image/png";
       else if (
@@ -195,17 +201,53 @@ async function callGeminiVision(
       else if (
         u8.length >= 12 &&
         String.fromCharCode(u8[4], u8[5], u8[6], u8[7]) === "ftyp"
-      ) contentType = "image/heic";
+      ) {
+        isHeic = true;
+      }
 
-      const base64 = Buffer.from(buffer).toString("base64");
-      imageParts.push({
-        inlineData: { mimeType: contentType, data: base64 },
-      });
+      // Gemini Vision claims HEIC/HEIF support but in practice often returns
+      // empty responses. Convert to JPEG up front (same as the import pipeline
+      // does for thumbnails) — guarantees Gemini gets a format it understands.
+      let outBuffer: Buffer = Buffer.from(buffer);
+      if (isHeic) {
+        try {
+          const converted = (await convert({
+            buffer: outBuffer,
+            format: "JPEG",
+            quality: 0.85,
+          })) as ArrayBuffer | Buffer;
+          outBuffer = Buffer.isBuffer(converted)
+            ? converted
+            : Buffer.from(new Uint8Array(converted));
+          contentType = "image/jpeg";
+        } catch (e) {
+          skipReasons.push(
+            `heic-convert-failed:${(e as Error).message?.slice(0, 60)}`,
+          );
+          return null;
+        }
+      }
+
+      return {
+        inlineData: {
+          mimeType: contentType,
+          data: outBuffer.toString("base64"),
+        },
+      };
     } catch (e) {
       skipReasons.push(`err:${(e as Error).message?.slice(0, 80)}`);
-      continue;
+      return null;
     }
-  }
+  };
+
+  const downloadResults = await runWithConcurrency(
+    imageUrls,
+    IMAGE_DL_CONCURRENCY,
+    downloadOne,
+  );
+  const imageParts: ImagePart[] = downloadResults.filter(
+    (p): p is ImagePart => p !== null,
+  );
 
   if (imageParts.length === 0) {
     console.error(
@@ -241,7 +283,29 @@ async function callGeminiVision(
   const data = await response.json();
   const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!rawText || typeof rawText !== "string") {
-    throw new Error("Gemini Vision returned empty response");
+    // Surface the *actual* reason — usually safety filter, prohibited content,
+    // or token cap. "empty response" alone is useless for debugging.
+    const finishReason = data?.candidates?.[0]?.finishReason ?? "UNKNOWN";
+    const safetyRatings = data?.candidates?.[0]?.safetyRatings;
+    const promptBlock = data?.promptFeedback?.blockReason;
+    const detail = [
+      `finishReason=${finishReason}`,
+      promptBlock ? `promptBlocked=${promptBlock}` : null,
+      safetyRatings
+        ? `safety=${JSON.stringify(safetyRatings).slice(0, 200)}`
+        : null,
+      `images=${imageParts.length}`,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    logApiUsage({
+      service: "gemini_vision",
+      action,
+      status: "failed",
+      durationMs: Date.now() - startTime,
+      errorMessage: `empty response: ${detail}`,
+    }).catch(() => {});
+    throw new Error(`Gemini Vision returned empty response — ${detail}`);
   }
 
   // Log cost: use API token counts if available, otherwise estimate (258 tokens per image)
@@ -657,11 +721,20 @@ export async function analyzeCommenterAvatars(
 
   const allResults: (AvatarAnalysisResult & { count: number })[] = [];
   let completedVisionBatches = 0;
+  let succeededBatches = 0;
+  let failedBatches = 0;
+  const startedAt = Date.now();
+
+  console.log(
+    `[Avatar Analysis] Starting: ${avatarUrls.length} avatars in ${batches.length} batches of ${AVATAR_BATCH_SIZE}, model=${model}, concurrency=${GEMINI_CONCURRENCY}`,
+  );
 
   // Parallelize Vision batches — was sequential with 1.5s sleep between calls.
   // Vision is slower per call but 10 concurrent is still well under Gemini's
   // rate limit, and gives ~10× speedup on large avatar sets.
   await runWithConcurrency(batches, GEMINI_CONCURRENCY, async (batch, i) => {
+    const batchTag = `[Avatar Analysis] Batch ${i + 1}/${batches.length}`;
+    const t0 = Date.now();
     try {
       const rawText = await callGeminiVision(prompt, batch, model);
       const parsed = JSON.parse(rawText);
@@ -672,13 +745,25 @@ export async function analyzeCommenterAvatars(
         ethnicityBreakdown: parsed.ethnicityBreakdown ?? {},
         count: parsed.totalAnalyzed ?? batch.length,
       });
+      succeededBatches += 1;
+      console.log(
+        `${batchTag} OK (${batch.length} avatars, ${Date.now() - t0}ms, parsed.totalAnalyzed=${parsed.totalAnalyzed})`,
+      );
     } catch (err) {
-      console.error(`[Avatar Analysis] Batch ${i + 1}/${batches.length} failed:`, err);
+      failedBatches += 1;
+      console.error(
+        `${batchTag} FAILED after ${Date.now() - t0}ms:`,
+        (err as Error).message,
+      );
     } finally {
       completedVisionBatches += 1;
       onProgress?.(completedVisionBatches, batches.length);
     }
   });
+
+  console.log(
+    `[Avatar Analysis] Done: ${succeededBatches} ok, ${failedBatches} failed, total=${Date.now() - startedAt}ms`,
+  );
 
   if (allResults.length === 0) {
     throw new Error("All avatar analysis batches failed");

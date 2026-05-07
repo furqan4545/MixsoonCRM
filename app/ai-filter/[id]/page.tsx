@@ -26,7 +26,7 @@ type Evaluation = {
   reasons: string | null;
   matchedSignals: string | null;
   riskSignals: string | null;
-  reviewStatus: "NOT_REVIEWED" | "APPROVED_FOR_AI" | "DISCARDED";
+  reviewStatus: "NOT_REVIEWED" | "APPROVED_FOR_AI" | "DISCARDED" | "SAVED";
   influencer: {
     id: string;
     username: string;
@@ -88,20 +88,23 @@ export default function AiFilterRunPage() {
   const [bucketAction, setBucketAction] = useState<string | null>(null);
   const [selectedInfluencerId, setSelectedInfluencerId] = useState<string | null>(null);
 
-  const loadRun = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/ai/filter/runs/${runId}`);
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || "Failed to load run");
-      setRun(payload);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load run");
-    } finally {
-      setLoading(false);
-    }
-  }, [runId]);
+  const loadRun = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      setError("");
+      try {
+        const res = await fetch(`/api/ai/filter/runs/${runId}`);
+        const payload = await res.json();
+        if (!res.ok) throw new Error(payload.error || "Failed to load run");
+        setRun(payload);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load run");
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [runId],
+  );
 
   // Load initially, then poll every 3s while PROCESSING
   useEffect(() => {
@@ -110,7 +113,7 @@ export default function AiFilterRunPage() {
 
   useEffect(() => {
     if (!run || run.status !== "PROCESSING") return;
-    const interval = setInterval(() => void loadRun(), 3000);
+    const interval = setInterval(() => void loadRun(true), 3000);
     return () => clearInterval(interval);
   }, [run?.status, loadRun]);
 
@@ -118,7 +121,7 @@ export default function AiFilterRunPage() {
   useEffect(() => {
     const handler = (e: Event) => {
       const completedId = (e as CustomEvent<string>).detail;
-      if (completedId === runId) void loadRun();
+      if (completedId === runId) void loadRun(true);
     };
     window.addEventListener("ai-filter-complete", handler);
     return () => window.removeEventListener("ai-filter-complete", handler);
@@ -149,6 +152,27 @@ export default function AiFilterRunPage() {
     action: "save" | "delete",
   ) {
     setBucketAction(`${action}-${bucket}`);
+
+    // Snapshot for rollback
+    const snapshot = run;
+
+    // Optimistic: drop the affected evals from this view immediately
+    setRun((prev) => {
+      if (!prev) return prev;
+      const dropped = prev.evaluations.filter((e) => e.bucket === bucket).length;
+      const counterKey =
+        bucket === "APPROVED"
+          ? "approvedCount"
+          : bucket === "OKISH"
+            ? "okishCount"
+            : "rejectedCount";
+      return {
+        ...prev,
+        evaluations: prev.evaluations.filter((e) => e.bucket !== bucket),
+        [counterKey]: Math.max(0, (prev[counterKey] ?? 0) - dropped),
+      };
+    });
+
     try {
       const res = await fetch(`/api/ai/filter/runs/${runId}/bucket`, {
         method: action === "save" ? "POST" : "DELETE",
@@ -159,9 +183,17 @@ export default function AiFilterRunPage() {
         const payload = await res.json();
         throw new Error(payload.error || `Failed to ${action} bucket`);
       }
-      await loadRun();
+      toast.success(
+        action === "save"
+          ? `Saved ${BUCKET_LABELS[bucket]} bucket`
+          : `Trashed ${BUCKET_LABELS[bucket]} bucket`,
+      );
     } catch (err) {
-      alert(err instanceof Error ? err.message : `Failed to ${action} bucket`);
+      // Rollback to authoritative state on error
+      setRun(snapshot);
+      toast.error(
+        err instanceof Error ? err.message : `Failed to ${action} bucket`,
+      );
     } finally {
       setBucketAction(null);
     }
@@ -170,28 +202,52 @@ export default function AiFilterRunPage() {
   async function applyReview(action: "approve" | "discard") {
     if (selectedReviewIds.length === 0) return;
     setActionLoading(true);
+
+    const snapshot = run;
+    const ids = new Set(selectedReviewIds);
+    setRun((prev) =>
+      prev
+        ? { ...prev, evaluations: prev.evaluations.filter((e) => !ids.has(e.id)) }
+        : prev,
+    );
+    setSelectedReviewIds([]);
+
     try {
       const res = await fetch(`/api/ai/filter/runs/${runId}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           action === "approve"
-            ? { approveIds: selectedReviewIds, discardIds: [] }
-            : { approveIds: [], discardIds: selectedReviewIds },
+            ? { approveIds: [...ids], discardIds: [] }
+            : { approveIds: [], discardIds: [...ids] },
         ),
       });
       const payload = await res.json();
       if (!res.ok) throw new Error(payload.error || "Review action failed");
-      setSelectedReviewIds([]);
-      await loadRun();
+      // Pull fresh state silently so re-classified evals show up
+      void loadRun(true);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Review action failed");
+      setRun(snapshot);
+      toast.error(err instanceof Error ? err.message : "Review action failed");
     } finally {
       setActionLoading(false);
     }
   }
 
   async function moveEval(evalId: string, targetBucket: string) {
+    const snapshot = run;
+    setRun((prev) =>
+      prev
+        ? {
+            ...prev,
+            evaluations: prev.evaluations.map((e) =>
+              e.id === evalId
+                ? { ...e, bucket: targetBucket as Evaluation["bucket"] }
+                : e,
+            ),
+          }
+        : prev,
+    );
     try {
       const res = await fetch(`/api/ai/queues/${evalId}`, {
         method: "PATCH",
@@ -200,8 +256,8 @@ export default function AiFilterRunPage() {
       });
       if (!res.ok) throw new Error("Failed");
       toast.success(`Moved to ${BUCKET_LABELS[targetBucket] || targetBucket}`);
-      await loadRun();
     } catch {
+      setRun(snapshot);
       toast.error("Failed to move influencer");
     }
   }

@@ -230,6 +230,8 @@ export async function runAnalysisPipeline(params: {
     // ── Step 4: Avatar analysis (Hybrid/Full Vision only) ──
     let visionResult = null;
     if (mode !== "NLP_ONLY") {
+      const totalComments = scrapedComments.length;
+      const withAvatar = scrapedComments.filter((c) => !!c.avatarUrl).length;
       const avatarUrls = scrapedComments
         .map((c) => c.avatarUrl)
         .filter((url): url is string => !!url && url.startsWith("http"));
@@ -237,6 +239,16 @@ export async function runAnalysisPipeline(params: {
       const avatarsToSample = mode === "FULL_VISION"
         ? Math.min(300, avatarUrls.length)
         : Math.min(config.avatarsToAnalyze, avatarUrls.length);
+
+      console.log(
+        `[Analytics] Avatar pipeline (mode=${mode}): ${totalComments} comments → ${withAvatar} with avatar field → ${avatarUrls.length} valid http(s) URLs → sampling ${avatarsToSample}`,
+      );
+
+      if (avatarsToSample === 0) {
+        console.warn(
+          `[Analytics] Skipping avatar analysis — no usable avatar URLs (totalComments=${totalComments}, withAvatar=${withAvatar})`,
+        );
+      }
 
       if (avatarsToSample > 0) {
         // Random sample
@@ -262,11 +274,16 @@ export async function runAnalysisPipeline(params: {
               });
             },
           );
+          console.log(
+            `[Analytics] Avatar analysis returned: gender=${JSON.stringify(visionResult.genderBreakdown ?? {})}, ageBrackets=${Object.keys(visionResult.ageBrackets ?? {}).length}, ethnicities=${Object.keys(visionResult.ethnicityBreakdown ?? {}).length}`,
+          );
         } catch (err) {
           console.error("[Analytics] Avatar analysis failed, falling back to NLP only:", err);
           // Non-fatal — fall back to NLP only
         }
       }
+    } else {
+      console.log(`[Analytics] Skipping avatar analysis — mode=${mode}`);
     }
 
     // ── Step 5: Merge results and save ──

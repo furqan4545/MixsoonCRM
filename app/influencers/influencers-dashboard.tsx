@@ -206,27 +206,6 @@ function AiScoreBadge({ score }: { score: number | null }) {
   );
 }
 
-function QueueBadge({ bucket }: { bucket: string | null }) {
-  if (!bucket) return null;
-  const config: Record<string, string> = {
-    APPROVED: "bg-emerald-100 text-emerald-800 border-emerald-200",
-    OKISH: "bg-amber-100 text-amber-800 border-amber-200",
-    REJECTED: "bg-red-100 text-red-800 border-red-200",
-  };
-  const label: Record<string, string> = {
-    APPROVED: "Approved",
-    OKISH: "Ok-ish",
-    REJECTED: "Rejected",
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${config[bucket] ?? "bg-gray-100 text-gray-700 border-gray-200"}`}
-    >
-      {label[bucket] ?? bucket}
-    </span>
-  );
-}
-
 const STAGE_OPTIONS = [
   { key: "PROSPECT", label: "Prospect", badgeColor: "bg-gray-100 text-gray-700 border-gray-200" },
   { key: "OUTREACH", label: "Outreach", badgeColor: "bg-orange-100 text-orange-700 border-orange-200" },
@@ -355,6 +334,51 @@ function Avatar({
       className={`flex ${dim} shrink-0 items-center justify-center rounded-full font-bold ${getAvatarColor(inf.username)}`}
     >
       {getInitials(inf.displayName, inf.username)}
+    </div>
+  );
+}
+
+function CampaignCell({
+  campaigns,
+}: {
+  campaigns: { campaignId: string; campaignName: string; campaignStatus: string }[];
+}) {
+  if (campaigns.length === 0) {
+    return <span className="text-muted-foreground text-xs">—</span>;
+  }
+  const statusColor = (status: string) => {
+    switch (status) {
+      case "ACTIVE":
+        return "bg-emerald-100 text-emerald-800 border-emerald-200";
+      case "PLANNING":
+        return "bg-blue-100 text-blue-800 border-blue-200";
+      case "PAUSED":
+        return "bg-amber-100 text-amber-800 border-amber-200";
+      case "COMPLETED":
+        return "bg-gray-100 text-gray-700 border-gray-200";
+      default:
+        return "bg-gray-100 text-gray-700 border-gray-200";
+    }
+  };
+  const first = campaigns[0];
+  const extra = campaigns.length - 1;
+
+  return (
+    <div className="flex items-center gap-1 min-w-0">
+      <span
+        title={`${first.campaignName} · ${first.campaignStatus.toLowerCase()}`}
+        className={`inline-flex max-w-[140px] items-center truncate rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusColor(first.campaignStatus)}`}
+      >
+        {first.campaignName}
+      </span>
+      {extra > 0 && (
+        <span
+          title={campaigns.slice(1).map((c) => c.campaignName).join(", ")}
+          className="shrink-0 rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground"
+        >
+          +{extra}
+        </span>
+      )}
     </div>
   );
 }
@@ -1500,22 +1524,14 @@ export function InfluencersDashboard({
                       Followers
                     </th>
                     <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Eng. Rate
+                      Campaign
                     </th>
                     <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">
                       AI Score
                     </th>
                     <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Last Posted
-                    </th>
-                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Assigned to
                     </th>
-                    {queueFilter === "ALL" && (
-                      <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Queue
-                      </th>
-                    )}
                     <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Stage
                     </th>
@@ -1576,25 +1592,11 @@ export function InfluencersDashboard({
                         <td className="px-4 py-3 text-sm font-medium">
                           {formatNumber(inf.followers)}
                         </td>
-                        <td className="px-4 py-3 text-sm">
-                          {inf.engagementRate != null
-                            ? `${inf.engagementRate}%`
-                            : "—"}
+                        <td className="px-4 py-3">
+                          <CampaignCell campaigns={inf.campaignAssignments} />
                         </td>
                         <td className="px-4 py-3 text-center">
                           <AiScoreBadge score={inf.aiScore} />
-                        </td>
-                        <td className="px-4 py-3 text-sm">
-                          {(() => {
-                            const lastVideo = inf.videos[0];
-                            if (!lastVideo?.uploadedAt) return <span className="text-muted-foreground">—</span>;
-                            const days = Math.floor((Date.now() - new Date(lastVideo.uploadedAt).getTime()) / 86400000);
-                            return (
-                              <span className={`${days > 30 ? "text-red-600 font-medium" : days > 14 ? "text-amber-600" : "text-muted-foreground"}`}>
-                                {days === 0 ? "Today" : days === 1 ? "1d ago" : `${days}d ago`}
-                              </span>
-                            );
-                          })()}
                         </td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <AssignedToCell
@@ -1604,11 +1606,6 @@ export function InfluencersDashboard({
                             onRemovePic={removePic}
                           />
                         </td>
-                        {queueFilter === "ALL" && (
-                          <td className="px-4 py-3">
-                            <QueueBadge bucket={inf.queueBucket} />
-                          </td>
-                        )}
                         <td className="px-4 py-3">
                           <StageCell
                             influencerId={inf.id}

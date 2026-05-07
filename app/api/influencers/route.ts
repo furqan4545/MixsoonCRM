@@ -117,8 +117,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ influencers: serialized });
     }
 
-    // Ultra-lean list query — flat fields + counts ONLY (~500ms vs ~5.7s)
-    // All relations (videos, evals, logs, campaigns, pics) fetched on click via GET /api/influencers/[id]
+    // Lean list query — flat fields + small per-row eval window only.
+    // Heavy 1-to-many relations (pics, campaigns) are fetched in parallel
+    // batch queries below and joined in JS — much faster than nested selects.
+    const t0 = Date.now();
     const [totalCount, influencers] = await Promise.all([
       prisma.influencer.count({ where }),
       prisma.influencer.findMany({
@@ -152,7 +154,6 @@ export async function GET(request: NextRequest) {
           createdAt: true,
           createdById: true,
           importId: true,
-          _count: { select: { videos: true, emailMessages: true } },
           // AI evals needed for queue tabs (Approved/Ok-ish/Rejected/Saved)
           aiEvaluations: {
             orderBy: { createdAt: "desc" },
@@ -168,15 +169,50 @@ export async function GET(request: NextRequest) {
               run: { select: { campaign: { select: { name: true } } } },
             },
           },
-          // PIC assignments — needed for "Assigned to" column
-          pics: {
-            select: {
-              user: { select: { id: true, name: true, email: true } },
-            },
-          },
         },
       }),
     ]);
+    const t1 = Date.now();
+
+    const pageIds = influencers.slice(0, limit + 1).map((i) => i.id);
+
+    // Batch-load relations (pics, campaigns) for visible rows in parallel.
+    // One IN-clause query each beats Prisma's per-row nested fetch.
+    const [picRows, campaignRows] = pageIds.length
+      ? await Promise.all([
+          prisma.influencerPic.findMany({
+            where: { influencerId: { in: pageIds } },
+            select: {
+              influencerId: true,
+              user: { select: { id: true, name: true, email: true } },
+            },
+          }),
+          prisma.campaignInfluencer.findMany({
+            where: { influencerId: { in: pageIds } },
+            select: {
+              influencerId: true,
+              campaign: { select: { id: true, name: true, status: true } },
+            },
+          }),
+        ])
+      : [[], []];
+    const t2 = Date.now();
+
+    const picsByInf = new Map<string, typeof picRows>();
+    for (const r of picRows) {
+      const arr = picsByInf.get(r.influencerId);
+      if (arr) arr.push(r);
+      else picsByInf.set(r.influencerId, [r]);
+    }
+    const campaignsByInf = new Map<string, typeof campaignRows>();
+    for (const r of campaignRows) {
+      const arr = campaignsByInf.get(r.influencerId);
+      if (arr) arr.push(r);
+      else campaignsByInf.set(r.influencerId, [r]);
+    }
+    console.log(
+      `[influencers] limit=${limit} returned=${influencers.length} core=${t1 - t0}ms relations=${t2 - t1}ms total=${t2 - t0}ms`,
+    );
 
     const hasMore = influencers.length > limit;
     const page = hasMore ? influencers.slice(0, limit) : influencers;
@@ -222,14 +258,20 @@ export async function GET(request: NextRequest) {
         aiMatchedSignals: latestEval?.matchedSignals ?? null,
         aiRiskSignals: latestEval?.riskSignals ?? null,
         campaignName: latestEval?.run?.campaign?.name ?? null,
-        videoCount: inf._count.videos,
-        conversationCount: inf._count.emailMessages,
+        // _count fields are not used in the list view — fetched on demand
+        // via GET /api/influencers/[id] for the detail panel
+        videoCount: 0,
+        conversationCount: 0,
         // Heavy relations loaded on demand via GET /api/influencers/[id]
         videos: [],
         activityLogs: [],
-        campaignAssignments: [],
+        campaignAssignments: (campaignsByInf.get(inf.id) ?? []).map((ca) => ({
+          campaignId: ca.campaign.id,
+          campaignName: ca.campaign.name,
+          campaignStatus: ca.campaign.status,
+        })),
         analytics: null,
-        pics: inf.pics.map((p) => ({
+        pics: (picsByInf.get(inf.id) ?? []).map((p) => ({
           id: p.user.id,
           name: p.user.name,
           email: p.user.email,

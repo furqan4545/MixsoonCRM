@@ -51,6 +51,9 @@ function notifyQuiet(
   });
 }
 
+const AI_FILTER_CONCURRENCY = Number(process.env.AI_FILTER_CONCURRENCY ?? 50);
+const AI_FILTER_PROGRESS_FLUSH_MS = 1000;
+
 async function runAiFilterBackground(params: {
   runId: string;
   campaignName: string;
@@ -70,128 +73,18 @@ async function runAiFilterBackground(params: {
     type: "ai_filter",
     status: "info",
     title: `AI filter started — ${campaignName}`,
-    message: `Scoring ${total} influencer${total === 1 ? "" : "s"}…`,
+    message: `Scoring ${total} influencer${total === 1 ? "" : "s"} (concurrency ${AI_FILTER_CONCURRENCY})…`,
     runId,
   });
 
-  try {
-    for (const influencer of influencers) {
-      stepIndex += 1;
-      const tag = `[${stepIndex}/${total}]`;
-
-      const pre = runPreFilter(
-        {
-          username: influencer.username,
-          bio: influencer.biolink,
-          followers: influencer.followers,
-          email: influencer.email,
-          phone: influencer.phone,
-          socialLinks: influencer.socialLinks,
-          videos: influencer.videos,
-          totalVideoCount: influencer._count.videos,
-        },
-        campaignContext,
-      );
-
-      if (!pre.shouldRunAi) {
-        rejectedCount += 1;
-        await prisma.influencerAiEvaluation.create({
-          data: {
-            runId,
-            influencerId: influencer.id,
-            prefilterLabel: pre.label,
-            score: 0,
-            bucket: "REJECTED",
-            reasons: pre.reason,
-            matchedSignals: pre.matchedTarget.join(", ") || null,
-            riskSignals: pre.matchedAvoid.join(", ") || null,
-            reviewStatus: "NOT_REVIEWED",
-          },
-        });
-
-        await notifyQuiet({
-          type: "ai_filter",
-          status: "info",
-          title: `${tag} @${influencer.username} → Rejected (pre-filter)`,
-          message: pre.reason || "Rejected by pre-filter (score 0).",
-          runId,
-        });
-      } else {
-        try {
-          const ai = await scoreWithGemini(
-            {
-              username: influencer.username,
-              bio: influencer.biolink,
-              followers: influencer.followers,
-              email: influencer.email,
-              phone: influencer.phone,
-              socialLinks: influencer.socialLinks,
-              videos: influencer.videos,
-            },
-            campaignContext,
-            pre,
-          );
-          const bucket = mapScoreToBucket(ai.score);
-          aiProcessedCount += 1;
-          if (bucket === "APPROVED") approvedCount += 1;
-          else if (bucket === "OKISH") okishCount += 1;
-          else rejectedCount += 1;
-
-          await prisma.influencerAiEvaluation.create({
-            data: {
-              runId,
-              influencerId: influencer.id,
-              prefilterLabel: pre.label,
-              score: ai.score,
-              bucket,
-              reasons: ai.reasons || pre.reason,
-              matchedSignals:
-                ai.matchedSignals || pre.matchedTarget.join(", ") || null,
-              riskSignals:
-                ai.riskSignals || pre.matchedAvoid.join(", ") || null,
-              reviewStatus: "APPROVED_FOR_AI",
-            },
-          });
-
-          await notifyQuiet({
-            type: "ai_filter",
-            status: bucket === "REJECTED" ? "error" : "success",
-            title: `${tag} @${influencer.username} → ${bucket} (${ai.score})`,
-            message: ai.reasons || null,
-            runId,
-          });
-        } catch (err) {
-          failedCount += 1;
-          const reason =
-            err instanceof Error
-              ? `AI scoring failed: ${err.message}`
-              : "AI scoring failed";
-
-          await prisma.influencerAiEvaluation.create({
-            data: {
-              runId,
-              influencerId: influencer.id,
-              prefilterLabel: pre.label,
-              score: null,
-              bucket: "REJECTED",
-              reasons: reason,
-              matchedSignals: pre.matchedTarget.join(", ") || null,
-              riskSignals: pre.matchedAvoid.join(", ") || null,
-              reviewStatus: "APPROVED_FOR_AI",
-            },
-          });
-
-          await notifyQuiet({
-            type: "ai_filter",
-            status: "error",
-            title: `${tag} @${influencer.username} — scoring failed`,
-            message: reason,
-            runId,
-          });
-        }
-      }
-
-      await prisma.aiFilterRun.update({
+  // Throttled progress flush — avoid hammering the DB with updates per item
+  let lastFlushAt = 0;
+  const flushProgress = async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastFlushAt < AI_FILTER_PROGRESS_FLUSH_MS) return;
+    lastFlushAt = now;
+    await prisma.aiFilterRun
+      .update({
         where: { id: runId },
         data: {
           aiProcessedCount,
@@ -201,8 +94,148 @@ async function runAiFilterBackground(params: {
           rejectedCount,
           failedCount,
         },
+      })
+      .catch((e) => console.error("[AI filter] progress flush error:", e));
+  };
+
+  const processOne = async (influencer: InfluencerWithVideos) => {
+    const myStep = ++stepIndex;
+    const tag = `[${myStep}/${total}]`;
+
+    const pre = runPreFilter(
+      {
+        username: influencer.username,
+        bio: influencer.biolink,
+        followers: influencer.followers,
+        email: influencer.email,
+        phone: influencer.phone,
+        socialLinks: influencer.socialLinks,
+        videos: influencer.videos,
+        totalVideoCount: influencer._count.videos,
+      },
+      campaignContext,
+    );
+
+    if (!pre.shouldRunAi) {
+      rejectedCount += 1;
+      await prisma.influencerAiEvaluation.create({
+        data: {
+          runId,
+          influencerId: influencer.id,
+          prefilterLabel: pre.label,
+          score: 0,
+          bucket: "REJECTED",
+          reasons: pre.reason,
+          matchedSignals: pre.matchedTarget.join(", ") || null,
+          riskSignals: pre.matchedAvoid.join(", ") || null,
+          reviewStatus: "NOT_REVIEWED",
+        },
+      });
+      await notifyQuiet({
+        type: "ai_filter",
+        status: "info",
+        title: `${tag} @${influencer.username} → Rejected (pre-filter)`,
+        message: pre.reason || "Rejected by pre-filter (score 0).",
+        runId,
+      });
+      return;
+    }
+
+    try {
+      const ai = await scoreWithGemini(
+        {
+          username: influencer.username,
+          bio: influencer.biolink,
+          followers: influencer.followers,
+          email: influencer.email,
+          phone: influencer.phone,
+          socialLinks: influencer.socialLinks,
+          videos: influencer.videos,
+        },
+        campaignContext,
+        pre,
+      );
+      const bucket = mapScoreToBucket(ai.score);
+      aiProcessedCount += 1;
+      if (bucket === "APPROVED") approvedCount += 1;
+      else if (bucket === "OKISH") okishCount += 1;
+      else rejectedCount += 1;
+
+      await prisma.influencerAiEvaluation.create({
+        data: {
+          runId,
+          influencerId: influencer.id,
+          prefilterLabel: pre.label,
+          score: ai.score,
+          bucket,
+          reasons: ai.reasons || pre.reason,
+          matchedSignals:
+            ai.matchedSignals || pre.matchedTarget.join(", ") || null,
+          riskSignals:
+            ai.riskSignals || pre.matchedAvoid.join(", ") || null,
+          reviewStatus: "APPROVED_FOR_AI",
+        },
+      });
+      await notifyQuiet({
+        type: "ai_filter",
+        status: bucket === "REJECTED" ? "error" : "success",
+        title: `${tag} @${influencer.username} → ${bucket} (${ai.score})`,
+        message: ai.reasons || null,
+        runId,
+      });
+    } catch (err) {
+      failedCount += 1;
+      const reason =
+        err instanceof Error
+          ? `AI scoring failed: ${err.message}`
+          : "AI scoring failed";
+      await prisma.influencerAiEvaluation.create({
+        data: {
+          runId,
+          influencerId: influencer.id,
+          prefilterLabel: pre.label,
+          score: null,
+          bucket: "REJECTED",
+          reasons: reason,
+          matchedSignals: pre.matchedTarget.join(", ") || null,
+          riskSignals: pre.matchedAvoid.join(", ") || null,
+          reviewStatus: "APPROVED_FOR_AI",
+        },
+      });
+      await notifyQuiet({
+        type: "ai_filter",
+        status: "error",
+        title: `${tag} @${influencer.username} — scoring failed`,
+        message: reason,
+        runId,
       });
     }
+  };
+
+  try {
+    // Worker-pool: N workers each pull from a shared queue
+    const queue = [...influencers];
+    const workers = Array.from(
+      { length: Math.min(AI_FILTER_CONCURRENCY, queue.length) },
+      async () => {
+        for (;;) {
+          const inf = queue.shift();
+          if (!inf) return;
+          try {
+            await processOne(inf);
+          } catch (e) {
+            // processOne already handles per-item errors; this is a safety net
+            console.error("[AI filter] worker error:", e);
+          }
+          // Throttled progress write so the dashboard sees live updates
+          await flushProgress();
+        }
+      },
+    );
+    await Promise.all(workers);
+
+    // Final flush so counts are accurate before status flips
+    await flushProgress(true);
 
     await prisma.aiFilterRun.update({
       where: { id: runId },
