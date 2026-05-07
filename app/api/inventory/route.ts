@@ -42,24 +42,11 @@ export async function GET(request: NextRequest) {
     where.OR = ownershipOr;
   }
 
-  const [products, total] = await Promise.all([
+  const [productsRaw, total] = await Promise.all([
     prisma.product.findMany({
       where,
       include: {
         _count: { select: { shipments: true } },
-        shipments: {
-          where: { status: { not: "FAILED" } },
-          select: {
-            id: true,
-            status: true,
-            quantity: true,
-            influencer: {
-              select: { id: true, username: true, displayName: true, avatarUrl: true },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-          take: 10,
-        },
       },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
@@ -67,6 +54,77 @@ export async function GET(request: NextRequest) {
     }),
     prisma.product.count({ where }),
   ]);
+
+  // Load shipments in a separate batch query — the nested `include` with
+  // a `where` filter was returning empty arrays in some cases. Direct lookup
+  // by IN-clause is reliable.
+  const productIds = productsRaw.map((p) => p.id);
+  const shipmentRows = productIds.length
+    ? await prisma.shipment.findMany({
+        where: {
+          productId: { in: productIds },
+          status: { not: "FAILED" },
+        },
+        select: {
+          id: true,
+          productId: true,
+          status: true,
+          quantity: true,
+          influencer: {
+            select: { id: true, username: true, displayName: true, avatarUrl: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+
+  const shipmentsByProduct = new Map<string, typeof shipmentRows>();
+  for (const s of shipmentRows) {
+    const arr = shipmentsByProduct.get(s.productId);
+    if (arr) arr.push(s);
+    else shipmentsByProduct.set(s.productId, [s]);
+  }
+
+  const products = productsRaw.map((p) => ({
+    ...p,
+    shipments: (shipmentsByProduct.get(p.id) ?? []).map(
+      ({ productId: _omit, ...rest }) => rest,
+    ),
+  }));
+
+  // Auto-reconcile stale `reserved` counters. Shipments cascade-delete when
+  // an influencer is hard-deleted (schema.prisma: onDelete: Cascade), but the
+  // Product.reserved counter is never decremented in that path — leaving
+  // orphan reserved values. Fix: compute the truth from active shipments,
+  // update the counter when it's wrong.
+  const corrections: { id: string; correctReserved: number; was: number }[] = [];
+  for (const p of products) {
+    const activeQty = (shipmentsByProduct.get(p.id) ?? [])
+      .filter((s) => s.status !== "DELIVERED") // delivered ones already decremented reserved
+      .reduce((sum, s) => sum + (s.quantity ?? 1), 0);
+    if (p.reserved !== activeQty) {
+      corrections.push({ id: p.id, correctReserved: activeQty, was: p.reserved });
+    }
+  }
+
+  if (corrections.length > 0) {
+    await prisma.$transaction(
+      corrections.map((c) =>
+        prisma.product.update({
+          where: { id: c.id },
+          data: { reserved: c.correctReserved },
+        }),
+      ),
+    );
+    for (const c of corrections) {
+      console.log(
+        `[inventory] Reconciled product ${c.id}: reserved ${c.was} → ${c.correctReserved}`,
+      );
+      // Reflect the correction in the response we're about to return
+      const p = products.find((x) => x.id === c.id);
+      if (p) p.reserved = c.correctReserved;
+    }
+  }
 
   // If lowStock filter, post-filter (available = quantity - reserved)
   const result = lowStock

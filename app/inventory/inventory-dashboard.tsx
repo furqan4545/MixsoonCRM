@@ -499,7 +499,15 @@ export function InventoryDashboard() {
                               )}
                             </div>
                           );
-                        })() : (
+                        })() : product.reserved > 0 ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[11px] text-amber-700"
+                            title={`${product.reserved} units reserved but no active shipments returned. The reserved counter may be out of sync — try the Refresh action or check shipment statuses.`}
+                          >
+                            <AlertTriangle className="h-3 w-3" />
+                            {product.reserved} reserved (no shipments)
+                          </span>
+                        ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
