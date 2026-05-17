@@ -63,6 +63,7 @@ export async function GET(request: NextRequest) {
         campaign: { select: { id: true, name: true } },
         createdBy: { select: { id: true, name: true, email: true } },
         confirmedByUser: { select: { id: true, name: true, email: true } },
+        proofSentByUser: { select: { id: true, name: true, email: true } },
       },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,

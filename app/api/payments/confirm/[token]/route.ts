@@ -87,9 +87,9 @@ export async function POST(_request: NextRequest, { params }: Params) {
       confirmedAt: now,
       // confirmedByUserId stays null — that's the signal for "influencer self-confirmed".
       confirmedByEmail: payment.influencer.email ?? null,
-      // Consume the token so a second click (or a link share) can't re-trigger.
-      confirmToken: null,
-      confirmTokenExpiresAt: null,
+      // Token stays alive so the influencer can still hit /payments/proof-request/{token}
+      // after self-confirming. Re-clicking /confirm/{token} short-circuits on
+      // status === RECEIVED above.
     },
   });
 

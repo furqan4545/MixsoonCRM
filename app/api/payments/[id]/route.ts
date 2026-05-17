@@ -35,6 +35,7 @@ export async function GET(
       campaign: { select: { id: true, name: true } },
       createdBy: { select: { id: true, name: true, email: true } },
       confirmedByUser: { select: { id: true, name: true, email: true } },
+      proofSentByUser: { select: { id: true, name: true, email: true } },
     },
   });
 
@@ -71,17 +72,17 @@ export async function PATCH(
   if (body.amount !== undefined) data.amount = parseFloat(body.amount);
   if (body.currency !== undefined) data.currency = body.currency;
 
-  // Generated when status -> SENT so the influencer can self-confirm. We
-  // generate it here (not in the email block) so the token exists even if
-  // notifyInfluencer=false — useful if the user wants to resend the link later.
+  // confirmToken doubles as the auth for both the "confirm receipt" and
+  // "request proof of payment" public pages — one signed link, two flows.
+  // We mint it on SENT or PROCESSING so the influencer can request proof
+  // even before the funds are sent.
   let issuedConfirmToken: string | null = null;
 
   if (body.status && body.status !== payment.status) {
     const newStatus = body.status as PaymentStatus;
     data.status = newStatus;
-    if (newStatus === "SENT") {
-      data.paidAt = new Date();
-      // Reuse existing valid token if one is already on the row; otherwise mint a new one.
+    const needsToken = newStatus === "SENT" || newStatus === "PROCESSING";
+    if (needsToken) {
       const stillValid =
         payment.confirmToken &&
         payment.confirmTokenExpiresAt &&
@@ -96,15 +97,17 @@ export async function PATCH(
         );
       }
     }
+    if (newStatus === "SENT") {
+      data.paidAt = new Date();
+    }
     if (newStatus === "RECEIVED") {
       data.confirmedAt = new Date();
       // Force-mark path: internal user override. Record who did it so the UI
       // can show "Marked received by {email}" vs influencer self-confirm.
       data.confirmedByUserId = user.id;
       data.confirmedByEmail = user.email;
-      // Invalidate the influencer's self-confirm token — case is closed.
-      data.confirmToken = null;
-      data.confirmTokenExpiresAt = null;
+      // We keep the token alive so the influencer can still revisit the link
+      // (e.g. download proof or see "Already confirmed" message).
     }
     if (newStatus !== "RECEIVED" && payment.status === "RECEIVED") {
       // Status moved away from RECEIVED — clear confirmation snapshot.
@@ -132,6 +135,7 @@ export async function PATCH(
     include: {
       influencer: { select: { id: true, username: true, displayName: true, email: true } },
       confirmedByUser: { select: { id: true, name: true, email: true } },
+      proofSentByUser: { select: { id: true, name: true, email: true } },
     },
   });
 
@@ -147,18 +151,34 @@ export async function PATCH(
           FAILED: "Unfortunately, there was an issue with your payment. Our team will reach out to resolve this.",
         };
         const statusMsg = statusMessages[body.status] || `Your payment status has been updated to: ${body.status}`;
+        // Confirm Receipt only shows on SENT — there's nothing to confirm yet on PROCESSING.
         const confirmUrl =
           body.status === "SENT" && issuedConfirmToken
             ? `${PUBLIC_APP_URL}/payments/confirm/${issuedConfirmToken}`
             : null;
+        // Request Proof shows on both PROCESSING and SENT so the influencer can
+        // ask for proof at any point during the payment lifecycle.
+        const proofRequestUrl =
+          (body.status === "SENT" || body.status === "PROCESSING") && issuedConfirmToken
+            ? `${PUBLIC_APP_URL}/payments/proof-request/${issuedConfirmToken}`
+            : null;
         const confirmButtonHtml = confirmUrl
           ? `
-              <div style="text-align: center; margin: 24px 0;">
+              <div style="text-align: center; margin: 16px 0 8px 0;">
                 <a href="${confirmUrl}" style="display: inline-block; background: #16a34a; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 14px;">
                   Confirm Payment Received
                 </a>
+              </div>
+            `
+          : "";
+        const proofButtonHtml = proofRequestUrl
+          ? `
+              <div style="text-align: center; margin: 8px 0 16px 0;">
+                <a href="${proofRequestUrl}" style="display: inline-block; background: white; color: #0f172a; text-decoration: none; padding: 11px 23px; border-radius: 8px; font-weight: 600; font-size: 14px; border: 1px solid #cbd5e1;">
+                  Request Proof of Payment
+                </a>
                 <p style="margin: 12px 0 0 0; font-size: 12px; color: #999;">
-                  Click once your bank shows the deposit. Link expires in ${CONFIRM_TOKEN_TTL_DAYS} days.
+                  Links expire in ${CONFIRM_TOKEN_TTL_DAYS} days.
                 </p>
               </div>
             `
@@ -180,6 +200,7 @@ export async function PATCH(
                 </table>
               </div>
               ${confirmButtonHtml}
+              ${proofButtonHtml}
               <p style="color: #999; font-size: 12px; margin-top: 24px;">— MIXSOON Team</p>
             </div>
           `,

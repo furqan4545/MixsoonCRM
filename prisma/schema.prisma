@@ -313,6 +313,7 @@ model User {
   shipmentsCreated        Shipment[]        @relation("ShipmentCreator")
   paymentsCreated         Payment[]         @relation("PaymentCreator")
   paymentsConfirmed       Payment[]         @relation("PaymentConfirmer")
+  paymentsProofSent       Payment[]         @relation("PaymentProofSender")
   notifications           Notification[]    @relation("UserNotifications")
   onboardingTokensCreated OnboardingToken[] @relation("OnboardingTokensCreated")
 
@@ -1294,6 +1295,15 @@ model Payment {
   confirmedByUserId String?
   confirmedByUser   User?   @relation("PaymentConfirmer", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
   confirmedByEmail  String?
+
+  // Proof-of-payment workflow. confirmToken (above) doubles as the auth for the
+  // public "request proof" page — one signed link covers both flows.
+  proofRequestedAt  DateTime?         // when influencer clicked the request link
+  proofSentAt       DateTime?         // when team uploaded and sent the proof
+  proofSentMessage  String?           // optional note from team in the proof email
+  proofFiles        Json?             // [{ gcsPath, name, size, type }]
+  proofSentByUserId String?
+  proofSentByUser   User?             @relation("PaymentProofSender", fields: [proofSentByUserId], references: [id], onDelete: SetNull)
 
   createdById String?
   createdBy   User?    @relation("PaymentCreator", fields: [createdById], references: [id], onDelete: SetNull)

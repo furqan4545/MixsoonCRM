@@ -15,6 +15,8 @@ import {
   XCircle,
   CreditCard,
   Building2,
+  FileText,
+  Paperclip,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -54,6 +56,11 @@ interface PaymentRow {
   confirmedByUserId: string | null;
   confirmedByEmail: string | null;
   confirmedByUser: { id: string; name: string | null; email: string } | null;
+  proofRequestedAt: string | null;
+  proofSentAt: string | null;
+  proofSentMessage: string | null;
+  proofSentByUser: { id: string; name: string | null; email: string } | null;
+  proofFiles: Array<{ gcsPath: string; name: string; size: number; type: string }> | null;
   createdAt: string;
   influencer: { id: string; username: string; displayName: string | null; avatarUrl: string | null; email: string | null };
   campaign: { id: string; name: string } | null;
@@ -130,6 +137,12 @@ export function PaymentsDashboard() {
   const [notifying, setNotifying] = useState(false);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+
+  // Send Proof dialog
+  const [showProof, setShowProof] = useState(false);
+  const [proofFiles, setProofFiles] = useState<File[]>([]);
+  const [proofMessage, setProofMessage] = useState("");
+  const [sendingProof, setSendingProof] = useState(false);
   const [notifyMessage, setNotifyMessage] = useState("");
   const [customEmailsInput, setCustomEmailsInput] = useState("");
 
@@ -262,6 +275,44 @@ export function PaymentsDashboard() {
       fetchPayments();
     } catch {
       toast.error("Failed to delete");
+    }
+  };
+
+  // Send proof of payment to influencer
+  const handleSendProof = async () => {
+    if (!selected || proofFiles.length === 0 || sendingProof) return;
+    setSendingProof(true);
+    try {
+      const fd = new FormData();
+      for (const f of proofFiles) fd.append("files", f);
+      if (proofMessage.trim()) fd.append("message", proofMessage.trim());
+      const res = await fetch(`/api/payments/${selected.id}/proof`, {
+        method: "POST",
+        body: fd,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "Failed to send proof");
+        return;
+      }
+      const data = await res.json();
+      toast.success("Proof sent to influencer");
+      setShowProof(false);
+      setProofFiles([]);
+      setProofMessage("");
+      // Merge the updated payment into the selected detail panel immediately
+      // so the banner flips from "requested" to "sent" without a refresh.
+      if (data.payment) {
+        setSelected((prev) =>
+          prev?.id === data.payment.id ? { ...prev, ...data.payment } : prev,
+        );
+      }
+      // Refresh list so the row reflects the updated state too.
+      await fetchPayments();
+    } catch {
+      toast.error("Failed to send proof");
+    } finally {
+      setSendingProof(false);
     }
   };
 
@@ -452,6 +503,58 @@ export function PaymentsDashboard() {
                   {selected.status}
                 </Badge>
               </div>
+
+              {/* Proof-of-payment banner: requested but not yet sent. */}
+              {selected.proofRequestedAt && !selected.proofSentAt && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2.5">
+                  <FileText className="h-4 w-4 text-amber-700 mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-amber-900">
+                      Influencer requested proof of payment
+                    </p>
+                    <p className="text-[11px] text-amber-800/80">
+                      Requested {new Date(selected.proofRequestedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setProofFiles([]);
+                      setProofMessage("");
+                      setShowProof(true);
+                    }}
+                  >
+                    <Paperclip className="h-3 w-3 mr-1" />
+                    Send Proof
+                  </Button>
+                </div>
+              )}
+
+              {/* Proof-of-payment banner: already sent. */}
+              {selected.proofSentAt && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-700 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-emerald-900">
+                        Proof sent
+                        {selected.proofFiles && selected.proofFiles.length > 0
+                          ? ` (${selected.proofFiles.length} file${selected.proofFiles.length > 1 ? "s" : ""})`
+                          : ""}
+                      </p>
+                      <p className="text-[11px] text-emerald-800/80">
+                        {new Date(selected.proofSentAt).toLocaleString()} by{" "}
+                        {selected.proofSentByUser?.email ?? "team"}
+                      </p>
+                      {selected.proofSentMessage && (
+                        <p className="text-xs text-emerald-900/80 mt-1.5 italic">
+                          "{selected.proofSentMessage}"
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Status actions */}
               <div className="flex gap-2 flex-wrap">
@@ -835,6 +938,93 @@ export function PaymentsDashboard() {
                   const total = selectedUserIds.size + customCount;
                   return `Notify ${total} recipient${total !== 1 ? "s" : ""}`;
                 })()
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send Proof of Payment Dialog */}
+      <Dialog
+        open={showProof}
+        onOpenChange={(open) => {
+          if (sendingProof) return;
+          setShowProof(open);
+          if (!open) {
+            setProofFiles([]);
+            setProofMessage("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send proof of payment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Upload the receipt, transfer screenshot, or any document. Files are emailed
+              as attachments to @{selected?.influencer.username}.
+            </p>
+            <div>
+              <Label htmlFor="proof-files">Files (PDF or image, up to 8 files, 20 MB each)</Label>
+              <input
+                id="proof-files"
+                type="file"
+                accept="image/*,application/pdf"
+                multiple
+                onChange={(e) => setProofFiles(Array.from(e.target.files ?? []))}
+                disabled={sendingProof}
+                className="mt-1 block w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded file:border file:border-input file:bg-background file:text-sm file:font-medium file:cursor-pointer hover:file:bg-accent"
+              />
+              {proofFiles.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {proofFiles.map((f) => (
+                    <li
+                      key={`${f.name}-${f.size}-${f.lastModified}`}
+                      className="text-xs text-muted-foreground flex items-center gap-1.5"
+                    >
+                      <Paperclip className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{f.name}</span>
+                      <span className="text-stone-400">({(f.size / 1024).toFixed(0)} KB)</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="proof-message">Message (optional)</Label>
+              <Textarea
+                id="proof-message"
+                value={proofMessage}
+                onChange={(e) => setProofMessage(e.target.value)}
+                placeholder="Hi! Attached is the proof of your payment…"
+                rows={3}
+                disabled={sendingProof}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowProof(false)}
+              disabled={sendingProof}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSendProof}
+              disabled={proofFiles.length === 0 || sendingProof}
+            >
+              {sendingProof ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                <>
+                  <Send className="h-3 w-3 mr-2" />
+                  Send to @{selected?.influencer.username}
+                </>
               )}
             </Button>
           </DialogFooter>
