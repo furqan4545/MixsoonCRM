@@ -17,6 +17,7 @@ type Campaign = {
   maxDaysSinceLastPost: number | null;
   minFollowers: number | null;
   minVideoCount: number | null;
+  minTotalSaves: number | null;
 };
 
 type Run = {
@@ -62,6 +63,8 @@ export default function AiFilterPage() {
   const [minFollowers, setMinFollowers] = useState<string>("10000");
   const [minVideoCountEnabled, setMinVideoCountEnabled] = useState(false);
   const [minVideoCount, setMinVideoCount] = useState<string>("5");
+  const [minTotalSavesEnabled, setMinTotalSavesEnabled] = useState(false);
+  const [minTotalSaves, setMinTotalSaves] = useState<string>("1000");
 
   // Run history state
   const [runs, setRuns] = useState<Run[]>([]);
@@ -93,6 +96,7 @@ export default function AiFilterPage() {
         maxDaysSinceLastPost: recencyEnabled ? (recencyDays.trim() === "" ? 30 : Number(recencyDays)) : null,
         minFollowers: minFollowersEnabled ? (minFollowers.trim() === "" ? 0 : Number(minFollowers)) : null,
         minVideoCount: minVideoCountEnabled ? (minVideoCount.trim() === "" ? 0 : Number(minVideoCount)) : null,
+        minTotalSaves: minTotalSavesEnabled ? (minTotalSaves.trim() === "" ? 0 : Number(minTotalSaves)) : null,
       };
 
       let res: Response;
@@ -159,6 +163,8 @@ export default function AiFilterPage() {
     setMinFollowers(String(c.minFollowers ?? 10000));
     setMinVideoCountEnabled(c.minVideoCount != null);
     setMinVideoCount(String(c.minVideoCount ?? 5));
+    setMinTotalSavesEnabled(c.minTotalSaves != null);
+    setMinTotalSaves(String(c.minTotalSaves ?? 1000));
   }
 
   async function deleteFilter(id: string) {
@@ -303,6 +309,24 @@ export default function AiFilterPage() {
                       placeholder="5"
                       className="w-24 rounded-md border bg-background px-2 py-1 text-sm disabled:opacity-50"
                     />
+                  </label>
+                  <label className="flex items-center gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={minTotalSavesEnabled}
+                      onChange={(e) => setMinTotalSavesEnabled(e.target.checked)}
+                    />
+                    <span className="w-48">Minimum total saves</span>
+                    <input
+                      type="number"
+                      min={0}
+                      disabled={!minTotalSavesEnabled}
+                      value={minTotalSaves}
+                      onChange={(e) => setMinTotalSaves(e.target.value)}
+                      placeholder="1000"
+                      className="w-28 rounded-md border bg-background px-2 py-1 text-sm disabled:opacity-50"
+                    />
+                    <span className="text-[11px] text-muted-foreground">summed across profile videos</span>
                   </label>
                 </div>
               </div>

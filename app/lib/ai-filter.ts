@@ -11,6 +11,7 @@ interface CampaignContext {
   maxDaysSinceLastPost?: number | null;
   minFollowers?: number | null;
   minVideoCount?: number | null;
+  minTotalSaves?: number | null;
 }
 
 interface InfluencerContext {
@@ -20,7 +21,7 @@ interface InfluencerContext {
   email: string | null;
   phone: string | null;
   socialLinks: string | null;
-  videos: { title: string | null; views: number | null; uploadedAt: Date | null }[];
+  videos: { title: string | null; views: number | null; uploadedAt: Date | null; bookmarks?: number | null }[];
   totalVideoCount?: number; // true count; falls back to videos.length when omitted
 }
 
@@ -87,6 +88,22 @@ export function runPreFilter(
     return rejectDeterministic(
       `Below video-count threshold (${videoCount} < ${campaign.minVideoCount}).`,
     );
+  }
+
+  if (campaign.minTotalSaves != null) {
+    // Sum bookmarks (TikTok "saves") across the sampled videos. We use whatever
+    // videos are in context — the same window the AI scoring will see — rather
+    // than a separate DB aggregate, so the threshold reflects the data the
+    // filter actually evaluates.
+    const totalSaves = influencer.videos.reduce(
+      (sum, v) => sum + (v.bookmarks ?? 0),
+      0,
+    );
+    if (totalSaves < campaign.minTotalSaves) {
+      return rejectDeterministic(
+        `Below total-saves threshold (${totalSaves} < ${campaign.minTotalSaves}).`,
+      );
+    }
   }
 
   if (campaign.maxDaysSinceLastPost != null) {

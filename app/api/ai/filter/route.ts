@@ -26,6 +26,7 @@ type CampaignContext = {
   maxDaysSinceLastPost: number | null;
   minFollowers: number | null;
   minVideoCount: number | null;
+  minTotalSaves: number | null;
 };
 
 type InfluencerWithVideos = Awaited<
@@ -35,7 +36,7 @@ type InfluencerWithVideos = Awaited<
         videos: {
           take: number;
           orderBy: { uploadedAt: "desc" };
-          select: { title: true; views: true; uploadedAt: true };
+          select: { title: true; views: true; uploadedAt: true; bookmarks: true };
         };
         _count: { select: { videos: true } };
       };
@@ -339,7 +340,7 @@ export async function POST(request: NextRequest) {
         videos: {
           take: 20,
           orderBy: { uploadedAt: "desc" },
-          select: { title: true, views: true, uploadedAt: true },
+          select: { title: true, views: true, uploadedAt: true, bookmarks: true },
         },
         _count: { select: { videos: true } },
       },
@@ -386,6 +387,7 @@ export async function POST(request: NextRequest) {
       maxDaysSinceLastPost: campaign.maxDaysSinceLastPost,
       minFollowers: campaign.minFollowers,
       minVideoCount: campaign.minVideoCount,
+      minTotalSaves: campaign.minTotalSaves,
     };
 
     after(() =>

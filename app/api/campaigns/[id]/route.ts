@@ -97,6 +97,7 @@ export async function PATCH(
       maxDaysSinceLastPost,
       minFollowers,
       minVideoCount,
+      minTotalSaves,
     } = body as {
       name?: string;
       notes?: string | null;
@@ -106,6 +107,7 @@ export async function PATCH(
       maxDaysSinceLastPost?: number | null;
       minFollowers?: number | null;
       minVideoCount?: number | null;
+      minTotalSaves?: number | null;
     };
 
     const normalizePositiveInt = (v: unknown): number | null => {
@@ -148,6 +150,9 @@ export async function PATCH(
           : {}),
         ...(minVideoCount !== undefined
           ? { minVideoCount: normalizePositiveInt(minVideoCount) }
+          : {}),
+        ...(minTotalSaves !== undefined
+          ? { minTotalSaves: normalizePositiveInt(minTotalSaves) }
           : {}),
       },
     });

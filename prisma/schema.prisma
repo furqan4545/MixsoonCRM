@@ -167,6 +167,7 @@ model Campaign {
   maxDaysSinceLastPost Int?     @default(30) // recency: exclude if latest video older than N days
   minFollowers         Int? // follower floor
   minVideoCount        Int? // minimum videos on profile
+  minTotalSaves        Int? // total bookmarks/saves across profile videos
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   createdById          String?

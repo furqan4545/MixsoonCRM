@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
       maxDaysSinceLastPost,
       minFollowers,
       minVideoCount,
+      minTotalSaves,
     } = body as {
       name: string;
       notes?: string;
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
       maxDaysSinceLastPost?: number | null;
       minFollowers?: number | null;
       minVideoCount?: number | null;
+      minTotalSaves?: number | null;
     };
 
     if (!name?.trim()) {
@@ -88,6 +90,7 @@ export async function POST(request: NextRequest) {
             : normalizePositiveInt(maxDaysSinceLastPost),
         minFollowers: normalizePositiveInt(minFollowers),
         minVideoCount: normalizePositiveInt(minVideoCount),
+        minTotalSaves: normalizePositiveInt(minTotalSaves),
         createdById: currentUser.id,
       },
     });
