@@ -10,7 +10,7 @@ import { runWithConcurrency } from "./concurrency";
 
 // Gemini Flash allows ~2000 RPM on paid tier. 10 concurrent = well within limits
 // and gives a ~10× speedup on batched NLP/Vision calls vs. sequential.
-const GEMINI_CONCURRENCY = 10;
+const GEMINI_CONCURRENCY = 20;
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -732,33 +732,59 @@ export async function analyzeCommenterAvatars(
   // Parallelize Vision batches — was sequential with 1.5s sleep between calls.
   // Vision is slower per call but 10 concurrent is still well under Gemini's
   // rate limit, and gives ~10× speedup on large avatar sets.
-  await runWithConcurrency(batches, GEMINI_CONCURRENCY, async (batch, i) => {
-    const batchTag = `[Avatar Analysis] Batch ${i + 1}/${batches.length}`;
+  const tryBatch = async (
+    subBatch: string[],
+    tag: string,
+    canBisect: boolean,
+  ): Promise<boolean> => {
     const t0 = Date.now();
     try {
-      const rawText = await callGeminiVision(prompt, batch, model);
+      const rawText = await callGeminiVision(prompt, subBatch, model);
       const parsed = JSON.parse(rawText);
-
       allResults.push({
         genderBreakdown: parsed.genderBreakdown ?? { male: 33, female: 33, unknown: 34 },
         ageBrackets: parsed.ageBrackets ?? {},
         ethnicityBreakdown: parsed.ethnicityBreakdown ?? {},
-        count: parsed.totalAnalyzed ?? batch.length,
+        count: parsed.totalAnalyzed ?? subBatch.length,
       });
-      succeededBatches += 1;
       console.log(
-        `${batchTag} OK (${batch.length} avatars, ${Date.now() - t0}ms, parsed.totalAnalyzed=${parsed.totalAnalyzed})`,
+        `${tag} OK (${subBatch.length} avatars, ${Date.now() - t0}ms, parsed.totalAnalyzed=${parsed.totalAnalyzed})`,
       );
+      return true;
     } catch (err) {
-      failedBatches += 1;
-      console.error(
-        `${batchTag} FAILED after ${Date.now() - t0}ms:`,
-        (err as Error).message,
-      );
-    } finally {
-      completedVisionBatches += 1;
-      onProgress?.(completedVisionBatches, batches.length);
+      const errMsg = (err as Error).message;
+      console.error(`${tag} FAILED after ${Date.now() - t0}ms:`, errMsg);
+      // Bisect on Gemini safety blocks: one bad image poisons the whole batch's
+      // response, so splitting halves the blast radius. Single level only.
+      const isBlock = errMsg.includes("Gemini Vision returned empty response");
+      if (canBisect && isBlock && subBatch.length > 1) {
+        const mid = Math.ceil(subBatch.length / 2);
+        const halfA = subBatch.slice(0, mid);
+        const halfB = subBatch.slice(mid);
+        console.log(
+          `${tag} bisecting (size=${subBatch.length} → ${halfA.length}+${halfB.length})`,
+        );
+        const [okA, okB] = await Promise.all([
+          tryBatch(halfA, `${tag}.A`, false),
+          tryBatch(halfB, `${tag}.B`, false),
+        ]);
+        const recovered = (okA ? halfA.length : 0) + (okB ? halfB.length : 0);
+        console.log(
+          `${tag} bisect recovered ${recovered}/${subBatch.length} avatars`,
+        );
+        return recovered > 0;
+      }
+      return false;
     }
+  };
+
+  await runWithConcurrency(batches, GEMINI_CONCURRENCY, async (batch, i) => {
+    const batchTag = `[Avatar Analysis] Batch ${i + 1}/${batches.length}`;
+    const ok = await tryBatch(batch, batchTag, true);
+    if (ok) succeededBatches += 1;
+    else failedBatches += 1;
+    completedVisionBatches += 1;
+    onProgress?.(completedVisionBatches, batches.length);
   });
 
   console.log(

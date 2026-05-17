@@ -19,6 +19,10 @@ export const maxDuration = 300;
 
 const MIN_VIDEOS = 1; // Allow analysis with even 1 video
 const MIN_COMMENTS = 0; // Analyze whatever is available — even 0 comments (will use profile pic only)
+// Cap NLP comment input: 1000 random samples is statistically solid for aggregate
+// breakdowns and prevents giant influencers (5k+ comments) from blowing past 10×
+// the latency/cost of smaller ones. Mirrors how avatars are sampled.
+const NLP_COMMENT_CAP = 1000;
 
 export async function loadConfig(): Promise<AnalysisConfig & { defaultMode: AnalysisMode }> {
   const cfg = await prisma.analysisConfig.findUnique({ where: { id: "default" } });
@@ -202,7 +206,13 @@ export async function runAnalysisPipeline(params: {
         progressMsg: "Running NLP analysis on comments...",
       });
 
-      const commentTexts = scrapedComments.map((c) => c.text);
+      const allTexts = scrapedComments.map((c) => c.text);
+      const commentTexts = allTexts.length > NLP_COMMENT_CAP
+        ? [...allTexts].sort(() => Math.random() - 0.5).slice(0, NLP_COMMENT_CAP)
+        : allTexts;
+      console.log(
+        `[Analytics] NLP pipeline: ${allTexts.length} comments → sampling ${commentTexts.length} (cap=${NLP_COMMENT_CAP})`,
+      );
       try {
         nlpResult = await analyzeAudienceComments(
           influencer.username,
