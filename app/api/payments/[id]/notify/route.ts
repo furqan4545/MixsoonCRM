@@ -12,10 +12,25 @@ export async function POST(
   const currentUser = await requirePermission("payments", "write");
   const { id } = await params;
   const body = await request.json();
-  const { userIds, message } = body as { userIds: string[]; message?: string };
+  const { userIds, customEmails, message } = body as {
+    userIds?: string[];
+    customEmails?: string[];
+    message?: string;
+  };
 
-  if (!userIds?.length) {
-    return NextResponse.json({ error: "Select at least one user to notify" }, { status: 400 });
+  const cleanedCustomEmails = Array.from(
+    new Set(
+      (customEmails ?? [])
+        .map((e) => (typeof e === "string" ? e.trim().toLowerCase() : ""))
+        .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)),
+    ),
+  );
+
+  if (!userIds?.length && cleanedCustomEmails.length === 0) {
+    return NextResponse.json(
+      { error: "Select at least one user or enter a custom email" },
+      { status: 400 },
+    );
   }
 
   const payment = await prisma.payment.findUnique({
@@ -42,14 +57,26 @@ export async function POST(
     );
   }
 
-  // Get target users' emails
-  const targetUsers = await prisma.user.findMany({
-    where: { id: { in: userIds }, status: "ACTIVE" },
-    select: { id: true, name: true, email: true },
-  });
+  // Get target users' emails (skip lookup if only custom emails are provided).
+  const targetUsers = userIds?.length
+    ? await prisma.user.findMany({
+        where: { id: { in: userIds }, status: "ACTIVE" },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
 
-  if (targetUsers.length === 0) {
-    return NextResponse.json({ error: "No valid users found" }, { status: 400 });
+  // Merge user emails with custom emails. Dedupe so we don't email the same
+  // address twice when a custom email happens to match a selected user's.
+  const userEmailSet = new Set(targetUsers.map((u) => u.email.toLowerCase()));
+  const recipients: { email: string; name: string | null }[] = [
+    ...targetUsers.map((u) => ({ email: u.email, name: u.name })),
+    ...cleanedCustomEmails
+      .filter((e) => !userEmailSet.has(e))
+      .map((email) => ({ email, name: null as string | null })),
+  ];
+
+  if (recipients.length === 0) {
+    return NextResponse.json({ error: "No valid recipients" }, { status: 400 });
   }
 
   const influencerName = payment.influencer.displayName || payment.influencer.username;
@@ -60,7 +87,7 @@ export async function POST(
   const transport = getSmtpTransport(senderAccount);
   let sentCount = 0;
 
-  for (const targetUser of targetUsers) {
+  for (const targetUser of recipients) {
     try {
       await transport.sendMail({
         from: `"MIXSOON Payments" <${senderAccount.emailAddress}>`,

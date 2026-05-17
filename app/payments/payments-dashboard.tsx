@@ -128,6 +128,7 @@ export function PaymentsDashboard() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [notifyMessage, setNotifyMessage] = useState("");
+  const [customEmailsInput, setCustomEmailsInput] = useState("");
 
   // Request details
   const [requesting, setRequesting] = useState(false);
@@ -263,13 +264,22 @@ export function PaymentsDashboard() {
 
   // Notify users
   const handleNotify = async () => {
-    if (!selected || selectedUserIds.size === 0) return;
+    if (!selected) return;
+    const customEmails = customEmailsInput
+      .split(/[,\n;]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (selectedUserIds.size === 0 && customEmails.length === 0) return;
     setNotifying(true);
     try {
       const res = await fetch(`/api/payments/${selected.id}/notify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userIds: [...selectedUserIds], message: notifyMessage || undefined }),
+        body: JSON.stringify({
+          userIds: [...selectedUserIds],
+          customEmails,
+          message: notifyMessage || undefined,
+        }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -277,10 +287,11 @@ export function PaymentsDashboard() {
         return;
       }
       const data = await res.json();
-      toast.success(`Notified ${data.notifiedCount} user(s)`);
+      toast.success(`Notified ${data.notifiedCount} recipient(s)`);
       setShowNotify(false);
       setSelectedUserIds(new Set());
       setNotifyMessage("");
+      setCustomEmailsInput("");
     } catch {
       toast.error("Failed to notify");
     } finally {
@@ -736,7 +747,11 @@ export function PaymentsDashboard() {
       {/* Notify Users Dialog */}
       <Dialog open={showNotify} onOpenChange={(open) => {
         setShowNotify(open);
-        if (!open) { setSelectedUserIds(new Set()); setNotifyMessage(""); }
+        if (!open) {
+          setSelectedUserIds(new Set());
+          setNotifyMessage("");
+          setCustomEmailsInput("");
+        }
       }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -765,14 +780,45 @@ export function PaymentsDashboard() {
               ))}
             </div>
             <div>
+              <Label>Also send to email(s)</Label>
+              <Input
+                value={customEmailsInput}
+                onChange={(e) => setCustomEmailsInput(e.target.value)}
+                placeholder="finance@mixsoon.com, accounting@mixsoon.com"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Comma-separated. Use this for finance or external recipients not in the user list.
+              </p>
+            </div>
+            <div>
               <Label>Message (optional)</Label>
               <Textarea value={notifyMessage} onChange={(e) => setNotifyMessage(e.target.value)} placeholder="Additional context..." rows={2} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNotify(false)}>Cancel</Button>
-            <Button onClick={handleNotify} disabled={selectedUserIds.size === 0 || notifying}>
-              {notifying ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sending...</> : `Notify ${selectedUserIds.size} User${selectedUserIds.size !== 1 ? "s" : ""}`}
+            <Button
+              onClick={handleNotify}
+              disabled={
+                (selectedUserIds.size === 0 && !customEmailsInput.trim()) ||
+                notifying
+              }
+            >
+              {notifying ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                (() => {
+                  const customCount = customEmailsInput
+                    .split(/[,\n;]/)
+                    .map((s) => s.trim())
+                    .filter(Boolean).length;
+                  const total = selectedUserIds.size + customCount;
+                  return `Notify ${total} recipient${total !== 1 ? "s" : ""}`;
+                })()
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
