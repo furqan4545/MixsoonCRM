@@ -62,6 +62,7 @@ export async function GET(request: NextRequest) {
         influencer: { select: { id: true, username: true, displayName: true, avatarUrl: true, email: true } },
         campaign: { select: { id: true, name: true } },
         createdBy: { select: { id: true, name: true, email: true } },
+        confirmedByUser: { select: { id: true, name: true, email: true } },
       },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
@@ -70,11 +71,12 @@ export async function GET(request: NextRequest) {
     prisma.payment.count({ where }),
   ]);
 
-  // Mask account numbers in response
+  // Mask account numbers and strip the raw token from list responses.
   const masked = payments.map((p) => ({
     ...p,
     accountNumberMasked: maskAccount(p.accountNumber),
     accountNumber: undefined, // never send encrypted value to client
+    confirmToken: undefined, // never leak influencer self-confirm token
   }));
 
   return NextResponse.json({ payments: masked, total, page, pageSize });

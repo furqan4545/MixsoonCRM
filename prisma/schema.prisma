@@ -312,6 +312,7 @@ model User {
   contractComments        ContractComment[] @relation("ContractComments")
   shipmentsCreated        Shipment[]        @relation("ShipmentCreator")
   paymentsCreated         Payment[]         @relation("PaymentCreator")
+  paymentsConfirmed       Payment[]         @relation("PaymentConfirmer")
   notifications           Notification[]    @relation("UserNotifications")
   onboardingTokensCreated OnboardingToken[] @relation("OnboardingTokensCreated")
 
@@ -1279,6 +1280,20 @@ model Payment {
 
   paidAt      DateTime? // when status becomes SENT
   confirmedAt DateTime? // when status becomes RECEIVED
+
+  // Self-confirmation by influencer (clicks the link in the "Sent" email).
+  // Issued when status -> SENT; consumed when influencer hits the public route.
+  confirmToken          String?   @unique
+  confirmTokenExpiresAt DateTime?
+
+  // Who confirmed receipt. confirmedByUserId is set ONLY when an internal user
+  // force-marks the payment as RECEIVED (force-override path). If null while
+  // confirmedAt is set, the influencer self-confirmed via the email link.
+  // confirmedByEmail is a denormalized snapshot for display — the team member's
+  // email on force-mark, or the influencer's email on self-confirm.
+  confirmedByUserId String?
+  confirmedByUser   User?   @relation("PaymentConfirmer", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
+  confirmedByEmail  String?
 
   createdById String?
   createdBy   User?    @relation("PaymentCreator", fields: [createdById], references: [id], onDelete: SetNull)

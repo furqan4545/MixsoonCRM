@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
 import { prisma } from "@/app/lib/prisma";
 import { requirePermission } from "@/app/lib/rbac";
 import { decrypt } from "@/app/lib/crypto";
 import { getSmtpTransport } from "@/app/lib/email";
 import { PaymentStatus } from "@prisma/client";
+
+const CONFIRM_TOKEN_TTL_DAYS = 30;
+const PUBLIC_APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "http://localhost:3000";
 
 function maskAccount(encrypted: string | null): string {
   if (!encrypted) return "—";
@@ -29,6 +34,7 @@ export async function GET(
       influencer: { select: { id: true, username: true, displayName: true, avatarUrl: true, email: true } },
       campaign: { select: { id: true, name: true } },
       createdBy: { select: { id: true, name: true, email: true } },
+      confirmedByUser: { select: { id: true, name: true, email: true } },
     },
   });
 
@@ -40,6 +46,8 @@ export async function GET(
     ...payment,
     accountNumberMasked: maskAccount(payment.accountNumber),
     accountNumber: undefined,
+    // Don't leak the raw token over the authenticated GET.
+    confirmToken: undefined,
   });
 }
 
@@ -63,18 +71,57 @@ export async function PATCH(
   if (body.amount !== undefined) data.amount = parseFloat(body.amount);
   if (body.currency !== undefined) data.currency = body.currency;
 
+  // Generated when status -> SENT so the influencer can self-confirm. We
+  // generate it here (not in the email block) so the token exists even if
+  // notifyInfluencer=false — useful if the user wants to resend the link later.
+  let issuedConfirmToken: string | null = null;
+
   if (body.status && body.status !== payment.status) {
     const newStatus = body.status as PaymentStatus;
     data.status = newStatus;
-    if (newStatus === "SENT") data.paidAt = new Date();
-    if (newStatus === "RECEIVED") data.confirmedAt = new Date();
+    if (newStatus === "SENT") {
+      data.paidAt = new Date();
+      // Reuse existing valid token if one is already on the row; otherwise mint a new one.
+      const stillValid =
+        payment.confirmToken &&
+        payment.confirmTokenExpiresAt &&
+        payment.confirmTokenExpiresAt > new Date();
+      if (stillValid) {
+        issuedConfirmToken = payment.confirmToken;
+      } else {
+        issuedConfirmToken = randomBytes(32).toString("hex");
+        data.confirmToken = issuedConfirmToken;
+        data.confirmTokenExpiresAt = new Date(
+          Date.now() + CONFIRM_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
+        );
+      }
+    }
+    if (newStatus === "RECEIVED") {
+      data.confirmedAt = new Date();
+      // Force-mark path: internal user override. Record who did it so the UI
+      // can show "Marked received by {email}" vs influencer self-confirm.
+      data.confirmedByUserId = user.id;
+      data.confirmedByEmail = user.email;
+      // Invalidate the influencer's self-confirm token — case is closed.
+      data.confirmToken = null;
+      data.confirmTokenExpiresAt = null;
+    }
+    if (newStatus !== "RECEIVED" && payment.status === "RECEIVED") {
+      // Status moved away from RECEIVED — clear confirmation snapshot.
+      data.confirmedAt = null;
+      data.confirmedByUserId = null;
+      data.confirmedByEmail = null;
+    }
 
     await prisma.activityLog.create({
       data: {
         influencerId: payment.influencerId,
         type: "payment_status_changed",
         title: `Payment status: ${newStatus}`,
-        detail: `${payment.amount.toLocaleString()} ${payment.currency} — ${payment.status} → ${newStatus}`,
+        detail:
+          newStatus === "RECEIVED"
+            ? `${payment.amount.toLocaleString()} ${payment.currency} — marked RECEIVED by ${user.email}`
+            : `${payment.amount.toLocaleString()} ${payment.currency} — ${payment.status} → ${newStatus}`,
       },
     });
   }
@@ -84,6 +131,7 @@ export async function PATCH(
     data,
     include: {
       influencer: { select: { id: true, username: true, displayName: true, email: true } },
+      confirmedByUser: { select: { id: true, name: true, email: true } },
     },
   });
 
@@ -99,6 +147,22 @@ export async function PATCH(
           FAILED: "Unfortunately, there was an issue with your payment. Our team will reach out to resolve this.",
         };
         const statusMsg = statusMessages[body.status] || `Your payment status has been updated to: ${body.status}`;
+        const confirmUrl =
+          body.status === "SENT" && issuedConfirmToken
+            ? `${PUBLIC_APP_URL}/payments/confirm/${issuedConfirmToken}`
+            : null;
+        const confirmButtonHtml = confirmUrl
+          ? `
+              <div style="text-align: center; margin: 24px 0;">
+                <a href="${confirmUrl}" style="display: inline-block; background: #16a34a; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 14px;">
+                  Confirm Payment Received
+                </a>
+                <p style="margin: 12px 0 0 0; font-size: 12px; color: #999;">
+                  Click once your bank shows the deposit. Link expires in ${CONFIRM_TOKEN_TTL_DAYS} days.
+                </p>
+              </div>
+            `
+          : "";
         const transport = getSmtpTransport(senderAccount);
         await transport.sendMail({
           from: `"MIXSOON" <${senderAccount.emailAddress}>`,
@@ -115,6 +179,7 @@ export async function PATCH(
                   <tr><td style="padding: 6px 0; color: #666;">Status</td><td style="padding: 6px 0; font-weight: 600; text-align: right;">${body.status}</td></tr>
                 </table>
               </div>
+              ${confirmButtonHtml}
               <p style="color: #999; font-size: 12px; margin-top: 24px;">— MIXSOON Team</p>
             </div>
           `,
@@ -130,6 +195,7 @@ export async function PATCH(
     ...updated,
     accountNumberMasked: maskAccount(updated.accountNumber),
     accountNumber: undefined,
+    confirmToken: undefined, // never leak token over authenticated GET/PATCH
   });
 }
 

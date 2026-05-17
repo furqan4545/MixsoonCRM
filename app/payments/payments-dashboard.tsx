@@ -51,6 +51,9 @@ interface PaymentRow {
   notes: string | null;
   paidAt: string | null;
   confirmedAt: string | null;
+  confirmedByUserId: string | null;
+  confirmedByEmail: string | null;
+  confirmedByUser: { id: string; name: string | null; email: string } | null;
   createdAt: string;
   influencer: { id: string; username: string; displayName: string | null; avatarUrl: string | null; email: string | null };
   campaign: { id: string; name: string } | null;
@@ -463,14 +466,9 @@ export function PaymentsDashboard() {
                   </>
                 )}
                 {selected.status === "PROCESSING" && (
-                  <>
-                    <Button size="sm" variant="outline" onClick={() => setConfirmAction({ id: selected.id, status: "SENT", notify: false })}>
-                      <Send className="h-3 w-3 mr-1" />Mark Sent
-                    </Button>
-                    <Button size="sm" onClick={() => setConfirmAction({ id: selected.id, status: "SENT", notify: true })}>
-                      <Bell className="h-3 w-3 mr-1" />Mark Sent & Notify
-                    </Button>
-                  </>
+                  <Button size="sm" onClick={() => setConfirmAction({ id: selected.id, status: "SENT", notify: true })}>
+                    <Send className="h-3 w-3 mr-1" />Mark Sent & Notify
+                  </Button>
                 )}
                 {selected.status === "SENT" && (
                   <>
@@ -544,7 +542,26 @@ export function PaymentsDashboard() {
                 {selected.campaign && <p>Campaign: {selected.campaign.name}</p>}
                 <p>Created: {new Date(selected.createdAt).toLocaleDateString()}</p>
                 {selected.paidAt && <p>Sent: {new Date(selected.paidAt).toLocaleDateString()}</p>}
-                {selected.confirmedAt && <p>Received: {new Date(selected.confirmedAt).toLocaleDateString()}</p>}
+                {selected.confirmedAt && (
+                  <p>
+                    Received: {new Date(selected.confirmedAt).toLocaleDateString()}
+                    {selected.confirmedByUserId ? (
+                      <>
+                        {" — "}
+                        <span className="text-amber-700 font-medium">
+                          force-marked by {selected.confirmedByUser?.email ?? selected.confirmedByEmail ?? "team"}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        {" — "}
+                        <span className="text-emerald-700 font-medium">
+                          confirmed by influencer{selected.confirmedByEmail ? ` (${selected.confirmedByEmail})` : ""}
+                        </span>
+                      </>
+                    )}
+                  </p>
+                )}
                 {selected.createdBy && <p>Created by: {selected.createdBy.name || selected.createdBy.email}</p>}
                 {selected.notes && <p className="mt-2 text-sm text-foreground">{selected.notes}</p>}
               </div>
