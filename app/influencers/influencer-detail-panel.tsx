@@ -1620,9 +1620,10 @@ interface Props {
   onClose: () => void;
   expanded?: boolean;
   onToggleExpand?: () => void;
+  isDetailLoading?: boolean;
 }
 
-export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleExpand }: Props) {
+export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleExpand, isDetailLoading }: Props) {
   const router = useRouter();
   const [notes, setNotes] = useState(influencer.notes ?? "");
   const [tags, setTags] = useState<string[]>(influencer.tags);
@@ -1636,6 +1637,25 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
   const [currentStage, setCurrentStage] = useState(influencer.pipelineStage);
   const [activeTab, setActiveTab] = useState("overview");
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+
+  // Sync prop-derived state when the user switches to a different influencer.
+  // Without this, useState keeps the previous influencer's notes/tags/stage/etc.
+  // until the user interacts. activeTab is preserved on purpose — users compare
+  // the same tab across influencers (esp. Analytics).
+  useEffect(() => {
+    setNotes(influencer.notes ?? "");
+    setTags(influencer.tags);
+    setPicList(influencer.pics ?? []);
+    setCurrentStage(influencer.pipelineStage);
+    setNewTag("");
+    setShowTagInput(false);
+    setShowPicPicker(false);
+    setPicUsers(null);
+    setPicSearch("");
+    setShareDialogOpen(false);
+    setSaving(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [influencer.id]);
 
   const stageIndex = PIPELINE_STAGES.findIndex((s) => s.key === currentStage);
 
@@ -1837,6 +1857,9 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
                 displayValue={influencer.aiScore != null ? String(influencer.aiScore) : undefined}
                 placeholder="—"
               />
+              {isDetailLoading && (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-label="Loading details" />
+              )}
             </div>
             <p className="text-sm text-muted-foreground">
               @{influencer.username}
@@ -2458,6 +2481,7 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
         <TabsContent value="conversations" className="mt-0 pt-5 pb-8">
           {activeTab === "conversations" && (
             <ConversationsTab
+              key={influencer.id}
               influencerId={influencer.id}
               email={influencer.email}
             />
@@ -2484,6 +2508,7 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
         <TabsContent value="contracts" className="mt-0 pt-5 pb-8">
           {activeTab === "contracts" && (
             <DocumentsTab
+              key={influencer.id}
               influencerId={influencer.id}
               influencerName={influencer.displayName ?? influencer.username}
               email={influencer.email}
@@ -2494,6 +2519,7 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
         <TabsContent value="analytics" className="mt-0 pt-5 pb-8">
           {activeTab === "analytics" && (
             <AnalyticsTab
+              key={influencer.id}
               influencerId={influencer.id}
               username={influencer.username}
               avatarUrl={influencer.avatarUrl}
@@ -2508,13 +2534,13 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
 
         <TabsContent value="shipping" className="mt-0 pt-5 pb-8">
           {activeTab === "shipping" && (
-            <ShippingTab influencerId={influencer.id} />
+            <ShippingTab key={influencer.id} influencerId={influencer.id} />
           )}
         </TabsContent>
 
         <TabsContent value="payment" className="mt-0 pt-5 pb-8">
           {activeTab === "payment" && (
-            <PaymentTab influencerId={influencer.id} />
+            <PaymentTab key={influencer.id} influencerId={influencer.id} />
           )}
         </TabsContent>
       </Tabs>

@@ -682,6 +682,8 @@ export function InfluencersDashboard({
   const selected = selectedId
     ? (detailData?.id === selectedId ? detailData : null) ?? influencers.find((i) => i.id === selectedId) ?? null
     : null;
+  // True while showing list-row data (partial) before the full detail fetch resolves.
+  const isDetailLoading = !!selectedId && detailData?.id !== selectedId;
 
   // Toggle row selection
   const toggleRow = useCallback((id: string, e: React.MouseEvent) => {
@@ -1630,6 +1632,7 @@ export function InfluencersDashboard({
       {selected && (
         <InfluencerDetailPanel
           influencer={selected}
+          isDetailLoading={isDetailLoading}
           onClose={() => { setSelectedId(null); setPanelExpanded(false); }}
           expanded={panelExpanded}
           onToggleExpand={() => setPanelExpanded((v) => !v)}
