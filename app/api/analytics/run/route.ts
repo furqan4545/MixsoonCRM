@@ -122,9 +122,11 @@ export async function runAnalysisPipeline(params: {
         videoUrls,
         config,
         (scraped, total) => {
+          const pct = total > 0 ? Math.round((scraped / total) * 100) : 0;
           updateRunStatus(runId, {
             progress: 5 + Math.round((scraped / total) * 25),
-            progressMsg: `Scraped ${scraped}/${total} comments...`,
+            progressMsg: `Scraping comments: ${scraped.toLocaleString()}/${total.toLocaleString()} (${pct}%)...`,
+            commentCount: scraped,
           });
         },
       );

@@ -518,10 +518,19 @@ export async function analyzeAudienceComments(
 
   const batchResults: (AudienceNlpResult & { count: number })[] = [];
   let completedBatches = 0;
+  let succeededBatches = 0;
+  let failedBatches = 0;
+  const startedAt = Date.now();
+
+  console.log(
+    `[Audience NLP] Starting: ${commentTexts.length} comments in ${batches.length} batches of ${commentBatchSize}, model=${geminiModel}, concurrency=${GEMINI_CONCURRENCY}`,
+  );
 
   // Parallelize with bounded concurrency — was sequential with 1s sleep between
   // calls, which on a 2500-comment dataset with batchSize=10 took 20+ minutes.
   await runWithConcurrency(batches, GEMINI_CONCURRENCY, async (batch, i) => {
+    const batchTag = `[Audience NLP] Batch ${i + 1}/${batches.length}`;
+    const t0 = Date.now();
     try {
       const prompt = buildNlpPrompt(username, batch);
       const rawText = await callGeminiText(prompt, geminiModel);
@@ -540,14 +549,24 @@ export async function analyzeAudienceComments(
         commentSummary: parsed.commentSummary ?? "",
         count: batch.length,
       });
+      succeededBatches += 1;
+      console.log(`${batchTag} OK (${batch.length} comments, ${Date.now() - t0}ms)`);
     } catch (err) {
-      console.error(`[Audience NLP] Batch ${i + 1}/${batches.length} failed:`, err);
+      failedBatches += 1;
+      console.error(
+        `${batchTag} FAILED after ${Date.now() - t0}ms:`,
+        (err as Error).message,
+      );
       // Continue with other batches — partial results are OK
     } finally {
       completedBatches += 1;
       onProgress?.(completedBatches, batches.length);
     }
   });
+
+  console.log(
+    `[Audience NLP] Done: ${succeededBatches} ok, ${failedBatches} failed, total=${Date.now() - startedAt}ms`,
+  );
 
   if (batchResults.length === 0) {
     throw new Error("All NLP batches failed");
@@ -974,6 +993,10 @@ export async function scrapeComments(
   const MAX_WAIT = 10 * 60 * 1000; // 10 minutes
   const POLL_INTERVAL = 5000;
   const started = Date.now();
+  const totalCap = config.videosToSample * config.commentsPerVideo;
+  console.log(
+    `[Comment Scraper] Polling Apify every ${POLL_INTERVAL / 1000}s (cap=${totalCap}, max wait ${MAX_WAIT / 60000}min)...`,
+  );
 
   while (Date.now() - started < MAX_WAIT) {
     await sleep(POLL_INTERVAL);
@@ -985,9 +1008,36 @@ export async function scrapeComments(
 
     const { data: statusData } = await statusRes.json();
     const status = statusData.status;
+    const datasetId = statusData.defaultDatasetId as string | undefined;
+
+    // Apify writes items to the dataset as the scrape runs, so we can get a
+    // real-time count by querying dataset metadata. Without this, progress
+    // stays at 0 until completion.
+    let liveCount = 0;
+    if (datasetId) {
+      try {
+        const dsRes = await fetch(
+          `https://api.apify.com/v2/datasets/${datasetId}?token=${apiKey}`,
+        );
+        if (dsRes.ok) {
+          const dsData = await dsRes.json();
+          liveCount = Number(dsData.data?.itemCount ?? 0);
+        }
+      } catch {
+        // Status hiccup — ignore, retry next poll
+      }
+    }
+
+    const elapsed = Math.round((Date.now() - started) / 1000);
+    console.log(
+      `[Comment Scraper] Polling: status=${status} items=${liveCount}/${totalCap} elapsed=${elapsed}s`,
+    );
 
     if (status === "SUCCEEDED") {
-      console.log(`[Comment Scraper] Run completed successfully`);
+      console.log(
+        `[Comment Scraper] Run completed successfully (${liveCount} items, ${elapsed}s)`,
+      );
+      onProgress?.(liveCount, totalCap);
       break;
     }
     if (status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT") {
@@ -998,12 +1048,9 @@ export async function scrapeComments(
       throw new Error(`Comment scraping ${status}: ${reason}`);
     }
 
-    // Total comments is bounded by videosToSample × commentsPerVideo
-    onProgress?.(0, config.videosToSample * config.commentsPerVideo);
+    onProgress?.(liveCount, totalCap);
   }
 
-  // Fetch results — cap at videosToSample × commentsPerVideo (theoretical max)
-  const totalCap = config.videosToSample * config.commentsPerVideo;
   const datasetUrl = `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apiKey}&limit=${totalCap}`;
   const dataRes = await fetch(datasetUrl);
   if (!dataRes.ok) {
