@@ -33,6 +33,7 @@ import { ThumbnailImage } from "@/components/thumbnail-image";
 import { toast } from "sonner";
 import Link from "next/link";
 import { InfluencerDetailPanel } from "./influencer-detail-panel";
+import { AddInfluencerDialog } from "./add-influencer-dialog";
 
 export interface VideoRow {
   id: string;
@@ -518,6 +519,7 @@ export function InfluencersDashboard({
   const importCsvName = searchParams.get("csv");
   const [deletingImport, setDeletingImport] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(
     searchParams.get("selected") ?? null,
@@ -1141,6 +1143,14 @@ export function InfluencersDashboard({
                   </span>
                 )}
               </Button>
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setAddDialogOpen(true)}
+              >
+                <UserPlus className="h-4 w-4" />
+                Add Influencer
+              </Button>
               <Button asChild className="gap-2">
                 <Link href="/data-scraper">
                   <Plus className="h-4 w-4" />
@@ -1638,6 +1648,25 @@ export function InfluencersDashboard({
           onToggleExpand={() => setPanelExpanded((v) => !v)}
         />
       )}
+
+      <AddInfluencerDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        onSuccess={(newId) => {
+          clearDetailCache();
+          // page.tsx fetches the list via useEffect into client state, so
+          // router.refresh() doesn't reload it — we need the explicit callback.
+          onRefresh?.();
+          if (newId) {
+            // Show the new row in the list (Approved/Rejected/etc. filters
+            // would hide a freshly-scored or unscored influencer) and open
+            // its detail panel so the user can see what was just added.
+            setQueueFilter("ALL");
+            setSelectedId(newId);
+          }
+        }}
+      />
+
     </div>
   );
 }

@@ -296,3 +296,130 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+// Extract a TikTok handle from a username, @handle, or profile URL.
+// Returns null if the input doesn't contain a valid TikTok handle.
+function extractTiktokUsername(input: string): string | null {
+  let s = input.trim();
+  if (!s) return null;
+  // URL inputs MUST have a tiktok.com/@handle pattern — otherwise we'd
+  // capture "https" from "https://..." (the original bug).
+  if (/^https?:\/\//i.test(s) || /\btiktok\.com\//i.test(s)) {
+    const m = s.match(/tiktok\.com\/@([a-zA-Z0-9._]+)/i);
+    if (!m) return null;
+    s = m[1];
+  } else {
+    s = s.replace(/^@+/, "");
+  }
+  s = s.toLowerCase();
+  // TikTok handle rules: 2-24 chars, alphanumeric/underscore/period.
+  if (!/^[a-z0-9._]{2,24}$/.test(s)) return null;
+  return s;
+}
+
+// POST /api/influencers — Manually add a single influencer. Mirrors the
+// /api/imports response shape so the frontend can hand off to /api/scrape
+// for enrichment, reusing the same Apify pipeline as CSV imports.
+export async function POST(request: NextRequest) {
+  let currentUser;
+  try {
+    currentUser = await requirePermission("imports", "write");
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Forbidden" },
+      { status: 403 },
+    );
+  }
+
+  try {
+    const body = await request.json();
+    const { usernameOrUrl, videoCount: requestedVideoCount } = body as {
+      usernameOrUrl?: string;
+      videoCount?: number;
+    };
+
+    if (!usernameOrUrl || typeof usernameOrUrl !== "string") {
+      return NextResponse.json(
+        { error: "usernameOrUrl is required" },
+        { status: 400 },
+      );
+    }
+
+    const username = extractTiktokUsername(usernameOrUrl);
+    if (!username) {
+      return NextResponse.json(
+        {
+          error:
+            "Could not parse a TikTok handle from the input. Try @handle or https://tiktok.com/@handle.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const videoCount = Number.isFinite(requestedVideoCount) && requestedVideoCount! > 0
+      ? Math.min(Math.floor(requestedVideoCount!), 100)
+      : 20;
+
+    // Categorize the same way /api/imports does so /api/scrape behaves identically.
+    const existing = await prisma.influencer.findUnique({
+      where: { username },
+      select: { id: true, _count: { select: { videos: true } } },
+    });
+
+    const toScrape: string[] = [];
+    const toRescrape: string[] = [];
+    const skipped: string[] = [];
+
+    if (!existing) {
+      toScrape.push(username);
+    } else if (existing._count.videos < videoCount) {
+      toRescrape.push(username);
+    } else {
+      skipped.push(username);
+    }
+
+    const importRecord = await prisma.import.create({
+      data: {
+        sourceFilename: `Manual add: @${username}`,
+        rowCount: 1,
+        processedCount: 0,
+        status: "PENDING",
+        usernameLimit: 1,
+        videoCount,
+        createdById: currentUser.id,
+      },
+    });
+
+    // If the influencer already exists, auto-assign current user as PIC
+    // (matches /api/imports behavior for existing rows in a CSV).
+    if (existing) {
+      await prisma.influencerPic
+        .create({
+          data: { influencerId: existing.id, userId: currentUser.id },
+        })
+        .catch(() => {});
+    }
+
+    return NextResponse.json({
+      id: importRecord.id,
+      sourceFilename: importRecord.sourceFilename,
+      rowCount: 1,
+      uniqueCount: 1,
+      finalCount: 1,
+      usernames: [username],
+      toScrape,
+      toRescrape,
+      skipped,
+      videoCount,
+      status: importRecord.status,
+      username,
+      alreadyExists: !!existing,
+    });
+  } catch (error) {
+    console.error("[POST /api/influencers]", error);
+    return NextResponse.json(
+      { error: "Failed to add influencer" },
+      { status: 500 },
+    );
+  }
+}
