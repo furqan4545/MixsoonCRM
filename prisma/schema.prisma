@@ -36,6 +36,9 @@ model Influencer {
   pipelineStage  PipelineStage @default(PROSPECT)
   tags           String[] // e.g. ["skincare", "beauty", "routine"]
   notes          String? // internal notes
+  // Image attachments for the notes section. Array of objects:
+  //   [{ id, gcsPath, name, size, type, uploadedAt, uploadedById }]
+  noteAttachments Json @default("[]")
   aiScore        Int? // 0-100 AI relevance score
 
   savedAt   DateTime? // when set, influencer is starred/saved by CEO
@@ -346,6 +349,7 @@ model User {
   activityLogsCreated       ActivityLog[]       @relation("ActivityLogsCreated")
   trackedVideosCreated      TrackedVideo[]      @relation("TrackedVideosCreated")
   productsCreated           Product[]           @relation("ProductsCreated")
+  bundlesCreated            Bundle[]            @relation("BundlesCreated")
 
   // ── Resource sharing (Phase 1)
   sharedResources       ResourceShare[] @relation("ShareRecipient")
@@ -817,11 +821,15 @@ model InfluencerOnboarding {
   influencerId String     @unique
   influencer   Influencer @relation(fields: [influencerId], references: [id], onDelete: Cascade)
 
-  // Bank details (account number is encrypted)
-  bankName      String
-  accountNumber String // AES-256 encrypted
-  accountHolder String
-  bankCode      String?
+  // Bank details (sensitive fields are AES-256 encrypted)
+  bankName       String
+  accountNumber  String  // AES-256 encrypted
+  accountHolder  String
+  bankCode       String?
+  iban           String? // AES-256 encrypted
+  routingNumber  String? // AES-256 encrypted
+  ccCode         String? // country code, branch code, or similar identifier
+  bankAddress    String? // bank's physical address (multi-line)
 
   // Shipping address
   fullName     String
@@ -948,6 +956,10 @@ model ContentSubmission {
   accountNumber  String? // AES-256 encrypted
   accountHolder  String?
   bankCode       String?
+  iban           String? // AES-256 encrypted
+  routingNumber  String? // AES-256 encrypted
+  ccCode         String?
+  bankAddress    String?
 
   status       ContentSubmissionStatus @default(PENDING)
   submittedAt  DateTime?
@@ -1148,19 +1160,84 @@ model Product {
   description String?
   category    String?
   imageUrl    String?
-  quantity    Int      @default(0) // total stock
-  reserved    Int      @default(0) // assigned but not yet delivered
+  quantity    Int      @default(0) // total stock (legacy single-variant default)
+  reserved    Int      @default(0) // assigned but not yet delivered (legacy)
   unitCost    Float? // cost per unit in USD
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   createdById String?
   createdBy   User?    @relation("ProductsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
-  shipments Shipment[]
+  // A product with no variants behaves as a single-SKU product (using
+  // Product.quantity / Product.reserved). When variants are added, each
+  // variant tracks its own stock; the parent's quantity becomes informational.
+  variants    ProductVariant[]
+  shipments   Shipment[]
+  bundleItems BundleItem[]
 
   @@index([sku])
   @@index([category])
   @@index([createdById])
+}
+
+// Shades, sizes, or any other "this product comes in N flavors" axis.
+model ProductVariant {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  name      String  // e.g. "Light", "30ml", "Pink"
+  sku       String  @unique
+  imageUrl  String?
+  quantity  Int     @default(0)
+  reserved  Int     @default(0)
+  unitCost  Float?
+
+  shipments   Shipment[]
+  bundleItems BundleItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+}
+
+// A reusable named selection of products + variants + quantities. Use cases:
+// "US Welcome Bundle", "UK Holiday Set", "Korea Skincare Drop". One bundle
+// can be sent to many influencers — each send becomes a group of Shipment
+// rows tagged with the bundle id.
+model Bundle {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  region      String? // free-form: "US", "UK", "KR", "EU", etc.
+  imageUrl    String?
+
+  items BundleItem[]
+  shipments Shipment[] // shipments created from this bundle (for tracking)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+  createdBy   User?    @relation("BundlesCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([region])
+  @@index([createdById])
+}
+
+model BundleItem {
+  id        String  @id @default(cuid())
+  bundleId  String
+  bundle    Bundle  @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  quantity  Int     @default(1)
+
+  @@index([bundleId])
+  @@index([productId])
+  @@index([variantId])
 }
 
 enum ShippingCarrier {
@@ -1184,6 +1261,10 @@ model Shipment {
   id           String             @id @default(cuid())
   productId    String
   product      Product            @relation(fields: [productId], references: [id])
+  variantId    String?
+  variant      ProductVariant?    @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  bundleId     String?            // when this shipment was created as part of a Send Bundle action
+  bundle       Bundle?            @relation(fields: [bundleId], references: [id], onDelete: SetNull)
   influencerId String
   influencer   Influencer         @relation(fields: [influencerId], references: [id], onDelete: Cascade)
   campaignId   String?
@@ -1209,6 +1290,8 @@ model Shipment {
 
   @@index([influencerId])
   @@index([productId])
+  @@index([variantId])
+  @@index([bundleId])
   @@index([campaignId])
   @@index([status])
   @@index([trackingNumber])
@@ -1338,6 +1421,10 @@ model Payment {
   accountNumber String? // AES-256 encrypted
   accountHolder String?
   bankCode      String?
+  iban          String? // AES-256 encrypted
+  routingNumber String? // AES-256 encrypted
+  ccCode        String?
+  bankAddress   String?
 
   invoiceNumber String?
   notes         String?

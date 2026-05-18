@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     prisma.product.findMany({
       where,
       include: {
-        _count: { select: { shipments: true } },
+        _count: { select: { shipments: true, variants: true } },
       },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
@@ -55,28 +55,34 @@ export async function GET(request: NextRequest) {
     prisma.product.count({ where }),
   ]);
 
-  // Load shipments in a separate batch query — the nested `include` with
-  // a `where` filter was returning empty arrays in some cases. Direct lookup
-  // by IN-clause is reliable.
+  // Batch-load shipments + variants for the visible page. Direct IN-clause
+  // queries are faster + more reliable than nested includes with filters.
   const productIds = productsRaw.map((p) => p.id);
-  const shipmentRows = productIds.length
-    ? await prisma.shipment.findMany({
-        where: {
-          productId: { in: productIds },
-          status: { not: "FAILED" },
-        },
-        select: {
-          id: true,
-          productId: true,
-          status: true,
-          quantity: true,
-          influencer: {
-            select: { id: true, username: true, displayName: true, avatarUrl: true },
+  const [shipmentRows, variantRows] = productIds.length
+    ? await Promise.all([
+        prisma.shipment.findMany({
+          where: {
+            productId: { in: productIds },
+            status: { not: "FAILED" },
           },
-        },
-        orderBy: { createdAt: "desc" },
-      })
-    : [];
+          select: {
+            id: true,
+            productId: true,
+            variantId: true,
+            status: true,
+            quantity: true,
+            influencer: {
+              select: { id: true, username: true, displayName: true, avatarUrl: true },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        }),
+        prisma.productVariant.findMany({
+          where: { productId: { in: productIds } },
+          orderBy: { createdAt: "asc" },
+        }),
+      ])
+    : [[], []];
 
   const shipmentsByProduct = new Map<string, typeof shipmentRows>();
   for (const s of shipmentRows) {
@@ -84,12 +90,19 @@ export async function GET(request: NextRequest) {
     if (arr) arr.push(s);
     else shipmentsByProduct.set(s.productId, [s]);
   }
+  const variantsByProduct = new Map<string, typeof variantRows>();
+  for (const v of variantRows) {
+    const arr = variantsByProduct.get(v.productId);
+    if (arr) arr.push(v);
+    else variantsByProduct.set(v.productId, [v]);
+  }
 
   const products = productsRaw.map((p) => ({
     ...p,
     shipments: (shipmentsByProduct.get(p.id) ?? []).map(
       ({ productId: _omit, ...rest }) => rest,
     ),
+    variants: variantsByProduct.get(p.id) ?? [],
   }));
 
   // Auto-reconcile stale `reserved` counters. Shipments cascade-delete when

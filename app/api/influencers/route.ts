@@ -150,6 +150,7 @@ export async function GET(request: NextRequest) {
           pipelineStage: true,
           tags: true,
           notes: true,
+          noteAttachments: true,
           aiScore: true,
           savedAt: true,
           createdAt: true,
@@ -177,9 +178,10 @@ export async function GET(request: NextRequest) {
 
     const pageIds = influencers.slice(0, limit + 1).map((i) => i.id);
 
-    // Batch-load relations (pics, campaigns) for visible rows in parallel.
-    // One IN-clause query each beats Prisma's per-row nested fetch.
-    const [picRows, campaignRows] = pageIds.length
+    // Batch-load relations (pics, campaigns, audience analytics) for visible
+    // rows in parallel. One IN-clause query each beats Prisma's per-row nested
+    // fetch. topCountries powers the "filter by audience country" UI.
+    const [picRows, campaignRows, analyticsRows] = pageIds.length
       ? await Promise.all([
           prisma.influencerPic.findMany({
             where: { influencerId: { in: pageIds } },
@@ -195,8 +197,19 @@ export async function GET(request: NextRequest) {
               campaign: { select: { id: true, name: true, status: true } },
             },
           }),
+          prisma.influencerAnalytics.findMany({
+            where: { influencerId: { in: pageIds } },
+            select: {
+              influencerId: true,
+              topCountries: true,
+              influencerGender: true,
+              influencerAgeRange: true,
+              influencerEthnicity: true,
+              influencerCountry: true,
+            },
+          }),
         ])
-      : [[], []];
+      : [[], [], []];
     const t2 = Date.now();
 
     const picsByInf = new Map<string, typeof picRows>();
@@ -211,6 +224,8 @@ export async function GET(request: NextRequest) {
       if (arr) arr.push(r);
       else campaignsByInf.set(r.influencerId, [r]);
     }
+    const analyticsByInf = new Map<string, (typeof analyticsRows)[number]>();
+    for (const r of analyticsRows) analyticsByInf.set(r.influencerId, r);
     console.log(
       `[influencers] limit=${limit} returned=${influencers.length} core=${t1 - t0}ms relations=${t2 - t1}ms total=${t2 - t0}ms`,
     );
@@ -253,6 +268,7 @@ export async function GET(request: NextRequest) {
         pipelineStage: inf.pipelineStage,
         tags: inf.tags,
         notes: inf.notes,
+        noteAttachments: inf.noteAttachments,
         aiScore: inf.aiScore ?? latestEval?.score ?? null,
         queueBucket: savedEval?.bucket ?? null,
         queueEvalId: savedEval?.id ?? null,
@@ -272,7 +288,17 @@ export async function GET(request: NextRequest) {
           campaignName: ca.campaign.name,
           campaignStatus: ca.campaign.status,
         })),
-        analytics: null,
+        analytics: (() => {
+          const a = analyticsByInf.get(inf.id);
+          if (!a) return null;
+          return {
+            influencerGender: a.influencerGender,
+            influencerAgeRange: a.influencerAgeRange,
+            influencerEthnicity: a.influencerEthnicity,
+            influencerCountry: a.influencerCountry,
+            topCountries: a.topCountries,
+          };
+        })(),
         pics: (picsByInf.get(inf.id) ?? []).map((p) => ({
           id: p.user.id,
           name: p.user.name,

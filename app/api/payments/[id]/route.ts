@@ -46,7 +46,11 @@ export async function GET(
   return NextResponse.json({
     ...payment,
     accountNumberMasked: maskAccount(payment.accountNumber),
+    ibanMasked: maskAccount(payment.iban),
+    routingNumberMasked: maskAccount(payment.routingNumber),
     accountNumber: undefined,
+    iban: undefined,
+    routingNumber: undefined,
     // Don't leak the raw token over the authenticated GET.
     confirmToken: undefined,
   });
@@ -219,7 +223,11 @@ export async function PATCH(
   return NextResponse.json({
     ...updated,
     accountNumberMasked: maskAccount(updated.accountNumber),
+    ibanMasked: maskAccount(updated.iban),
+    routingNumberMasked: maskAccount(updated.routingNumber),
     accountNumber: undefined,
+    iban: undefined,
+    routingNumber: undefined,
     confirmToken: undefined, // never leak token over authenticated GET/PATCH
   });
 }

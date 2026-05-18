@@ -49,6 +49,11 @@ interface PaymentRow {
   bankName: string | null;
   accountNumberMasked: string;
   accountHolder: string | null;
+  bankCode: string | null;
+  ibanMasked: string | null;
+  routingNumberMasked: string | null;
+  ccCode: string | null;
+  bankAddress: string | null;
   invoiceNumber: string | null;
   notes: string | null;
   paidAt: string | null;
@@ -635,6 +640,23 @@ export function PaymentsDashboard() {
                     <p><span className="text-muted-foreground">Bank:</span> {selected.bankName}</p>
                     <p><span className="text-muted-foreground">Account:</span> {selected.accountNumberMasked}</p>
                     <p><span className="text-muted-foreground">Holder:</span> {selected.accountHolder}</p>
+                    {selected.ibanMasked && selected.ibanMasked !== "—" && (
+                      <p><span className="text-muted-foreground">IBAN:</span> {selected.ibanMasked}</p>
+                    )}
+                    {selected.routingNumberMasked && selected.routingNumberMasked !== "—" && (
+                      <p><span className="text-muted-foreground">Routing:</span> {selected.routingNumberMasked}</p>
+                    )}
+                    {selected.bankCode && (
+                      <p><span className="text-muted-foreground">SWIFT/BIC:</span> {selected.bankCode}</p>
+                    )}
+                    {selected.ccCode && (
+                      <p><span className="text-muted-foreground">CC code:</span> {selected.ccCode}</p>
+                    )}
+                    {selected.bankAddress && (
+                      <p className="whitespace-pre-wrap">
+                        <span className="text-muted-foreground">Address:</span> {selected.bankAddress}
+                      </p>
+                    )}
                   </div>
                 </div>
               )}

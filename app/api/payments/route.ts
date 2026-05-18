@@ -72,11 +72,15 @@ export async function GET(request: NextRequest) {
     prisma.payment.count({ where }),
   ]);
 
-  // Mask account numbers and strip the raw token from list responses.
+  // Mask sensitive bank fields and strip the raw token from list responses.
   const masked = payments.map((p) => ({
     ...p,
     accountNumberMasked: maskAccount(p.accountNumber),
-    accountNumber: undefined, // never send encrypted value to client
+    ibanMasked: maskAccount(p.iban),
+    routingNumberMasked: maskAccount(p.routingNumber),
+    accountNumber: undefined, // never send encrypted values to client
+    iban: undefined,
+    routingNumber: undefined,
     confirmToken: undefined, // never leak influencer self-confirm token
   }));
 
@@ -116,6 +120,10 @@ export async function POST(request: NextRequest) {
       accountNumber: onboarding.accountNumber, // already encrypted
       accountHolder: onboarding.accountHolder,
       bankCode: onboarding.bankCode,
+      iban: onboarding.iban, // already encrypted
+      routingNumber: onboarding.routingNumber, // already encrypted
+      ccCode: onboarding.ccCode,
+      bankAddress: onboarding.bankAddress,
       invoiceNumber: invoiceNumber || null,
       notes: notes || null,
       createdById: user.id,

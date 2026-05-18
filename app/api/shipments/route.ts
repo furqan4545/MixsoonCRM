@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
   const user = await requirePermission("shipping", "write");
 
   const body = await request.json();
-  const { productId, influencerId, campaignId, carrier, trackingNumber, notes } = body;
+  const { productId, variantId, bundleId, influencerId, campaignId, carrier, trackingNumber, notes } = body;
   const quantity = Math.max(1, parseInt(body.quantity) || 1);
 
   if (!productId || !influencerId) {
@@ -76,18 +76,47 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Verify product exists and has stock
+  // Verify product exists.
   const product = await prisma.product.findUnique({ where: { id: productId } });
   if (!product) {
     return NextResponse.json({ error: "Product not found" }, { status: 404 });
   }
 
-  const available = product.quantity - product.reserved;
-  if (available < quantity) {
-    return NextResponse.json(
-      { error: `Only ${available} unit(s) available for "${product.name}" (${product.sku})` },
-      { status: 400 },
-    );
+  // When a variant is selected, stock tracking lives on the variant — the
+  // parent product's quantity is informational only. Otherwise fall back to
+  // the legacy single-SKU product stock.
+  let variant:
+    | { id: string; name: string; sku: string; quantity: number; reserved: number; productId: string }
+    | null = null;
+  if (variantId) {
+    variant = await prisma.productVariant.findUnique({
+      where: { id: variantId },
+      select: { id: true, name: true, sku: true, quantity: true, reserved: true, productId: true },
+    });
+    if (!variant) {
+      return NextResponse.json({ error: "Variant not found" }, { status: 404 });
+    }
+    if (variant.productId !== productId) {
+      return NextResponse.json(
+        { error: "Variant doesn't belong to the selected product" },
+        { status: 400 },
+      );
+    }
+    const available = variant.quantity - variant.reserved;
+    if (available < quantity) {
+      return NextResponse.json(
+        { error: `Only ${available} unit(s) available for "${product.name} — ${variant.name}" (${variant.sku})` },
+        { status: 400 },
+      );
+    }
+  } else {
+    const available = product.quantity - product.reserved;
+    if (available < quantity) {
+      return NextResponse.json(
+        { error: `Only ${available} unit(s) available for "${product.name}" (${product.sku})` },
+        { status: 400 },
+      );
+    }
   }
 
   // Get influencer shipping address from onboarding
@@ -108,23 +137,33 @@ export async function POST(request: NextRequest) {
     ? generateTrackingUrl(carrierEnum, trackingNumber)
     : null;
 
-  // Atomic: create ONE shipment with quantity + increment reserved
+  // Atomic: create ONE shipment with quantity + increment reserved on the
+  // variant if present (variant stock takes precedence), else on the product.
   const shipment = await prisma.$transaction(async (tx) => {
-    await tx.product.update({
-      where: { id: productId },
-      data: { reserved: { increment: quantity } },
-    });
+    if (variant) {
+      await tx.productVariant.update({
+        where: { id: variant.id },
+        data: { reserved: { increment: quantity } },
+      });
+    } else {
+      await tx.product.update({
+        where: { id: productId },
+        data: { reserved: { increment: quantity } },
+      });
+    }
 
     return tx.shipment.create({
       data: {
         productId,
+        variantId: variant?.id ?? null,
+        bundleId: bundleId || null,
         influencerId,
         campaignId: campaignId || null,
         quantity,
         carrier: carrierEnum,
         trackingNumber: trackingNumber || null,
         trackingUrl,
-        shippingAddress: onboarding || null,
+        shippingAddress: onboarding ?? undefined,
         notes: notes || null,
         createdById: user.id,
         status: trackingNumber ? "SHIPPED" : "PENDING",
@@ -132,6 +171,7 @@ export async function POST(request: NextRequest) {
       },
       include: {
         product: { select: { id: true, name: true, sku: true } },
+        variant: { select: { id: true, name: true, sku: true } },
         influencer: { select: { id: true, username: true, displayName: true } },
       },
     });

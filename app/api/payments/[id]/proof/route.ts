@@ -189,6 +189,8 @@ export async function POST(
     payment: {
       ...updated,
       accountNumber: undefined,
+      iban: undefined,
+      routingNumber: undefined,
       confirmToken: undefined,
     },
   });

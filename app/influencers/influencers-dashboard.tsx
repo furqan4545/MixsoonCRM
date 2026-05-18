@@ -72,6 +72,15 @@ export interface InfluencerRow {
   pipelineStage: string;
   tags: string[];
   notes: string | null;
+  noteAttachments?: Array<{
+    id: string;
+    gcsPath: string;
+    name: string;
+    size: number;
+    type: string;
+    uploadedAt: string;
+    uploadedById: string | null;
+  }>;
   aiScore: number | null;
   // Queue data
   queueBucket: string | null;
@@ -100,6 +109,7 @@ export interface InfluencerRow {
     influencerAgeRange: string | null;
     influencerEthnicity: string | null;
     influencerCountry: string | null;
+    topCountries?: Array<{ country: string; countryName?: string; percentage: number }> | null;
   } | null;
   pics: { id: string; name: string | null; email: string }[];
   savedAt: string | null;
@@ -537,12 +547,13 @@ export function InfluencersDashboard({
   const [filterCountry, setFilterCountry] = useState("");
   const [filterLanguage, setFilterLanguage] = useState("");
   const [filterPlatform, setFilterPlatform] = useState("");
+  const [filterAudienceCountry, setFilterAudienceCountry] = useState("");
   const [filterMinFollowers, setFilterMinFollowers] = useState("");
   const [filterMaxFollowers, setFilterMaxFollowers] = useState("");
   const [availableCsvs, setAvailableCsvs] = useState<
     { id: string; sourceFilename: string; influencerCount: number }[] | null
   >(null);
-  const activeFilterCount = [filterCountry, filterLanguage, filterPlatform, filterMinFollowers, filterMaxFollowers].filter(Boolean).length;
+  const activeFilterCount = [filterCountry, filterLanguage, filterPlatform, filterAudienceCountry, filterMinFollowers, filterMaxFollowers].filter(Boolean).length;
 
   // Lazy-load the user's accessible CSVs the first time the filter panel opens
   useEffect(() => {
@@ -587,15 +598,26 @@ export function InfluencersDashboard({
     const countries = new Set<string>();
     const languages = new Set<string>();
     const platforms = new Set<string>();
+    // Audience-country options are pulled from each influencer's TOP audience
+    // country (analytics.topCountries[0]) so the dropdown only shows values
+    // that would actually match something.
+    const audienceCountries = new Map<string, string>(); // code -> displayName
     for (const inf of influencers) {
       if (inf.country) countries.add(inf.country);
       if (inf.language) languages.add(inf.language);
       if (inf.platform) platforms.add(inf.platform);
+      const top = inf.analytics?.topCountries?.[0];
+      if (top?.country) {
+        audienceCountries.set(top.country, top.countryName ?? top.country);
+      }
     }
     return {
       countries: [...countries].sort(),
       languages: [...languages].sort(),
       platforms: [...platforms].sort(),
+      audienceCountries: [...audienceCountries.entries()]
+        .map(([code, name]) => ({ code, name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
     };
   }, [influencers]);
 
@@ -636,6 +658,20 @@ export function InfluencersDashboard({
     if (filterPlatform) {
       list = list.filter((inf) => inf.platform === filterPlatform);
     }
+    if (filterAudienceCountry) {
+      // Match influencers whose TOP audience country (#1 by percentage)
+      // equals the selected one. Country codes are 2-letter (US, KR, ...);
+      // we lowercase both sides to be tolerant of stored casing.
+      const target = filterAudienceCountry.trim().toLowerCase();
+      list = list.filter((inf) => {
+        const top = inf.analytics?.topCountries?.[0];
+        if (!top) return false;
+        return (
+          (top.country ?? "").toLowerCase() === target ||
+          (top.countryName ?? "").toLowerCase() === target
+        );
+      });
+    }
     if (filterMinFollowers) {
       const min = parseInt(filterMinFollowers, 10);
       if (!isNaN(min)) list = list.filter((inf) => (inf.followers ?? 0) >= min);
@@ -646,7 +682,7 @@ export function InfluencersDashboard({
     }
 
     return list;
-  }, [influencers, search, queueFilter, filterCountry, filterLanguage, filterPlatform, filterMinFollowers, filterMaxFollowers]);
+  }, [influencers, search, queueFilter, filterCountry, filterLanguage, filterPlatform, filterAudienceCountry, filterMinFollowers, filterMaxFollowers]);
 
   // Cache loaded influencer details — cleared on any data mutation
   const detailCacheRef = useRef<Map<string, InfluencerRow>>(new Map());
@@ -1230,6 +1266,23 @@ export function InfluencersDashboard({
                     <option value="">All platforms</option>
                     {filterOptions.platforms.map((p) => (
                       <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="min-w-[180px]">
+                  <label className="text-xs font-semibold text-muted-foreground">
+                    Audience top country
+                  </label>
+                  <select
+                    value={filterAudienceCountry}
+                    onChange={(e) => setFilterAudienceCountry(e.target.value)}
+                    className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                  >
+                    <option value="">Any audience</option>
+                    {filterOptions.audienceCountries.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.name} ({c.code})
+                      </option>
                     ))}
                   </select>
                 </div>

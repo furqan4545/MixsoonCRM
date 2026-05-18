@@ -101,6 +101,19 @@ export async function POST(request: Request) {
       tokenRecord.influencer.displayName || tokenRecord.influencer.username;
 
     // 4. Prepare bank details if provided
+    // IBAN and routing number are sensitive — encrypt at rest with the same
+    // helper as the account number. CC code and bank address are plain text.
+    const optEncrypt = (v: string | undefined | null) =>
+      v && v.trim() ? encrypt(v.trim()) : null;
+    const extraBankFields = bankDetails
+      ? {
+          iban: optEncrypt(bankDetails.iban),
+          routingNumber: optEncrypt(bankDetails.routingNumber),
+          ccCode: bankDetails.ccCode?.trim() || null,
+          bankAddress: bankDetails.bankAddress?.trim() || null,
+        }
+      : {};
+
     if (shouldIncludePayment && bankDetails) {
       // Also upsert InfluencerOnboarding for centralized payment data
       await prisma.influencerOnboarding.upsert({
@@ -111,6 +124,7 @@ export async function POST(request: Request) {
           accountNumber: encrypt(bankDetails.accountNumber),
           accountHolder: bankDetails.accountHolder,
           bankCode: bankDetails.bankCode || null,
+          ...extraBankFields,
           fullName: bankDetails.accountHolder,
           addressLine1: "",
           city: "",
@@ -122,6 +136,7 @@ export async function POST(request: Request) {
           accountNumber: encrypt(bankDetails.accountNumber),
           accountHolder: bankDetails.accountHolder,
           bankCode: bankDetails.bankCode || null,
+          ...extraBankFields,
           submittedAt: now,
         },
       });
@@ -159,6 +174,7 @@ export async function POST(request: Request) {
                 accountNumber: encrypt(bankDetails.accountNumber),
                 accountHolder: bankDetails.accountHolder,
                 bankCode: bankDetails.bankCode || null,
+                ...extraBankFields,
               }
             : {}),
         },
@@ -181,6 +197,7 @@ export async function POST(request: Request) {
                 accountNumber: encrypt(bankDetails.accountNumber),
                 accountHolder: bankDetails.accountHolder,
                 bankCode: bankDetails.bankCode || null,
+                ...extraBankFields,
               }
             : {}),
         },

@@ -88,6 +88,23 @@ export async function assertCanAccess(opts: {
 
   if (ownerId && ownerId === user.id) return;
 
+  // PIC assignment on an Influencer is its own access grant. The list query
+  // already honors `InfluencerPic`, so without this branch PICs could see the
+  // row in the list but get a 403 trying to open the detail page.
+  if (resourceType === "Influencer") {
+    const pic = await prisma.influencerPic.findUnique({
+      where: {
+        influencerId_userId: { influencerId: resourceId, userId: user.id },
+      },
+      select: { id: true },
+    });
+    if (pic) {
+      // PICs get read+write — they manage the influencer day-to-day. Admin-only
+      // actions (delete, share grant, etc.) still need an explicit Admin share.
+      if (required !== "admin") return;
+    }
+  }
+
   const share = await prisma.resourceShare.findUnique({
     where: {
       resourceType_resourceId_userId: {

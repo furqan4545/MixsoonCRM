@@ -32,7 +32,10 @@ interface BankDetails {
   accountNumber: string;
   accountHolder: string;
   bankCode: string;
+  iban: string;
   routingNumber: string;
+  ccCode: string;
+  bankAddress: string;
   country: string;
   contactNumber: string;
 }
@@ -58,7 +61,10 @@ const defaultBank: BankDetails = {
   accountNumber: "",
   accountHolder: "",
   bankCode: "",
+  iban: "",
   routingNumber: "",
+  ccCode: "",
+  bankAddress: "",
   country: "",
   contactNumber: "",
 };
@@ -363,6 +369,10 @@ export function ContentSubmissionForm({
           accountNumber: bank.accountNumber,
           accountHolder: bank.accountHolder,
           bankCode: bank.bankCode || undefined,
+          iban: bank.iban || undefined,
+          routingNumber: bank.routingNumber || undefined,
+          ccCode: bank.ccCode || undefined,
+          bankAddress: bank.bankAddress || undefined,
         };
       }
 
@@ -674,6 +684,18 @@ export function ContentSubmissionForm({
             />
           </div>
 
+          <div>
+            <Label htmlFor="iban">IBAN <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Input
+              id="iban"
+              type="text"
+              placeholder="e.g. DE89370400440532013000"
+              value={bank.iban || ""}
+              onChange={(e) => updateBank("iban", e.target.value)}
+              className="mt-1.5"
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="swiftCode">SWIFT / BIC Code</Label>
@@ -701,13 +723,13 @@ export function ContentSubmissionForm({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="paymentCountry">Country</Label>
+              <Label htmlFor="ccCode">CC Code <span className="text-muted-foreground font-normal">(country / branch code)</span></Label>
               <Input
-                id="paymentCountry"
+                id="ccCode"
                 type="text"
-                placeholder="e.g. South Korea, USA, Canada"
-                value={bank.country || ""}
-                onChange={(e) => updateBank("country", e.target.value)}
+                placeholder="e.g. KR, US, branch code"
+                value={bank.ccCode || ""}
+                onChange={(e) => updateBank("ccCode", e.target.value)}
                 className="mt-1.5"
               />
             </div>
@@ -722,6 +744,18 @@ export function ContentSubmissionForm({
                 className="mt-1.5"
               />
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="bankAddress">Bank Address <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <textarea
+              id="bankAddress"
+              rows={2}
+              placeholder="Bank's physical address"
+              value={bank.bankAddress || ""}
+              onChange={(e) => updateBank("bankAddress", e.target.value)}
+              className="mt-1.5 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
           </div>
         </div>
       )}

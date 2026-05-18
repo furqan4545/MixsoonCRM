@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment as React_Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+// Alias `Fragment` so JSX `<React.Fragment>` resolves without importing the
+// whole React default export.
+const React = { Fragment: React_Fragment };
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Package,
@@ -13,6 +16,8 @@ import {
   AlertTriangle,
   Loader2,
   X,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -58,8 +63,20 @@ interface Product {
   reserved: number;
   unitCost: number | null;
   createdAt: string;
-  _count: { shipments: number };
+  _count: { shipments: number; variants?: number };
   shipments: ProductShipment[];
+  variants?: Variant[];
+}
+
+interface Variant {
+  id: string;
+  productId: string;
+  name: string;
+  sku: string;
+  imageUrl: string | null;
+  quantity: number;
+  reserved: number;
+  unitCost: number | null;
 }
 
 interface Influencer {
@@ -88,6 +105,13 @@ export function InventoryDashboard() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [page, setPage] = useState(1);
+
+  // Variants (loaded when the edit dialog opens for an existing product)
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [newVariant, setNewVariant] = useState({ name: "", sku: "", quantity: "0" });
+  const [variantBusy, setVariantBusy] = useState(false);
+  // Per-row expanded state for the inventory list — clicking the row toggles.
+  const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
 
   // Dialogs
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -127,7 +151,9 @@ export function InventoryDashboard() {
     carrier: "DHL",
     quantity: "1",
     notes: "",
+    variantId: "",
   });
+  const [assignVariants, setAssignVariants] = useState<Variant[]>([]);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -193,10 +219,41 @@ export function InventoryDashboard() {
         toast.error(err.error || "Failed to save product");
         return;
       }
+      // On create, flush any buffered draft variants. Sequential POSTs so we
+      // can surface per-variant errors (e.g. duplicate SKU) cleanly.
+      let createdId: string | null = null;
+      if (!editingProduct) {
+        try {
+          const data = await res.clone().json();
+          createdId = data?.id ?? data?.product?.id ?? null;
+        } catch {
+          createdId = null;
+        }
+        const drafts = variants.filter((v) => v.id.startsWith("draft-"));
+        if (createdId && drafts.length > 0) {
+          for (const v of drafts) {
+            const vr = await fetch(`/api/inventory/${createdId}/variants`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: v.name,
+                sku: v.sku,
+                quantity: v.quantity,
+              }),
+            });
+            if (!vr.ok) {
+              const err = await vr.json().catch(() => ({}));
+              toast.error(`Variant "${v.name}" failed: ${err.error || "unknown"}`);
+            }
+          }
+        }
+      }
       toast.success(editingProduct ? "Product updated" : "Product created");
       setShowAddDialog(false);
       setEditingProduct(null);
       setFormData({ name: "", sku: "", description: "", category: "", quantity: "0", unitCost: "" });
+      setVariants([]);
+      setNewVariant({ name: "", sku: "", quantity: "0" });
       fetchProducts();
     } catch {
       toast.error("Failed to save product");
@@ -266,6 +323,7 @@ export function InventoryDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productId: assigningProduct.id,
+          variantId: assignData.variantId || undefined,
           influencerId: assignData.influencerId,
           campaignId: assignData.campaignId || undefined,
           carrier: assignData.carrier,
@@ -281,7 +339,8 @@ export function InventoryDashboard() {
       toast.success(`${qty} unit${qty > 1 ? "s" : ""} assigned`);
       setShowAssignDialog(false);
       setAssigningProduct(null);
-      setAssignData({ influencerId: "", campaignId: "", carrier: "DHL", notes: "" });
+      setAssignData({ influencerId: "", campaignId: "", carrier: "DHL", quantity: "1", notes: "", variantId: "" });
+      setAssignVariants([]);
       fetchProducts();
     } catch {
       toast.error("Failed to assign product");
@@ -289,6 +348,17 @@ export function InventoryDashboard() {
       setAssigning(false);
     }
   };
+
+  const loadVariants = useCallback(async (productId: string) => {
+    try {
+      const res = await fetch(`/api/inventory/${productId}/variants`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setVariants(data.variants ?? []);
+    } catch {
+      setVariants([]);
+    }
+  }, []);
 
   const openEdit = (product: Product) => {
     setEditingProduct(product);
@@ -300,13 +370,89 @@ export function InventoryDashboard() {
       quantity: product.quantity.toString(),
       unitCost: product.unitCost?.toString() || "",
     });
+    setVariants([]);
+    setNewVariant({ name: "", sku: "", quantity: "0" });
+    loadVariants(product.id);
     setShowAddDialog(true);
   };
 
   const openAdd = () => {
     setEditingProduct(null);
     setFormData({ name: "", sku: "", description: "", category: "", quantity: "0", unitCost: "" });
+    setVariants([]);
+    setNewVariant({ name: "", sku: "", quantity: "0" });
     setShowAddDialog(true);
+  };
+
+  const handleAddVariant = async () => {
+    if (variantBusy) return;
+    const name = newVariant.name.trim();
+    const sku = newVariant.sku.trim();
+    if (!name || !sku) return;
+    const qty = Math.max(0, Number(newVariant.quantity) || 0);
+
+    // No product yet — buffer the variant locally; we'll POST each one after
+    // the product is created in handleSaveProduct. Drafts use a synthetic id
+    // prefix so handleDeleteVariant can tell them apart from persisted rows.
+    if (!editingProduct) {
+      setVariants((prev) => [
+        ...prev,
+        {
+          id: `draft-${Date.now()}-${prev.length}`,
+          productId: "",
+          name,
+          sku,
+          imageUrl: null,
+          quantity: qty,
+          reserved: 0,
+          unitCost: null,
+        },
+      ]);
+      setNewVariant({ name: "", sku: "", quantity: "0" });
+      return;
+    }
+
+    setVariantBusy(true);
+    try {
+      const res = await fetch(`/api/inventory/${editingProduct.id}/variants`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, sku, quantity: qty }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "Failed to add variant");
+        return;
+      }
+      const data = await res.json();
+      setVariants((prev) => [...prev, data.variant]);
+      setNewVariant({ name: "", sku: "", quantity: "0" });
+    } finally {
+      setVariantBusy(false);
+    }
+  };
+
+  const handleDeleteVariant = async (variantId: string) => {
+    // Local-only draft (not yet persisted) — just drop from state.
+    if (variantId.startsWith("draft-")) {
+      setVariants((prev) => prev.filter((v) => v.id !== variantId));
+      return;
+    }
+    if (!editingProduct) return;
+    try {
+      const res = await fetch(
+        `/api/inventory/${editingProduct.id}/variants/${variantId}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "Failed to delete variant");
+        return;
+      }
+      setVariants((prev) => prev.filter((v) => v.id !== variantId));
+    } catch {
+      toast.error("Failed to delete variant");
+    }
   };
 
   const totalPages = Math.ceil(total / 50);
@@ -389,30 +535,54 @@ export function InventoryDashboard() {
               ) : (
                 filteredProducts.map((product) => {
                   const available = product.quantity - product.reserved;
+                  const variantCount =
+                    product._count.variants ?? product.variants?.length ?? 0;
+                  const isExpanded = expandedProductId === product.id;
                   return (
-                    <tr key={product.id} className="border-t hover:bg-muted/30">
+                    <React.Fragment key={product.id}>
+                    <tr className={`border-t hover:bg-muted/30 ${isExpanded ? "bg-muted/20" : ""}`}>
                       <td className="p-3">
-                        <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedProductId(isExpanded ? null : product.id)
+                          }
+                          className="flex items-center gap-3 text-left w-full group"
+                        >
                           {product.imageUrl ? (
                             <img
                               src={product.imageUrl}
                               alt={product.name}
-                              className="h-10 w-10 rounded object-cover"
+                              className="h-10 w-10 rounded object-cover shrink-0"
                             />
                           ) : (
-                            <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
+                            <div className="h-10 w-10 rounded bg-muted flex items-center justify-center shrink-0">
                               <Package className="h-5 w-5 text-muted-foreground" />
                             </div>
                           )}
-                          <div>
-                            <p className="font-medium">{product.name}</p>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-medium truncate group-hover:underline">
+                                {product.name}
+                              </p>
+                              {variantCount > 0 && (
+                                <span className="inline-flex items-center rounded-full bg-violet-100 text-violet-700 text-[10px] font-medium px-1.5 py-0.5">
+                                  {variantCount} variant{variantCount !== 1 ? "s" : ""}
+                                </span>
+                              )}
+                              {isExpanded ? (
+                                <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              ) : (
+                                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              )}
+                            </div>
                             {product.unitCost && (
                               <p className="text-xs text-muted-foreground">
                                 ${product.unitCost.toFixed(2)}/unit
                               </p>
                             )}
                           </div>
-                        </div>
+                        </button>
                       </td>
                       <td className="p-3">
                         <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
@@ -518,9 +688,19 @@ export function InventoryDashboard() {
                             size="icon"
                             className="h-8 w-8"
                             title="Assign to influencer"
-                            onClick={() => {
+                            onClick={async () => {
                               setAssigningProduct(product);
+                              setAssignVariants([]);
+                              setAssignData((prev) => ({ ...prev, variantId: "", quantity: "1" }));
                               setShowAssignDialog(true);
+                              // Fetch variants — UI shows the picker if any exist.
+                              try {
+                                const r = await fetch(`/api/inventory/${product.id}/variants`);
+                                if (r.ok) {
+                                  const d = await r.json();
+                                  setAssignVariants(d.variants ?? []);
+                                }
+                              } catch {}
                             }}
                             disabled={available <= 0}
                           >
@@ -545,6 +725,77 @@ export function InventoryDashboard() {
                         </div>
                       </td>
                     </tr>
+                    {isExpanded && (
+                      <tr className="border-t bg-muted/10">
+                        <td colSpan={7} className="p-4">
+                          {variantCount === 0 ? (
+                            <div className="text-xs text-muted-foreground italic">
+                              No variants. This product uses a single SKU with the
+                              quantity shown above. Click the pencil icon to add
+                              shades / sizes.
+                            </div>
+                          ) : !product.variants || product.variants.length === 0 ? (
+                            <div className="text-xs text-muted-foreground">
+                              Loading variants…
+                            </div>
+                          ) : (
+                            <div className="rounded-md border bg-background overflow-hidden">
+                              <table className="w-full text-xs">
+                                <thead className="bg-muted/40 text-muted-foreground">
+                                  <tr>
+                                    <th className="text-left px-3 py-2 font-medium">Variant</th>
+                                    <th className="text-left px-3 py-2 font-medium">SKU</th>
+                                    <th className="text-right px-3 py-2 font-medium">Stock</th>
+                                    <th className="text-right px-3 py-2 font-medium">Reserved</th>
+                                    <th className="text-right px-3 py-2 font-medium">Available</th>
+                                    <th className="text-right px-3 py-2 font-medium">Sent</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {product.variants.map((v) => {
+                                    const vAvail = v.quantity - v.reserved;
+                                    // Count shipments tied to this variant — Sent =
+                                    // total units across non-FAILED shipments.
+                                    const sentForVariant = (product.shipments ?? [])
+                                      .filter((s) => (s as ProductShipment & { variantId?: string | null }).variantId === v.id)
+                                      .reduce((sum, s) => sum + (s.quantity ?? 1), 0);
+                                    return (
+                                      <tr key={v.id} className="border-t">
+                                        <td className="px-3 py-2 font-medium">{v.name}</td>
+                                        <td className="px-3 py-2">
+                                          <code className="text-[11px] bg-muted px-1 py-0.5 rounded">
+                                            {v.sku}
+                                          </code>
+                                        </td>
+                                        <td className="px-3 py-2 text-right">
+                                          {v.quantity}
+                                        </td>
+                                        <td className="px-3 py-2 text-right text-muted-foreground">
+                                          {v.reserved > 0 ? v.reserved : "—"}
+                                        </td>
+                                        <td className={`px-3 py-2 text-right font-medium ${vAvail <= 0 ? "text-red-600" : ""}`}>
+                                          {vAvail}
+                                          {vAvail <= 0 && (
+                                            <span className="ml-1 text-[10px] text-red-600">Out</span>
+                                          )}
+                                          {vAvail > 0 && vAvail < 5 && (
+                                            <AlertTriangle className="inline h-3 w-3 ml-1 text-amber-500" />
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 text-right text-muted-foreground">
+                                          {sentForVariant > 0 ? sentForVariant : "—"}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })
               )}
@@ -643,6 +894,88 @@ export function InventoryDashboard() {
                 />
               </div>
             </div>
+
+            {/* Variants (shades / sizes). For a new product, drafts buffer
+                in memory and POST after the product is created. For an existing
+                product, each add/delete hits the API immediately.
+                A product with no variants behaves as a single SKU using the
+                quantity above; once variants exist, each one has its own stock. */}
+            <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-sm font-semibold">Variants / Shades</Label>
+                  <span className="text-[11px] text-muted-foreground">
+                    {variants.length} variant{variants.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                {variants.length > 0 && (
+                  <div className="rounded-md border divide-y mb-3">
+                    {variants.map((v) => (
+                      <div
+                        key={v.id}
+                        className="flex items-center gap-2 px-3 py-2 text-sm"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{v.name}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            SKU: {v.sku} · Stock: {v.quantity}
+                            {v.reserved > 0 ? ` (${v.reserved} reserved)` : ""}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteVariant(v.id)}
+                          className="text-muted-foreground hover:text-destructive"
+                          title="Delete variant"
+                          aria-label="Delete variant"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="grid grid-cols-[1fr_1fr_90px_auto] gap-2 items-end">
+                  <Input
+                    placeholder="Variant name (e.g. Light)"
+                    value={newVariant.name}
+                    onChange={(e) => setNewVariant({ ...newVariant, name: e.target.value })}
+                  />
+                  <Input
+                    placeholder="SKU"
+                    value={newVariant.sku}
+                    onChange={(e) => setNewVariant({ ...newVariant, sku: e.target.value })}
+                  />
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="Qty"
+                    value={newVariant.quantity}
+                    onChange={(e) => setNewVariant({ ...newVariant, quantity: e.target.value })}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleAddVariant}
+                    disabled={
+                      variantBusy ||
+                      !newVariant.name.trim() ||
+                      !newVariant.sku.trim()
+                    }
+                  >
+                    {variantBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Each variant gets its own SKU and stock count. Bundles can
+                  reference a specific variant.
+                  {!editingProduct && variants.length > 0 && (
+                    <span className="block mt-0.5 text-amber-700">
+                      These {variants.length} variant{variants.length !== 1 ? "s" : ""} will be created when you save the product.
+                    </span>
+                  )}
+                </p>
+              </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>
@@ -693,7 +1026,8 @@ export function InventoryDashboard() {
         if (!open) {
           setAssigningProduct(null);
           setInfluencerSearch("");
-          setAssignData({ influencerId: "", campaignId: "", carrier: "DHL", notes: "" });
+          setAssignData({ influencerId: "", campaignId: "", carrier: "DHL", quantity: "1", notes: "", variantId: "" });
+          setAssignVariants([]);
         }
       }}>
         <DialogContent className="max-w-md">
@@ -849,6 +1183,40 @@ export function InventoryDashboard() {
                 </div>
               </div>
 
+              {/* Variant picker — only if this product has shades/sizes.
+                  Selecting a variant switches stock tracking to that variant's
+                  own counters (decoupled from the parent product). */}
+              {assignVariants.length > 0 && (
+                <div>
+                  <Label>Variant / Shade</Label>
+                  <Select
+                    value={assignData.variantId || "none"}
+                    onValueChange={(v) =>
+                      setAssignData((prev) => ({
+                        ...prev,
+                        variantId: v === "none" ? "" : v,
+                        quantity: "1",
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pick a variant" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No variant — use product stock</SelectItem>
+                      {assignVariants.map((v) => {
+                        const avail = v.quantity - v.reserved;
+                        return (
+                          <SelectItem key={v.id} value={v.id} disabled={avail <= 0}>
+                            {v.name} ({v.sku}) — {avail} available
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               {/* Quantity + Carrier */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -856,15 +1224,29 @@ export function InventoryDashboard() {
                   <Input
                     type="number"
                     min="1"
-                    max={assigningProduct ? assigningProduct.quantity - assigningProduct.reserved : 1}
+                    max={(() => {
+                      if (assignData.variantId) {
+                        const v = assignVariants.find((x) => x.id === assignData.variantId);
+                        return v ? v.quantity - v.reserved : 1;
+                      }
+                      return assigningProduct ? assigningProduct.quantity - assigningProduct.reserved : 1;
+                    })()}
                     value={assignData.quantity}
                     onChange={(e) => setAssignData({ ...assignData, quantity: e.target.value })}
                   />
-                  {assigningProduct && (
-                    <p className="text-[11px] text-muted-foreground mt-1">
-                      Max: {assigningProduct.quantity - assigningProduct.reserved}
-                    </p>
-                  )}
+                  {assigningProduct && (() => {
+                    const max = assignData.variantId
+                      ? (assignVariants.find((x) => x.id === assignData.variantId)
+                          ? (assignVariants.find((x) => x.id === assignData.variantId)!.quantity -
+                              assignVariants.find((x) => x.id === assignData.variantId)!.reserved)
+                          : 0)
+                      : assigningProduct.quantity - assigningProduct.reserved;
+                    return (
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Max: {max}
+                      </p>
+                    );
+                  })()}
                 </div>
                 <div>
                   <Label>Carrier</Label>

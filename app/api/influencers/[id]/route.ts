@@ -327,6 +327,7 @@ export async function GET(
     pipelineStage: influencer.pipelineStage,
     tags: influencer.tags,
     notes: influencer.notes,
+    noteAttachments: influencer.noteAttachments,
     aiScore: influencer.aiScore ?? latestEval?.score ?? null,
     queueBucket: savedEval?.bucket ?? null,
     queueEvalId: savedEval?.id ?? null,

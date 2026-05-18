@@ -1767,6 +1767,10 @@ interface Props {
 export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleExpand, isDetailLoading }: Props) {
   const router = useRouter();
   const [notes, setNotes] = useState(influencer.notes ?? "");
+  const [noteAttachments, setNoteAttachments] = useState<
+    Array<{ id: string; gcsPath: string; name: string; size: number; type: string; uploadedAt: string }>
+  >(influencer.noteAttachments ?? []);
+  const [uploadingNoteAttachments, setUploadingNoteAttachments] = useState(false);
   const [tags, setTags] = useState<string[]>(influencer.tags);
   const [newTag, setNewTag] = useState("");
   const [showTagInput, setShowTagInput] = useState(false);
@@ -1785,6 +1789,7 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
   // the same tab across influencers (esp. Analytics).
   useEffect(() => {
     setNotes(influencer.notes ?? "");
+    setNoteAttachments(influencer.noteAttachments ?? []);
     setTags(influencer.tags);
     setPicList(influencer.pics ?? []);
     setCurrentStage(influencer.pipelineStage);
@@ -1847,6 +1852,58 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
       }
     },
     [influencer.id, router]
+  );
+
+  const uploadNoteAttachments = useCallback(
+    async (files: FileList | File[]) => {
+      const fileList = Array.from(files);
+      if (fileList.length === 0 || uploadingNoteAttachments) return;
+      setUploadingNoteAttachments(true);
+      try {
+        const fd = new FormData();
+        for (const f of fileList) fd.append("files", f);
+        const res = await fetch(
+          `/api/influencers/${influencer.id}/note-attachments`,
+          { method: "POST", body: fd },
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to upload");
+        }
+        const data = await res.json();
+        setNoteAttachments(data.attachments ?? []);
+        toast.success(
+          fileList.length === 1
+            ? "Image attached to notes"
+            : `${fileList.length} images attached`,
+        );
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to upload");
+      } finally {
+        setUploadingNoteAttachments(false);
+      }
+    },
+    [influencer.id, uploadingNoteAttachments],
+  );
+
+  const removeNoteAttachment = useCallback(
+    async (attachmentId: string) => {
+      try {
+        const res = await fetch(
+          `/api/influencers/${influencer.id}/note-attachments?attachmentId=${attachmentId}`,
+          { method: "DELETE" },
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to remove");
+        }
+        const data = await res.json();
+        setNoteAttachments(data.attachments ?? []);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to remove");
+      }
+    },
+    [influencer.id],
   );
 
   const handleStageChange = useCallback(
@@ -2658,7 +2715,7 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
         </TabsContent>
 
         {/* Notes tab */}
-        <TabsContent value="notes" className="mt-0 pt-5 pb-8">
+        <TabsContent value="notes" className="mt-0 pt-5 pb-8 space-y-4">
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
@@ -2671,6 +2728,98 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
             rows={10}
             className="w-full rounded-lg bg-amber-50/80 border-amber-200/50 border p-4 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
           />
+
+          {/* Image attachments — thumbnails served via /api/thumbnail proxy
+              (caches in browser + edge), full size opens in a new tab. */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Attachments
+                {noteAttachments.length > 0 && (
+                  <span className="ml-1.5 text-muted-foreground/60">
+                    ({noteAttachments.length})
+                  </span>
+                )}
+              </p>
+              <label className="cursor-pointer">
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  disabled={uploadingNoteAttachments}
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      uploadNoteAttachments(e.target.files);
+                    }
+                    e.target.value = ""; // allow re-selecting the same file
+                  }}
+                />
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium ${
+                    uploadingNoteAttachments
+                      ? "bg-muted/40 text-muted-foreground cursor-wait"
+                      : "bg-background hover:bg-accent"
+                  }`}
+                >
+                  {uploadingNoteAttachments ? (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Uploading…
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-3 w-3" />
+                      Add image
+                    </>
+                  )}
+                </span>
+              </label>
+            </div>
+            {noteAttachments.length === 0 ? (
+              <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-6 text-center">
+                <p className="text-xs text-muted-foreground">
+                  No images yet. Drag-drop or click "Add image" to attach screenshots, scans, or photos to these notes.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {noteAttachments.map((att) => {
+                  const thumb = `/api/thumbnail?url=${encodeURIComponent(att.gcsPath)}`;
+                  return (
+                    <div
+                      key={att.id}
+                      className="group relative aspect-square overflow-hidden rounded-lg border bg-muted/30"
+                    >
+                      <a
+                        href={thumb}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={att.name}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={thumb}
+                          alt={att.name}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => removeNoteAttachment(att.id)}
+                        className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-red-600 group-hover:flex"
+                        aria-label={`Remove ${att.name}`}
+                        title="Remove"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </TabsContent>
 
         {/* Contracts tab */}
