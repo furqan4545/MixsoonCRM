@@ -86,9 +86,23 @@ interface SubmissionRow {
   influencer: { id: string; username: string; displayName: string | null };
 }
 
+interface BriefRow {
+  id: string;
+  bodySnapshot: string;
+  howToPostSnapshot: string | null;
+  hashtagsSnapshot: string[];
+  uploadDate: string | null;
+  notes: string | null;
+  sentAt: string;
+  sentBy: { id: string; name: string | null; email: string } | null;
+  campaign: { id: string; name: string };
+  influencer: { id: string; username: string; displayName: string | null };
+}
+
 type DocItem =
   | { kind: "contract"; data: ContractRow }
-  | { kind: "submission"; data: SubmissionRow };
+  | { kind: "submission"; data: SubmissionRow }
+  | { kind: "brief"; data: BriefRow };
 
 const STATUS_OPTIONS = [
   "ALL",
@@ -102,7 +116,7 @@ const STATUS_OPTIONS = [
   "VERIFIED",
 ] as const;
 
-const TYPE_OPTIONS = ["ALL", "CONTRACT", "CONTENT", "PAYMENT"] as const;
+const TYPE_OPTIONS = ["ALL", "CONTRACT", "CONTENT", "PAYMENT", "BRIEF"] as const;
 
 const statusColors: Record<string, string> = {
   DRAFT: "bg-gray-100 text-gray-700 border-gray-200",
@@ -118,15 +132,19 @@ const statusColors: Record<string, string> = {
 export function ContractsPage({
   contracts: initialContracts,
   submissions: initialSubmissions,
+  briefs: initialBriefs = [],
   isAdmin = false,
 }: {
   contracts: ContractRow[];
   submissions: SubmissionRow[];
+  briefs?: BriefRow[];
   isAdmin?: boolean;
 }) {
   const router = useRouter();
   const [contracts] = useState(initialContracts);
   const [submissions] = useState(initialSubmissions);
+  const [briefs] = useState(initialBriefs);
+  const [expandedBriefId, setExpandedBriefId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
@@ -177,7 +195,7 @@ export function ContractsPage({
     }
   };
 
-  const totalCount = contracts.length + submissions.length;
+  const totalCount = contracts.length + submissions.length + briefs.length;
 
   const filtered = useMemo(() => {
     const items: DocItem[] = [];
@@ -200,6 +218,13 @@ export function ContractsPage({
       }
     }
 
+    // Add briefs — status filter doesn't apply (no status), but type filter does.
+    if (typeFilter === "ALL" || typeFilter === "BRIEF") {
+      for (const b of briefs) {
+        items.push({ kind: "brief", data: b });
+      }
+    }
+
     let list = items;
 
     // Search filter
@@ -217,24 +242,34 @@ export function ContractsPage({
           if ((c.template?.name ?? "").toLowerCase().includes(q)) return true;
           if ((c.campaign?.name ?? "").toLowerCase().includes(q)) return true;
         }
+        if (item.kind === "brief") {
+          const b = item.data as BriefRow;
+          if ((b.campaign?.name ?? "").toLowerCase().includes(q)) return true;
+        }
         return false;
       });
     }
 
-    // Status filter
+    // Status filter — briefs have no status, so any non-ALL status hides them.
     if (statusFilter !== "ALL") {
-      list = list.filter((item) => item.data.status === statusFilter);
+      list = list.filter((item) => {
+        if (item.kind === "brief") return false;
+        return item.data.status === statusFilter;
+      });
     }
 
-    // Sort
-    const sorted = [...list].sort((a, b) => {
-      const da = new Date(a.data.createdAt).getTime();
-      const db = new Date(b.data.createdAt).getTime();
-      return sortNewest ? db - da : da - db;
-    });
+    // Sort by the most relevant timestamp for each kind: sentAt for briefs,
+    // createdAt for everything else.
+    const stamp = (item: DocItem) =>
+      item.kind === "brief"
+        ? new Date(item.data.sentAt).getTime()
+        : new Date(item.data.createdAt).getTime();
+    const sorted = [...list].sort((a, b) =>
+      sortNewest ? stamp(b) - stamp(a) : stamp(a) - stamp(b),
+    );
 
     return sorted;
-  }, [contracts, submissions, search, statusFilter, typeFilter, sortNewest]);
+  }, [contracts, submissions, briefs, search, statusFilter, typeFilter, sortNewest]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -441,6 +476,111 @@ export function ContractsPage({
                       Share
                     </Button>
                     <Link href={`/influencers?selected=${c.influencer.id}&tab=contracts`}>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs">
+                        Open in Influencer
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              );
+            }
+
+            if (item.kind === "brief") {
+              const b = item.data as BriefRow;
+              const expanded = expandedBriefId === b.id;
+              return (
+                <div
+                  key={`brief-${b.id}`}
+                  className="rounded-lg border p-4 space-y-2.5 hover:border-foreground/20 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm font-medium truncate">
+                        Brief — {b.campaign.name}
+                      </span>
+                      <span className="inline-flex items-center rounded-full bg-stone-100 text-stone-700 text-[10px] px-2 py-0.5 font-medium">
+                        BRIEF
+                      </span>
+                      {b.uploadDate && (
+                        <span className="inline-flex items-center rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] px-1.5 py-0.5 font-medium">
+                          Post {new Date(b.uploadDate).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    <Link
+                      href={`/influencers?selected=${b.influencer.id}`}
+                      className="text-[11px] text-muted-foreground hover:text-foreground shrink-0"
+                    >
+                      @{b.influencer.username}
+                    </Link>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Sent {new Date(b.sentAt).toLocaleDateString()}
+                    {b.sentBy ? ` by ${b.sentBy.email}` : ""}
+                  </div>
+                  {expanded && (
+                    <div className="border-t pt-2.5 mt-1 space-y-2.5">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                          Guidelines
+                        </p>
+                        <div className="text-xs whitespace-pre-wrap bg-muted/40 rounded px-2.5 py-2 max-h-40 overflow-y-auto">
+                          {b.bodySnapshot}
+                        </div>
+                      </div>
+                      {b.howToPostSnapshot && (
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                            How to post
+                          </p>
+                          <div className="text-xs whitespace-pre-wrap bg-amber-50/60 border border-amber-100 rounded px-2.5 py-2 max-h-40 overflow-y-auto">
+                            {b.howToPostSnapshot}
+                          </div>
+                        </div>
+                      )}
+                      {b.hashtagsSnapshot.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                            Hashtags
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {b.hashtagsSnapshot.map((h) => (
+                              <span
+                                key={h}
+                                className="inline-flex items-center rounded-full bg-stone-100 text-stone-700 text-[10px] px-2 py-0.5"
+                              >
+                                #{h}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {b.notes && (
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                            Additional notes
+                          </p>
+                          <div className="text-xs whitespace-pre-wrap bg-stone-50 border border-stone-200 rounded px-2.5 py-2">
+                            {b.notes}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setExpandedBriefId(expanded ? null : b.id)}
+                    >
+                      {expanded ? "Hide" : "View brief"}
+                    </Button>
+                    <Link
+                      href={`/influencers?selected=${b.influencer.id}&tab=contracts`}
+                      className="ml-auto"
+                    >
                       <Button variant="ghost" size="sm" className="h-7 text-xs">
                         Open in Influencer
                       </Button>

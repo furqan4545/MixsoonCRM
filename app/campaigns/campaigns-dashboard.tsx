@@ -58,6 +58,9 @@ export interface CampaignRow {
   isMyCampaign?: boolean;
   influencers: CampaignInfluencerRow[];
   createdAt: string;
+  contentBriefBody?: string | null;
+  contentBriefHowToPost?: string | null;
+  contentBriefHashtags?: string[];
 }
 
 /* ───────────── helpers ───────────── */

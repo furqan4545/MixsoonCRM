@@ -44,6 +44,15 @@ export function CampaignDialog({ open, onOpenChange, onSuccess, campaign }: Prop
     campaign?.endDate ? campaign.endDate.split("T")[0] : "",
   );
   const [status, setStatus] = useState(campaign?.status ?? "PLANNING");
+  const [contentBriefBody, setContentBriefBody] = useState(
+    campaign?.contentBriefBody ?? "",
+  );
+  const [contentBriefHowToPost, setContentBriefHowToPost] = useState(
+    campaign?.contentBriefHowToPost ?? "",
+  );
+  const [contentBriefHashtagsRaw, setContentBriefHashtagsRaw] = useState(
+    (campaign?.contentBriefHashtags ?? []).join(", "),
+  );
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
@@ -53,6 +62,10 @@ export function CampaignDialog({ open, onOpenChange, onSuccess, campaign }: Prop
     }
     setLoading(true);
     try {
+      const hashtags = contentBriefHashtagsRaw
+        .split(/[,\n]/)
+        .map((h) => h.trim().replace(/^#/, ""))
+        .filter(Boolean);
       const payload = {
         name: name.trim(),
         description: description.trim() || null,
@@ -60,6 +73,9 @@ export function CampaignDialog({ open, onOpenChange, onSuccess, campaign }: Prop
         startDate: startDate || null,
         endDate: endDate || null,
         status,
+        contentBriefBody: contentBriefBody.trim() || null,
+        contentBriefHowToPost: contentBriefHowToPost.trim() || null,
+        contentBriefHashtags: hashtags,
       };
 
       const url = isEdit
@@ -186,6 +202,59 @@ export function CampaignDialog({ open, onOpenChange, onSuccess, campaign }: Prop
                   {s.label}
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Content brief — campaign-wide defaults. Used as the pre-fill when
+              briefing any influencer on this campaign; can be overridden
+              per-influencer at send time. */}
+          <div className="border-t pt-4 space-y-3">
+            <div>
+              <Label htmlFor="campaign-brief-body" className="text-xs font-semibold">
+                Guidelines (default)
+              </Label>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Key messages, tone, do/don't, what to talk about. Sent in the brief email — editable per-influencer at send time.
+              </p>
+              <Textarea
+                id="campaign-brief-body"
+                placeholder="Talk about the texture and how the product fits into your routine. Avoid medical claims. Highlight the natural ingredients..."
+                value={contentBriefBody}
+                onChange={(e) => setContentBriefBody(e.target.value)}
+                rows={4}
+                className="mt-1 resize-none"
+              />
+            </div>
+            <div>
+              <Label htmlFor="campaign-brief-how" className="text-xs font-semibold">
+                How to Post (default)
+              </Label>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Technical posting rules — format, length, mentions, music, caption rules. Anything operational.
+              </p>
+              <Textarea
+                id="campaign-brief-how"
+                placeholder="Minimum 30s vertical video. Tag @mixsoon in the caption AND mention us in the first 5s of the video. Use trending audio (no copyrighted music)."
+                value={contentBriefHowToPost}
+                onChange={(e) => setContentBriefHowToPost(e.target.value)}
+                rows={4}
+                className="mt-1 resize-none"
+              />
+            </div>
+            <div>
+              <Label htmlFor="campaign-brief-tags" className="text-xs font-semibold">
+                Required Hashtags
+              </Label>
+              <Input
+                id="campaign-brief-tags"
+                placeholder="mixsoon, kbeauty, skincare"
+                value={contentBriefHashtagsRaw}
+                onChange={(e) => setContentBriefHashtagsRaw(e.target.value)}
+                className="mt-1"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Comma-separated. The "#" is added automatically when shown to influencers.
+              </p>
             </div>
           </div>
         </div>

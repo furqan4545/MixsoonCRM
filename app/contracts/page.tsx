@@ -42,7 +42,23 @@ export default async function ContractsPageWrapper() {
     };
   }
 
-  const [contracts, submissions] = await Promise.all([
+  // Briefs follow the same ownership rules: created-by OR shared.
+  let briefWhere: Record<string, unknown> | undefined;
+  if (restrict && user?.id) {
+    const briefShares = await prisma.resourceShare.findMany({
+      where: { userId: user.id, resourceType: "ContentBrief" },
+      select: { resourceId: true },
+    });
+    const sharedBriefIds = briefShares.map((s) => s.resourceId);
+    briefWhere = {
+      OR: [
+        { sentByUserId: user.id },
+        ...(sharedBriefIds.length > 0 ? [{ id: { in: sharedBriefIds } }] : []),
+      ],
+    };
+  }
+
+  const [contracts, submissions, briefs] = await Promise.all([
     prisma.contract.findMany({
       where: contractWhere,
       orderBy: { createdAt: "desc" },
@@ -76,6 +92,15 @@ export default async function ContractsPageWrapper() {
             displayName: true,
           },
         },
+      },
+    }),
+    prisma.contentBrief.findMany({
+      where: briefWhere,
+      orderBy: { sentAt: "desc" },
+      include: {
+        influencer: { select: { id: true, username: true, displayName: true } },
+        marketingCampaign: { select: { id: true, name: true } },
+        sentByUser: { select: { id: true, name: true, email: true } },
       },
     }),
   ]);
@@ -116,10 +141,24 @@ export default async function ContractsPageWrapper() {
     influencer: s.influencer,
   }));
 
+  const serializedBriefs = briefs.map((b) => ({
+    id: b.id,
+    bodySnapshot: b.bodySnapshot,
+    howToPostSnapshot: b.howToPostSnapshot,
+    hashtagsSnapshot: b.hashtagsSnapshot,
+    uploadDate: b.uploadDate?.toISOString() ?? null,
+    notes: b.notes,
+    sentAt: b.sentAt.toISOString(),
+    sentBy: b.sentByUser,
+    campaign: b.marketingCampaign,
+    influencer: b.influencer,
+  }));
+
   return (
     <ContractsPage
       contracts={serializedContracts}
       submissions={serializedSubmissions}
+      briefs={serializedBriefs}
       isAdmin={isAdmin}
     />
   );

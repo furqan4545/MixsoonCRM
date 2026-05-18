@@ -77,13 +77,26 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, description, budget, startDate, endDate, status } = body as {
+    const {
+      name,
+      description,
+      budget,
+      startDate,
+      endDate,
+      status,
+      contentBriefBody,
+      contentBriefHowToPost,
+      contentBriefHashtags,
+    } = body as {
       name?: string;
       description?: string;
       budget?: number | null;
       startDate?: string | null;
       endDate?: string | null;
       status?: string;
+      contentBriefBody?: string | null;
+      contentBriefHowToPost?: string | null;
+      contentBriefHashtags?: string[];
     };
 
     if (status && !VALID_STATUSES.includes(status as CampaignStatus)) {
@@ -104,6 +117,14 @@ export async function PATCH(
     if (endDate !== undefined)
       data.endDate = endDate ? new Date(endDate) : null;
     if (status !== undefined) data.status = status as CampaignStatus;
+    if (contentBriefBody !== undefined)
+      data.contentBriefBody = contentBriefBody?.trim() || null;
+    if (contentBriefHowToPost !== undefined)
+      data.contentBriefHowToPost = contentBriefHowToPost?.trim() || null;
+    if (contentBriefHashtags !== undefined)
+      data.contentBriefHashtags = Array.isArray(contentBriefHashtags)
+        ? contentBriefHashtags.map((h) => h.trim()).filter(Boolean)
+        : [];
 
     const campaign = await prisma.marketingCampaign.update({
       where: { id },

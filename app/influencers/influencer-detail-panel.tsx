@@ -74,6 +74,7 @@ import { toast } from "sonner";
 import AnalyticsTab from "./analytics-tab";
 import ShippingTab from "./shipping-tab";
 import PaymentTab from "./payment-tab";
+import { SendBriefDialog } from "./send-brief-dialog";
 
 function formatNumber(n: number | null): string {
   if (n == null) return "—";
@@ -604,6 +605,18 @@ interface ContentSubmissionItem {
   createdAt: string;
 }
 
+interface BriefItem {
+  id: string;
+  campaign: { id: string; name: string };
+  bodySnapshot: string;
+  howToPostSnapshot: string | null;
+  hashtagsSnapshot: string[];
+  uploadDate: string | null;
+  notes: string | null;
+  sentBy: { id: string; name: string | null; email: string } | null;
+  sentAt: string;
+}
+
 type FormType = "contract" | "content" | "content_payment" | "payment" | "shipping" | "shipping_payment";
 
 function DocumentsTab({
@@ -618,6 +631,8 @@ function DocumentsTab({
   const router = useRouter();
   const [contracts, setContracts] = useState<ContractItem[]>([]);
   const [submissions, setSubmissions] = useState<ContentSubmissionItem[]>([]);
+  const [briefs, setBriefs] = useState<BriefItem[]>([]);
+  const [expandedBriefId, setExpandedBriefId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [sendingForm, setSendingForm] = useState(false);
@@ -625,6 +640,7 @@ function DocumentsTab({
 
   // New document type selector
   const [showNewMenu, setShowNewMenu] = useState(false);
+  const [showBriefDialog, setShowBriefDialog] = useState(false);
 
   // Form preview state
   const [formPreview, setFormPreview] = useState<{
@@ -654,9 +670,10 @@ function DocumentsTab({
 
   const fetchAll = useCallback(async () => {
     try {
-      const [contractRes, submissionRes] = await Promise.all([
+      const [contractRes, submissionRes, briefRes] = await Promise.all([
         fetch(`/api/contracts?influencerId=${influencerId}`),
         fetch(`/api/content-submissions?influencerId=${influencerId}`),
+        fetch(`/api/influencers/${influencerId}/briefs`),
       ]);
       if (contractRes.ok) {
         const data = await contractRes.json();
@@ -665,6 +682,10 @@ function DocumentsTab({
       if (submissionRes.ok) {
         const data = await submissionRes.json();
         setSubmissions(data.submissions);
+      }
+      if (briefRes.ok) {
+        const data = await briefRes.json();
+        setBriefs(data.briefs ?? []);
       }
     } catch {}
     setLoading(false);
@@ -910,7 +931,7 @@ function DocumentsTab({
     );
   }
 
-  const hasItems = contracts.length > 0 || submissions.length > 0;
+  const hasItems = contracts.length > 0 || submissions.length > 0 || briefs.length > 0;
 
   return (
     <div className="space-y-3">
@@ -1310,6 +1331,19 @@ function DocumentsTab({
               </button>
               <button
                 className="w-full px-3 py-2.5 text-left text-xs hover:bg-accent flex items-center gap-2 border-t"
+                onClick={() => {
+                  setShowNewMenu(false);
+                  setShowBriefDialog(true);
+                }}
+              >
+                <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Content Brief</p>
+                  <p className="text-muted-foreground text-[10px]">Send posting guidelines & ask for upload plan</p>
+                </div>
+              </button>
+              <button
+                className="w-full px-3 py-2.5 text-left text-xs hover:bg-accent flex items-center gap-2 border-t"
                 onClick={() => openFormPreview("content")}
               >
                 <ClipboardCheck className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1449,6 +1483,90 @@ function DocumentsTab({
               </div>
             </div>
           ))}
+
+          {/* Content Briefs — one-way audit log of what was emailed */}
+          {briefs.map((b) => {
+            const expanded = expandedBriefId === b.id;
+            const sentDate = new Date(b.sentAt).toLocaleDateString();
+            return (
+              <div key={`brief-${b.id}`} className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm font-medium truncate">
+                      Brief — {b.campaign.name}
+                    </span>
+                    {b.uploadDate && (
+                      <span className="inline-flex items-center rounded bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700">
+                        Post {new Date(b.uploadDate).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs shrink-0"
+                    onClick={() => setExpandedBriefId(expanded ? null : b.id)}
+                  >
+                    {expanded ? "Hide" : "View"}
+                  </Button>
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Sent {sentDate}
+                  {b.sentBy ? ` by ${b.sentBy.email}` : ""}
+                </div>
+                {expanded && (
+                  <div className="border-t pt-2 mt-2 space-y-3">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                        Guidelines
+                      </p>
+                      <div className="text-xs whitespace-pre-wrap bg-muted/40 rounded px-2.5 py-2 max-h-40 overflow-y-auto">
+                        {b.bodySnapshot}
+                      </div>
+                    </div>
+                    {b.howToPostSnapshot && (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                          How to post
+                        </p>
+                        <div className="text-xs whitespace-pre-wrap bg-amber-50/60 border border-amber-100 rounded px-2.5 py-2 max-h-40 overflow-y-auto">
+                          {b.howToPostSnapshot}
+                        </div>
+                      </div>
+                    )}
+                    {b.hashtagsSnapshot.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                          Hashtags
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {b.hashtagsSnapshot.map((h) => (
+                            <span
+                              key={h}
+                              className="inline-flex items-center rounded-full bg-stone-100 text-stone-700 text-[10px] px-2 py-0.5"
+                            >
+                              #{h}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {b.notes && (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                          Additional notes
+                        </p>
+                        <div className="text-xs whitespace-pre-wrap bg-stone-50 border border-stone-200 rounded px-2.5 py-2">
+                          {b.notes}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {/* Content Submissions */}
           {submissions.map((s) => (
@@ -1595,6 +1713,16 @@ function DocumentsTab({
           ))}
         </>
       )}
+
+      <SendBriefDialog
+        open={showBriefDialog}
+        onOpenChange={setShowBriefDialog}
+        influencerId={influencerId}
+        influencerUsername={influencerName}
+        onSuccess={() => {
+          fetchAll();
+        }}
+      />
     </div>
   );
 }

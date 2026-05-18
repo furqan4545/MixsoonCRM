@@ -60,6 +60,8 @@ model Influencer {
   trackedVideos       TrackedVideo[]
   viralAlerts         ViralAlert[]
   payments            Payment[]
+  contentBriefs       ContentBrief[]
+  contentBriefOverrides ContentBriefOverride[]
 
   createdById String?
   createdBy   User?   @relation("InfluencersCreated", fields: [createdById], references: [id], onDelete: SetNull)
@@ -315,6 +317,8 @@ model User {
   paymentsCreated         Payment[]         @relation("PaymentCreator")
   paymentsConfirmed       Payment[]         @relation("PaymentConfirmer")
   paymentsProofSent       Payment[]         @relation("PaymentProofSender")
+  contentBriefsSent       ContentBrief[]    @relation("ContentBriefSender")
+  contentBriefOverridesCreated ContentBriefOverride[] @relation("ContentBriefOverridesCreated")
   notifications           Notification[]    @relation("UserNotifications")
   onboardingTokensCreated OnboardingToken[] @relation("OnboardingTokensCreated")
 
@@ -452,12 +456,20 @@ model MarketingCampaign {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
+  // Default content brief for this campaign/product. Used as the starting point
+  // when sending a brief to any influencer; can be overridden per-influencer.
+  contentBriefBody      String? // key messages / what to post about
+  contentBriefHowToPost String? // technical posting rules — format, length, mentions, etc.
+  contentBriefHashtags  String[] @default([])
+
   influencers      CampaignInfluencer[]
   approvalRequests ApprovalRequest[]
   contracts        Contract[]
   shipments        Shipment[]
   trackedVideos    TrackedVideo[]
   payments         Payment[]
+  contentBriefs    ContentBrief[]
+  contentBriefOverrides ContentBriefOverride[]
 
   createdById String?
   createdBy   User?   @relation("MarketingCampaignsCreated", fields: [createdById], references: [id], onDelete: SetNull)
@@ -465,6 +477,52 @@ model MarketingCampaign {
   @@index([status])
   @@index([name])
   @@index([createdById])
+}
+
+// Per-influencer override of a campaign's default content brief. When sending
+// the brief to influencer X for campaign Y, we look here first; fall back to
+// the campaign's default if no row exists.
+model ContentBriefOverride {
+  id                  String            @id @default(cuid())
+  marketingCampaignId String
+  marketingCampaign   MarketingCampaign @relation(fields: [marketingCampaignId], references: [id], onDelete: Cascade)
+  influencerId        String
+  influencer          Influencer        @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  body                String
+  howToPost           String?
+  hashtags            String[]          @default([])
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  createdById         String?
+  createdBy           User?             @relation("ContentBriefOverridesCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([marketingCampaignId, influencerId])
+  @@index([influencerId])
+}
+
+// One row per "send" event — snapshots exactly what was emailed (audit log).
+// One-way: no influencer response, no token, no public page.
+model ContentBrief {
+  id                  String            @id @default(cuid())
+  marketingCampaignId String
+  marketingCampaign   MarketingCampaign @relation(fields: [marketingCampaignId], references: [id], onDelete: Cascade)
+  influencerId        String
+  influencer          Influencer        @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+
+  // Snapshot of what was emailed — every column is what the influencer received.
+  bodySnapshot      String
+  howToPostSnapshot String?
+  hashtagsSnapshot  String[]  @default([])
+  uploadDate        DateTime? // the date WE told them to post
+  notes             String?   // per-send optional free text (anything extra)
+
+  sentByUserId String?
+  sentByUser   User?    @relation("ContentBriefSender", fields: [sentByUserId], references: [id], onDelete: SetNull)
+  sentAt       DateTime @default(now())
+
+  @@index([influencerId])
+  @@index([marketingCampaignId])
+  @@index([sentAt])
 }
 
 model CampaignInfluencer {

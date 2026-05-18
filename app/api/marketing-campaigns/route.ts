@@ -42,13 +42,26 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description, budget, startDate, endDate, status } = body as {
+    const {
+      name,
+      description,
+      budget,
+      startDate,
+      endDate,
+      status,
+      contentBriefBody,
+      contentBriefHowToPost,
+      contentBriefHashtags,
+    } = body as {
       name?: string;
       description?: string;
       budget?: number;
       startDate?: string;
       endDate?: string;
       status?: string;
+      contentBriefBody?: string | null;
+      contentBriefHowToPost?: string | null;
+      contentBriefHashtags?: string[];
     };
 
     if (!name || !name.trim()) {
@@ -73,6 +86,11 @@ export async function POST(request: NextRequest) {
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
         status: (status as CampaignStatus) ?? "PLANNING",
+        contentBriefBody: contentBriefBody?.trim() || null,
+        contentBriefHowToPost: contentBriefHowToPost?.trim() || null,
+        contentBriefHashtags: Array.isArray(contentBriefHashtags)
+          ? contentBriefHashtags.map((h) => h.trim()).filter(Boolean)
+          : [],
       },
       include: {
         _count: { select: { influencers: true } },
