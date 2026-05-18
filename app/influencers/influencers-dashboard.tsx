@@ -61,6 +61,7 @@ export interface InfluencerRow {
   language: string | null;
   country: string | null;
   email: string | null;
+  secondaryEmails?: string[];
   phone: string | null;
   biolink: string | null;
   bioLinkUrl: string | null;

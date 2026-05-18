@@ -122,10 +122,12 @@ function ContactRow({
 interface InfluencerContactSectionProps {
   influencerId?: string;
   email: string | null;
+  secondaryEmails?: string[];
   phone: string | null;
   bioLinkUrl: string | null;
   socialLinksJson: string | null;
   onEmailChange?: (newEmail: string | null) => void;
+  onSecondaryEmailsChange?: (next: string[]) => void;
   onPhoneChange?: (newPhone: string | null) => void;
   onBioLinkUrlChange?: (newUrl: string | null) => void;
 }
@@ -133,16 +135,55 @@ interface InfluencerContactSectionProps {
 export function InfluencerContactSection({
   influencerId,
   email,
+  secondaryEmails = [],
   phone,
   bioLinkUrl,
   socialLinksJson,
   onEmailChange,
+  onSecondaryEmailsChange,
   onPhoneChange,
   onBioLinkUrlChange,
 }: InfluencerContactSectionProps) {
   const [editingEmail, setEditingEmail] = useState(false);
   const [emailInput, setEmailInput] = useState(email ?? "");
   const [displayEmail, setDisplayEmail] = useState(email);
+
+  const [secondaries, setSecondaries] = useState<string[]>(secondaryEmails);
+  const [newSecondary, setNewSecondary] = useState("");
+  const [secondaryError, setSecondaryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSecondaries(secondaryEmails);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [secondaryEmails.join("|")]);
+
+  const addSecondary = () => {
+    const v = newSecondary.trim().toLowerCase();
+    if (!v) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+      setSecondaryError("Doesn't look like a valid email");
+      return;
+    }
+    if (v === (displayEmail ?? "").toLowerCase()) {
+      setSecondaryError("Already the primary email");
+      return;
+    }
+    if (secondaries.includes(v)) {
+      setSecondaryError("Already added");
+      return;
+    }
+    const next = [...secondaries, v];
+    setSecondaries(next);
+    setNewSecondary("");
+    setSecondaryError(null);
+    onSecondaryEmailsChange?.(next);
+  };
+
+  const removeSecondary = (e: string) => {
+    const next = secondaries.filter((x) => x !== e);
+    setSecondaries(next);
+    onSecondaryEmailsChange?.(next);
+  };
 
   const [editingPhone, setEditingPhone] = useState(false);
   const [phoneInput, setPhoneInput] = useState(phone ?? "");
@@ -268,7 +309,7 @@ export function InfluencerContactSection({
           </div>
         ) : displayEmail ? (
           <div className="flex items-center gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+            <div className="group flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
               <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
               {onEmailChange ? (
                 <button
@@ -282,7 +323,18 @@ export function InfluencerContactSection({
               ) : (
                 <span className="min-w-0 truncate text-sm">{displayEmail}</span>
               )}
-              <div className="ml-auto shrink-0">
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                {onEmailChange && (
+                  <button
+                    type="button"
+                    onClick={() => { setEmailInput(displayEmail ?? ""); setEditingEmail(true); }}
+                    className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                    title="Edit email"
+                    aria-label="Edit email"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <CopyButton value={displayEmail!} label="email" />
               </div>
             </div>
@@ -318,6 +370,70 @@ export function InfluencerContactSection({
             <span>Add email address</span>
           </button>
         ) : null}
+
+        {/* Secondary emails — CC'd on every outgoing influencer email
+            (contract, brief, payment, proof, status notification). */}
+        {onSecondaryEmailsChange && (
+          <div className="rounded-lg border bg-muted/20 px-3 py-2 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                Additional emails (CC)
+              </p>
+              <span className="text-[10px] text-muted-foreground">
+                {secondaries.length} added
+              </span>
+            </div>
+            {secondaries.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {secondaries.map((e) => (
+                  <span
+                    key={e}
+                    className="inline-flex items-center gap-1 rounded-full bg-background border px-2.5 py-0.5 text-xs"
+                  >
+                    {e}
+                    <button
+                      type="button"
+                      onClick={() => removeSecondary(e)}
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label={`Remove ${e}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <input
+                type="email"
+                placeholder="manager@example.com"
+                value={newSecondary}
+                onChange={(e) => {
+                  setNewSecondary(e.target.value);
+                  if (secondaryError) setSecondaryError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addSecondary();
+                  }
+                }}
+                className="flex-1 rounded-md border bg-background px-2.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <button
+                type="button"
+                onClick={addSecondary}
+                disabled={!newSecondary.trim()}
+                className="rounded-md border bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:opacity-40"
+              >
+                Add
+              </button>
+            </div>
+            {secondaryError && (
+              <p className="text-[10px] text-destructive">{secondaryError}</p>
+            )}
+          </div>
+        )}
         {editingPhone ? (
           <div className="flex items-center gap-2">
             <div className="flex flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">

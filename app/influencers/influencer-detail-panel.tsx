@@ -1089,9 +1089,17 @@ function DocumentsTab({
                 </div>
                 <button
                   onClick={() =>
-                    setFormPreview((prev) =>
-                      prev ? { ...prev, includePayment: !prev.includePayment } : prev
-                    )
+                    setFormPreview((prev) => {
+                      if (!prev) return prev;
+                      const nextIncludePayment = !prev.includePayment;
+                      // Drop requireScode when payment is removed — S-Code only
+                      // makes sense for payment-bearing forms.
+                      return {
+                        ...prev,
+                        includePayment: nextIncludePayment,
+                        requireScode: nextIncludePayment ? prev.requireScode : false,
+                      };
+                    })
                   }
                   className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
                     formPreview.includePayment ? "bg-foreground" : "bg-muted-foreground/30"
@@ -1232,7 +1240,10 @@ function DocumentsTab({
               </div>
             )}
 
-            {/* S-Code & Submission Label — hide for shipping-only */}
+            {/* Submission settings — label is for any non-shipping form;
+                S-Code is ONLY relevant when payment is involved (the
+                influencer enters their post-submission S-Code to identify
+                themselves on the payment form). */}
             {formPreview.type !== "shipping" && <div className="rounded-lg border bg-background p-4 space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Submission Settings</p>
               <div className="space-y-3">
@@ -1252,11 +1263,12 @@ function DocumentsTab({
                   />
                   <p className="mt-0.5 text-[10px] text-muted-foreground">Pre-set a label to identify this submission</p>
                 </div>
+                {formPreview.includePayment && (
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-medium">Require S-Code</p>
+                    <p className="text-xs font-medium">Require S-Code (optional)</p>
                     <p className="text-[10px] text-muted-foreground">
-                      Influencer must enter an S-code to submit
+                      Influencer must enter their S-code to submit the payment form
                     </p>
                   </div>
                   <button
@@ -1276,6 +1288,7 @@ function DocumentsTab({
                     />
                   </button>
                 </div>
+                )}
               </div>
             </div>}
           </div>
@@ -1818,11 +1831,17 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ [field]: value }),
         });
-        if (!res.ok) throw new Error("Failed to save");
+        if (!res.ok) {
+          // Surface server-side validation errors (e.g. username conflict)
+          // instead of the generic "Failed to save" — users need to see what
+          // went wrong, especially for the unique-username case.
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || "Failed to save");
+        }
         toast.success("Saved");
         router.refresh();
-      } catch {
-        toast.error("Failed to save");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to save");
       } finally {
         setSaving(false);
       }
@@ -1989,8 +2008,15 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-label="Loading details" />
               )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              @{influencer.username}
+            <p className="text-sm text-muted-foreground flex items-center gap-0.5">
+              <span>@</span>
+              <EditableField
+                value={influencer.username}
+                onSave={(val) => saveField("username", val)}
+                label="username"
+                placeholder="handle"
+                displayValue={influencer.username}
+              />
               {influencer.platform ? ` · ${influencer.platform}` : ""}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -2020,7 +2046,20 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               Followers
             </p>
-            <p className="mt-0.5 text-lg font-bold">{formatNumber(influencer.followers)}</p>
+            <p className="mt-0.5 text-lg font-bold">
+              <EditableField
+                value={influencer.followers}
+                onSave={(val) => saveField("followers", val)}
+                label="followers"
+                type="number"
+                displayValue={
+                  influencer.followers != null
+                    ? formatNumber(influencer.followers)
+                    : undefined
+                }
+                placeholder="—"
+              />
+            </p>
           </div>
           <div className="px-3 py-3 text-center">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -2198,10 +2237,12 @@ export function InfluencerDetailPanel({ influencer, onClose, expanded, onToggleE
             <InfluencerContactSection
               influencerId={influencer.id}
               email={influencer.email}
+              secondaryEmails={influencer.secondaryEmails ?? []}
               phone={influencer.phone}
               bioLinkUrl={influencer.bioLinkUrl}
               socialLinksJson={influencer.socialLinks}
               onEmailChange={(newEmail) => saveField("email", newEmail)}
+              onSecondaryEmailsChange={(list) => saveField("secondaryEmails", list)}
               onPhoneChange={(newPhone) => saveField("phone", newPhone)}
               onBioLinkUrlChange={(newUrl) => saveField("bioLinkUrl", newUrl)}
             />

@@ -50,12 +50,56 @@ export async function PATCH(
     const data: Record<string, unknown> = {};
 
     // Validate and pick allowed fields
+    if ("username" in body) {
+      const raw = typeof body.username === "string" ? body.username.trim() : "";
+      // Strip leading "@" and lowercase (TikTok handles are case-insensitive,
+      // and Influencer.username is @unique — case mismatch would otherwise look
+      // like a different account).
+      const next = raw.replace(/^@+/, "").toLowerCase();
+      if (!next || !/^[a-z0-9._]{2,24}$/.test(next)) {
+        return NextResponse.json(
+          { error: "Invalid username — 2-24 chars, letters/numbers/_/. only" },
+          { status: 400 },
+        );
+      }
+      // Uniqueness check (case-insensitive): if another influencer already has
+      // this handle, bail with a clear error instead of letting Prisma's
+      // @unique throw a generic P2002.
+      const conflict = await prisma.influencer.findFirst({
+        where: { username: next, NOT: { id } },
+        select: { id: true },
+      });
+      if (conflict) {
+        return NextResponse.json(
+          { error: `Username "@${next}" is already taken by another influencer` },
+          { status: 409 },
+        );
+      }
+      data.username = next;
+    }
     if ("displayName" in body) data.displayName = body.displayName ?? null;
     if ("platform" in body) data.platform = body.platform ?? null;
     if ("engagementRate" in body) data.engagementRate = body.engagementRate != null ? Number(body.engagementRate) : null;
     if ("rate" in body) data.rate = body.rate != null ? Number(body.rate) : null;
+    if ("followers" in body) data.followers = body.followers != null ? Math.max(0, Math.floor(Number(body.followers))) : null;
     if ("country" in body) data.country = body.country ?? null;
     if ("email" in body) data.email = body.email ?? null;
+    if ("secondaryEmails" in body) {
+      // Normalize: trim, lowercase, dedupe, basic format check, drop the
+      // primary so we never double-list it.
+      const raw = Array.isArray(body.secondaryEmails) ? body.secondaryEmails : [];
+      const primary = (body.email ?? "").toString().trim().toLowerCase();
+      const normalized = Array.from(
+        new Set(
+          raw
+            .filter((e: unknown): e is string => typeof e === "string")
+            .map((e: string) => e.trim().toLowerCase())
+            .filter((e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+            .filter((e: string) => !primary || e !== primary),
+        ),
+      );
+      data.secondaryEmails = normalized;
+    }
     if ("phone" in body) data.phone = body.phone ?? null;
     if ("biolink" in body) data.biolink = body.biolink ?? null;
     if ("bioLinkUrl" in body) data.bioLinkUrl = body.bioLinkUrl ?? null;
@@ -78,13 +122,38 @@ export async function PATCH(
       return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
     }
 
+    // Read the old username before update so we know whether to propagate.
+    const prevUsername =
+      "username" in data
+        ? (await prisma.influencer.findUnique({
+            where: { id },
+            select: { username: true },
+          }))?.username ?? null
+        : null;
+
     const influencer = await prisma.influencer.update({
       where: { id },
       data,
     });
 
+    // Video.username is denormalized — keep it in sync when the handle changes.
+    if ("username" in data && prevUsername && prevUsername !== data.username) {
+      await prisma.video.updateMany({
+        where: { influencerId: id },
+        data: { username: data.username as string },
+      });
+    }
+
     // Create activity log for certain field changes
     const activityLogs: { type: string; title: string; detail: string | null }[] = [];
+
+    if ("username" in data && prevUsername && prevUsername !== data.username) {
+      activityLogs.push({
+        type: "username_changed",
+        title: "Username changed",
+        detail: `@${prevUsername} → @${data.username}`,
+      });
+    }
 
     if ("pipelineStage" in body) {
       const stageName = VALID_STAGES.find((s) => s === body.pipelineStage) ?? body.pipelineStage;
@@ -247,6 +316,7 @@ export async function GET(
     language: influencer.language,
     country: influencer.country,
     email: influencer.email,
+    secondaryEmails: influencer.secondaryEmails,
     phone: influencer.phone,
     biolink: influencer.biolink,
     bioLinkUrl: influencer.bioLinkUrl,

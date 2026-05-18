@@ -19,6 +19,10 @@ model Influencer {
   bioLinkUrl     String? // main link in bio (e.g. linktree)
   followers      Int?
   email          String?
+  // Additional contact emails. `email` stays the primary (the To: address on
+  // outgoing mail); these are CC'd. Sometimes an influencer has a manager or
+  // a business inbox in addition to their personal one.
+  secondaryEmails String[] @default([])
   phone          String?
   socialLinks    String? // JSON array of URLs
   sourceFilename String? // which CSV file this influencer came from

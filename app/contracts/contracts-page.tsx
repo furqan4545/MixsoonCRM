@@ -491,36 +491,45 @@ export function ContractsPage({
               return (
                 <div
                   key={`brief-${b.id}`}
-                  className="rounded-lg border p-4 space-y-2.5 hover:border-foreground/20 transition-colors"
+                  className="rounded-lg border hover:border-foreground/20 transition-colors"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span className="text-sm font-medium truncate">
-                        Brief — {b.campaign.name}
-                      </span>
-                      <span className="inline-flex items-center rounded-full bg-stone-100 text-stone-700 text-[10px] px-2 py-0.5 font-medium">
-                        BRIEF
-                      </span>
-                      {b.uploadDate && (
-                        <span className="inline-flex items-center rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] px-1.5 py-0.5 font-medium">
-                          Post {new Date(b.uploadDate).toLocaleDateString()}
+                  {/* Clickable header — match submission/contract style */}
+                  <button
+                    type="button"
+                    className="w-full p-4 text-left"
+                    onClick={() => setExpandedBriefId(expanded ? null : b.id)}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="text-sm font-medium truncate">
+                          Brief — {b.campaign.name}
                         </span>
+                        <span className="inline-flex items-center rounded-full bg-stone-100 text-stone-700 text-[10px] px-2 py-0.5 font-medium shrink-0">
+                          BRIEF
+                        </span>
+                        {b.uploadDate && (
+                          <span className="inline-flex items-center rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] px-1.5 py-0.5 font-medium shrink-0">
+                            Post {new Date(b.uploadDate).toLocaleDateString()}
+                          </span>
+                        )}
+                        <span className="inline-flex items-center rounded bg-violet-50 border border-violet-200 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 shrink-0">
+                          @{b.influencer.username}
+                        </span>
+                      </div>
+                      {expanded ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                       )}
                     </div>
-                    <Link
-                      href={`/influencers?selected=${b.influencer.id}`}
-                      className="text-[11px] text-muted-foreground hover:text-foreground shrink-0"
-                    >
-                      @{b.influencer.username}
-                    </Link>
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Sent {new Date(b.sentAt).toLocaleDateString()}
-                    {b.sentBy ? ` by ${b.sentBy.email}` : ""}
-                  </div>
+                    <div className="text-[11px] text-muted-foreground mt-1.5">
+                      Sent {new Date(b.sentAt).toLocaleDateString()}
+                      {b.sentBy ? ` by ${b.sentBy.email}` : ""}
+                    </div>
+                  </button>
                   {expanded && (
-                    <div className="border-t pt-2.5 mt-1 space-y-2.5">
+                    <div className="border-t px-4 py-3 space-y-3">
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                           Guidelines
@@ -568,24 +577,6 @@ export function ContractsPage({
                       )}
                     </div>
                   )}
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => setExpandedBriefId(expanded ? null : b.id)}
-                    >
-                      {expanded ? "Hide" : "View brief"}
-                    </Button>
-                    <Link
-                      href={`/influencers?selected=${b.influencer.id}&tab=contracts`}
-                      className="ml-auto"
-                    >
-                      <Button variant="ghost" size="sm" className="h-7 text-xs">
-                        Open in Influencer
-                      </Button>
-                    </Link>
-                  </div>
                 </div>
               );
             }

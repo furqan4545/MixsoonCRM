@@ -31,7 +31,7 @@ export async function GET(
   const payment = await prisma.payment.findUnique({
     where: { id },
     include: {
-      influencer: { select: { id: true, username: true, displayName: true, avatarUrl: true, email: true } },
+      influencer: { select: { id: true, username: true, displayName: true, avatarUrl: true, email: true, secondaryEmails: true } },
       campaign: { select: { id: true, name: true } },
       createdBy: { select: { id: true, name: true, email: true } },
       confirmedByUser: { select: { id: true, name: true, email: true } },
@@ -133,7 +133,7 @@ export async function PATCH(
     where: { id },
     data,
     include: {
-      influencer: { select: { id: true, username: true, displayName: true, email: true } },
+      influencer: { select: { id: true, username: true, displayName: true, email: true, secondaryEmails: true } },
       confirmedByUser: { select: { id: true, name: true, email: true } },
       proofSentByUser: { select: { id: true, name: true, email: true } },
     },
@@ -187,6 +187,10 @@ export async function PATCH(
         await transport.sendMail({
           from: `"MIXSOON" <${senderAccount.emailAddress}>`,
           to: updated.influencer.email,
+          cc:
+            updated.influencer.secondaryEmails.length > 0
+              ? updated.influencer.secondaryEmails
+              : undefined,
           subject: `Payment Update: ${body.status} — ${updated.amount.toLocaleString()} ${updated.currency}`,
           html: `
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">

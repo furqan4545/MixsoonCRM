@@ -90,7 +90,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   const [influencer, campaign] = await Promise.all([
     prisma.influencer.findUnique({
       where: { id: influencerId },
-      select: { id: true, username: true, displayName: true, email: true },
+      select: { id: true, username: true, displayName: true, email: true, secondaryEmails: true },
     }),
     prisma.marketingCampaign.findUnique({
       where: { id: campaignId },
@@ -219,6 +219,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     await transport.sendMail({
       from: `"MIXSOON" <${senderAccount.emailAddress}>`,
       to: influencer.email,
+      cc: influencer.secondaryEmails.length > 0 ? influencer.secondaryEmails : undefined,
       subject: `Content brief — ${campaign.name}`,
       html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">

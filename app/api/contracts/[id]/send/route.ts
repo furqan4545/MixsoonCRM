@@ -31,7 +31,7 @@ export async function POST(
       where: { id },
       include: {
         influencer: {
-          select: { id: true, username: true, displayName: true, email: true },
+          select: { id: true, username: true, displayName: true, email: true, secondaryEmails: true },
         },
         template: { select: { name: true } },
       },
@@ -121,6 +121,10 @@ export async function POST(
         ? `"${emailAccount.displayName}" <${emailAccount.emailAddress}>`
         : emailAccount.emailAddress,
       to: contract.influencer.email,
+      cc:
+        contract.influencer.secondaryEmails.length > 0
+          ? contract.influencer.secondaryEmails
+          : undefined,
       subject,
       html: bodyHtml,
     });

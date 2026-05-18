@@ -27,7 +27,7 @@ export async function POST(
   const payment = await prisma.payment.findUnique({
     where: { id },
     include: {
-      influencer: { select: { id: true, username: true, displayName: true, email: true } },
+      influencer: { select: { id: true, username: true, displayName: true, email: true, secondaryEmails: true } },
       campaign: { select: { name: true } },
     },
   });
@@ -152,6 +152,10 @@ export async function POST(
     await transport.sendMail({
       from: `"MIXSOON Payments" <${senderAccount.emailAddress}>`,
       to: payment.influencer.email,
+      cc:
+        payment.influencer.secondaryEmails.length > 0
+          ? payment.influencer.secondaryEmails
+          : undefined,
       subject: `Proof of payment — ${payment.amount.toLocaleString()} ${payment.currency}`,
       html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">

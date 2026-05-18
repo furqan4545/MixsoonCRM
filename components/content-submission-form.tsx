@@ -605,22 +605,26 @@ export function ContentSubmissionForm({
             />
             <p className="mt-1 text-[10px] text-muted-foreground">Label to identify this submission</p>
           </div>
-          <div>
-            <Label htmlFor="sCode">
-              S-Code {requireScode && <span className="text-destructive">*</span>}
-            </Label>
-            <Input
-              id="sCode"
-              type="text"
-              placeholder="Enter S-code"
-              value={sCode}
-              onChange={(e) => setSCode(e.target.value)}
-              className="mt-1.5"
-            />
-            {requireScode && (
-              <p className="mt-1 text-[10px] text-destructive">Required — you must enter an S-code to submit</p>
-            )}
-          </div>
+          {/* S-Code only appears alongside payment — it identifies the
+              influencer on the payment form. Non-payment forms hide it. */}
+          {showPayment && (
+            <div>
+              <Label htmlFor="sCode">
+                S-Code {requireScode && <span className="text-destructive">*</span>}
+              </Label>
+              <Input
+                id="sCode"
+                type="text"
+                placeholder="Enter S-code"
+                value={sCode}
+                onChange={(e) => setSCode(e.target.value)}
+                className="mt-1.5"
+              />
+              {requireScode && (
+                <p className="mt-1 text-[10px] text-destructive">Required — you must enter an S-code to submit</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
