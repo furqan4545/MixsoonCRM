@@ -105,14 +105,6 @@ export function ShippingDashboard() {
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
   const [trackingLoading, setTrackingLoading] = useState(false);
 
-  // Edit tracking dialog
-  const [showTrackingDialog, setShowTrackingDialog] = useState(false);
-  const [trackingForm, setTrackingForm] = useState({
-    trackingNumber: "",
-    carrier: "DHL",
-  });
-  const [editingShipmentId, setEditingShipmentId] = useState<string | null>(null);
-
   const fetchShipments = useCallback(async () => {
     setLoading(true);
     try {
@@ -153,28 +145,6 @@ export function ShippingDashboard() {
       }
     } catch {
       toast.error("Failed to update status");
-    }
-  };
-
-  // Save tracking number
-  const saveTracking = async () => {
-    if (!editingShipmentId) return;
-    try {
-      const res = await fetch(`/api/shipments/${editingShipmentId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          trackingNumber: trackingForm.trackingNumber,
-          carrier: trackingForm.carrier,
-          status: "SHIPPED",
-        }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Tracking number saved");
-      setShowTrackingDialog(false);
-      fetchShipments();
-    } catch {
-      toast.error("Failed to save tracking");
     }
   };
 
@@ -271,7 +241,7 @@ export function ShippingDashboard() {
                     <div className="flex items-center gap-3">
                       {s.influencer.avatarUrl ? (
                         <img
-                          src={s.influencer.avatarUrl}
+                          src={`/api/thumbnail?url=${encodeURIComponent(s.influencer.avatarUrl)}`}
                           alt=""
                           className="h-9 w-9 rounded-full object-cover"
                         />
@@ -353,14 +323,7 @@ export function ShippingDashboard() {
                     <>
                       <Button
                         size="sm"
-                        onClick={() => {
-                          setEditingShipmentId(selectedShipment.id);
-                          setTrackingForm({
-                            trackingNumber: selectedShipment.trackingNumber || "",
-                            carrier: selectedShipment.carrier,
-                          });
-                          setShowTrackingDialog(true);
-                        }}
+                        onClick={() => updateStatus(selectedShipment.id, "SHIPPED")}
                       >
                         <Package className="h-3 w-3 mr-1" />
                         Mark as Shipped
@@ -417,7 +380,11 @@ export function ShippingDashboard() {
                 <h3 className="text-sm font-medium mb-2">Influencer</h3>
                 <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
                   {selectedShipment.influencer.avatarUrl ? (
-                    <img src={selectedShipment.influencer.avatarUrl} className="h-8 w-8 rounded-full object-cover" alt="" />
+                    <img
+                      src={`/api/thumbnail?url=${encodeURIComponent(selectedShipment.influencer.avatarUrl)}`}
+                      className="h-8 w-8 rounded-full object-cover"
+                      alt=""
+                    />
                   ) : (
                     <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
                       {(selectedShipment.influencer.displayName || selectedShipment.influencer.username)?.[0]?.toUpperCase()}
@@ -506,50 +473,6 @@ export function ShippingDashboard() {
         )}
       </div>
 
-      {/* Enter Tracking Number Dialog */}
-      <Dialog open={showTrackingDialog} onOpenChange={setShowTrackingDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Enter Tracking Number</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Carrier</Label>
-              <Select
-                value={trackingForm.carrier}
-                onValueChange={(v) => setTrackingForm({ ...trackingForm, carrier: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="DHL">DHL</SelectItem>
-                  <SelectItem value="UPS">UPS</SelectItem>
-                  <SelectItem value="FEDEX">FedEx</SelectItem>
-                  <SelectItem value="EMS">EMS</SelectItem>
-                  <SelectItem value="OTHER">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Tracking Number</Label>
-              <Input
-                value={trackingForm.trackingNumber}
-                onChange={(e) => setTrackingForm({ ...trackingForm, trackingNumber: e.target.value })}
-                placeholder="Enter tracking number"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowTrackingDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={saveTracking} disabled={!trackingForm.trackingNumber}>
-              Save & Mark Shipped
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

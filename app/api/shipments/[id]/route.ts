@@ -73,35 +73,53 @@ export async function PATCH(
   // Status change with stock management
   if (body.status && body.status !== shipment.status) {
     const newStatus = body.status as ShipmentStatus;
+    const oldStatus = shipment.status;
     data.status = newStatus;
 
     await prisma.$transaction(async (tx) => {
-      // Handle stock adjustments based on status transitions
-      const oldStatus = shipment.status;
-
       if (newStatus === "SHIPPED" && oldStatus === "PENDING") {
         data.shippedAt = new Date();
       }
 
+      // Stock counters live on the variant when the shipment was assigned a
+      // variant; otherwise on the parent product. Apply the decrement to the
+      // right row so reservations don't drift.
       if (newStatus === "DELIVERED") {
         data.deliveredAt = new Date();
-        // Decrement both quantity and reserved by shipment quantity
-        await tx.product.update({
-          where: { id: shipment.productId },
-          data: {
-            quantity: { decrement: qty },
-            reserved: { decrement: qty },
-          },
-        });
+        if (shipment.variantId) {
+          await tx.productVariant.update({
+            where: { id: shipment.variantId },
+            data: {
+              quantity: { decrement: qty },
+              reserved: { decrement: qty },
+            },
+          });
+        } else {
+          await tx.product.update({
+            where: { id: shipment.productId },
+            data: {
+              quantity: { decrement: qty },
+              reserved: { decrement: qty },
+            },
+          });
+        }
       }
 
       if (newStatus === "RETURNED" || newStatus === "FAILED") {
-        // Product came back or failed — free up the reservation
+        // Product came back or failed — free up the reservation only if it
+        // hadn't already been consumed by a DELIVERED transition.
         if (oldStatus !== "DELIVERED") {
-          await tx.product.update({
-            where: { id: shipment.productId },
-            data: { reserved: { decrement: qty } },
-          });
+          if (shipment.variantId) {
+            await tx.productVariant.update({
+              where: { id: shipment.variantId },
+              data: { reserved: { decrement: qty } },
+            });
+          } else {
+            await tx.product.update({
+              where: { id: shipment.productId },
+              data: { reserved: { decrement: qty } },
+            });
+          }
         }
       }
 
