@@ -1,0 +1,59 @@
+# Cloud Build reads THIS file (not .dockerignore) to decide what to upload as
+# build context. Keep this aggressive — everything not needed for `next build`
+# should be excluded.
+
+# Git + IDE
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+.DS_Store
+
+# Claude Code session worktrees — can be GiBs
+.claude
+.claude/worktrees
+
+# Dependencies (Dockerfile runs `npm ci` inside the container)
+node_modules
+**/node_modules
+
+# Build output (Dockerfile runs `next build` inside the container)
+.next
+**/.next
+out
+build
+dist
+
+# Local storage / caches
+storage
+.eslintcache
+.turbo
+coverage
+.nyc_output
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Env files (secrets go via Secret Manager, not the build context)
+.env
+.env.*
+!.env.example
+
+# Service account JSON (use Secret Manager + attached SA on Cloud Run)
+GCP_CREDS
+
+# Misc local dev
+test-xlsx.ts
+python_files
+empty-module.js.bak
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Docs that aren't part of the build
+README.md
+REQUIREMENTS_V2.md
+*.md

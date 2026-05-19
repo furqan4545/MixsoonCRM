@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "postinstall": "prisma generate",
-    "build": "next build",
+    "build": "npm ci --legacy-peer-deps && next build",
     "start": "next start",
     "lint": "biome check",
     "format": "biome format --write",

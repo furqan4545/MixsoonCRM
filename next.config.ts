@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Cloud Run / Docker — bundles a minimal `node server.js` runner with only
+  // the deps Next.js actually needs. Build output goes to .next/standalone.
+  output: "standalone",
   reactCompiler: true,
   serverExternalPackages: ["@prisma/client", "puppeteer", "libreoffice-convert"],
   typescript: {
