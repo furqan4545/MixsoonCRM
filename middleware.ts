@@ -17,6 +17,28 @@ function hasSessionCookie(cookieHeader: string | null): boolean {
   return SESSION_COOKIE_NAMES.some((name) => names.includes(name));
 }
 
+/**
+ * Build the public-facing origin of this request. Behind a proxy like Cloud Run,
+ * `req.nextUrl.origin` returns the internal bind address (https://0.0.0.0:8080)
+ * because the request is forwarded to the container on that address. Cloud Run /
+ * GFE injects X-Forwarded-Host and X-Forwarded-Proto headers — those are the
+ * authoritative source for the URL the user actually typed.
+ *
+ * Fallback chain: X-Forwarded-Host → Host header → nextUrl.origin (dev only).
+ */
+function getPublicOrigin(req: NextRequest): string {
+  const forwardedHost = req.headers.get("x-forwarded-host");
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  if (forwardedHost) {
+    return `${forwardedProto ?? "https"}://${forwardedHost}`;
+  }
+  const host = req.headers.get("host");
+  if (host && !host.startsWith("0.0.0.0")) {
+    return `${req.nextUrl.protocol}//${host}`;
+  }
+  return req.nextUrl.origin;
+}
+
 export function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
@@ -41,7 +63,7 @@ export function middleware(req: NextRequest) {
 
   const cookieHeader = req.headers.get("cookie");
   if (!hasSessionCookie(cookieHeader)) {
-    const login = new URL("/login", req.nextUrl.origin);
+    const login = new URL("/login", getPublicOrigin(req));
     login.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(login);
   }

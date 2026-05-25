@@ -4,6 +4,13 @@ import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/app/lib/prisma";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // Required for Cloud Run (and any reverse-proxy deploy): Auth.js v5 rejects
+  // requests whose Host header doesn't match a known trusted host. Cloud Run
+  // forwards traffic to the container as 0.0.0.0:8080, so Auth.js sees that
+  // as an untrusted host and 500s every /api/auth/* call (UntrustedHost).
+  // Setting trustHost=true tells Auth.js to trust the X-Forwarded-* headers
+  // that Cloud Run / GFE inject — those carry the real public host.
+  trustHost: true,
   providers: [
     Credentials({
       name: "credentials",

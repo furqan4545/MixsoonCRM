@@ -56,6 +56,11 @@ RUNTIME_SA="${RUNTIME_SA:-mixsoon-crm-storage-uploader@mixsoon-data.iam.gservice
 # VPC connector is optional for the first deploy — skip it and use the public
 # Postgres IP. Set VPC_CONNECTOR=mixsoon-connector once you've created one.
 VPC_CONNECTOR="${VPC_CONNECTOR:-}"
+# Public URL of the Cloud Run service — REQUIRED for Auth.js redirects (signOut,
+# OAuth callbacks, etc.). Without it, redirects target 0.0.0.0:8080 (the
+# internal bind address). Override at the env-var level if you move to a custom
+# domain (e.g. PUBLIC_URL=https://app.mixsoon.com ./scripts/deploy-cloudrun.sh).
+PUBLIC_URL="${PUBLIC_URL:-https://mixsoon-transpify-kaomleevya-uc.a.run.app}"
 
 # ── Image tag = git short SHA so deploys are traceable ─────────────────────
 IMAGE_TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d-%H%M%S)"
@@ -97,7 +102,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --timeout=3600 \
   --allow-unauthenticated \
   --port=8080 \
-  --set-env-vars="NODE_ENV=production,GCS_BUCKET_NAME=mixsoon_crm_data_bucket,GEMINI_MODEL=gemini-2.5-flash" \
+  --set-env-vars="NODE_ENV=production,GCS_BUCKET_NAME=mixsoon_crm_data_bucket,GEMINI_MODEL=gemini-2.5-flash,AUTH_TRUST_HOST=true,AUTH_URL=${PUBLIC_URL},NEXTAUTH_URL=${PUBLIC_URL},NEXT_PUBLIC_APP_URL=${PUBLIC_URL}" \
   --set-secrets="DATABASE_URL=database-url:latest,APIFY_API_KEY=apify-api-key:latest,GEMINI_API_KEY=gemini-api-key:latest,AUTH_SECRET=auth-secret:latest,EMAIL_ENCRYPTION_KEY=email-encryption-key:latest,GCP_SERVICE_ACCOUNT_JSON=gcp-service-account-json:latest"
 
 echo
