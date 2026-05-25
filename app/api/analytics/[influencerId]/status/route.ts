@@ -1,4 +1,5 @@
-import { type NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
+import { reapStaleRuns } from "@/app/lib/analysis-run-reaper";
 import { prisma } from "../../../../lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -19,11 +20,20 @@ export async function GET(
 
       const POLL_INTERVAL = 1500; // 1.5s
       const MAX_DURATION = 10 * 60 * 1000; // 10 minutes
+      const REAP_EVERY = 10_000; // 10s — don't run reaper on every poll
       const started = Date.now();
+      let lastReapAt = 0;
 
       const poll = async () => {
         while (Date.now() - started < MAX_DURATION) {
           try {
+            // Periodically reap stale runs so the client sees FAILED instead
+            // of an "in progress" status that will never advance.
+            if (Date.now() - lastReapAt >= REAP_EVERY) {
+              lastReapAt = Date.now();
+              await reapStaleRuns({ influencerId });
+            }
+
             const run = await prisma.analysisRun.findFirst({
               where: { influencerId },
               orderBy: { createdAt: "desc" },
@@ -41,7 +51,11 @@ export async function GET(
             });
 
             if (!run) {
-              send({ status: "NO_RUN", progress: 0, message: "No analysis run found" });
+              send({
+                status: "NO_RUN",
+                progress: 0,
+                message: "No analysis run found",
+              });
               controller.close();
               return;
             }
@@ -73,7 +87,13 @@ export async function GET(
           await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
         }
 
-        send({ status: "TIMEOUT", progress: 0, message: "SSE connection timed out" });
+        // Reap once on timeout — if the run died, surface FAILED on next reconnect.
+        await reapStaleRuns({ influencerId }).catch(() => {});
+        send({
+          status: "TIMEOUT",
+          progress: 0,
+          message: "Status stream timed out — reconnect to see current state",
+        });
         controller.close();
       };
 

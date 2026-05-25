@@ -1,10 +1,18 @@
+import { randomUUID } from "node:crypto";
+import type { AnalysisMode } from "@prisma/client";
 import { after, type NextRequest, NextResponse } from "next/server";
+import { reapStaleRuns } from "@/app/lib/analysis-run-reaper";
+import { runWithConcurrency } from "@/app/lib/concurrency";
 import { prisma } from "../../../lib/prisma";
 import { loadConfig, runAnalysisPipeline } from "../run/route";
-import type { AnalysisMode } from "@prisma/client";
-import { randomUUID } from "crypto";
 
 export const maxDuration = 300;
+
+// How many influencer analyses to run in parallel inside one bulk batch.
+// Higher = faster total wall time but more Apify/Gemini concurrency and more
+// memory/CPU pressure on the single Cloud Run instance handling the batch.
+// 3 is the sweet spot for our current quotas — bump cautiously.
+const BULK_CONCURRENCY = 3;
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -14,7 +22,10 @@ export async function POST(request: NextRequest) {
   };
 
   if (!influencerIds?.length) {
-    return NextResponse.json({ error: "influencerIds[] is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "influencerIds[] is required" },
+      { status: 400 },
+    );
   }
 
   // Validate influencers exist
@@ -24,18 +35,34 @@ export async function POST(request: NextRequest) {
   });
 
   if (influencers.length === 0) {
-    return NextResponse.json({ error: "No valid influencers found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "No valid influencers found" },
+      { status: 404 },
+    );
   }
 
   const config = await loadConfig();
   const mode = requestedMode ?? config.defaultMode;
   const batchId = `batch_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
 
-  // Skip influencers that already have a running analysis
+  // Reap stalled runs across the selection so we don't refuse to re-analyze
+  // influencers whose previous bulk run died with the worker.
+  await Promise.all(
+    influencers.map((i) => reapStaleRuns({ influencerId: i.id })),
+  );
+
+  // Skip influencers that genuinely have a fresh in-flight run
   const running = await prisma.analysisRun.findMany({
     where: {
       influencerId: { in: influencers.map((i) => i.id) },
-      status: { in: ["PENDING", "SCRAPING_COMMENTS", "ANALYZING_COMMENTS", "ANALYZING_FACES"] },
+      status: {
+        in: [
+          "PENDING",
+          "SCRAPING_COMMENTS",
+          "ANALYZING_COMMENTS",
+          "ANALYZING_FACES",
+        ],
+      },
     },
     select: { influencerId: true },
   });
@@ -71,9 +98,13 @@ export async function POST(request: NextRequest) {
     ),
   );
 
-  // Process sequentially in background
+  // Process with bounded concurrency in the background. Sequential processing
+  // was the root cause of "spins forever" — a batch of 5+ influencers easily
+  // outlived maxDuration (300s), the worker was torn down, and the un-started
+  // runs stayed PENDING forever. Parallelizing shrinks total wall time AND
+  // makes any stragglers reapable.
   after(async () => {
-    for (const run of runs) {
+    await runWithConcurrency(runs, BULK_CONCURRENCY, async (run) => {
       try {
         await runAnalysisPipeline({
           runId: run.id,
@@ -83,8 +114,20 @@ export async function POST(request: NextRequest) {
         });
       } catch (err) {
         console.error(`[Bulk Analytics] Failed for run ${run.id}:`, err);
+        // Make sure the run is marked FAILED — runAnalysisPipeline normally
+        // handles this, but a thrown error before its outer catch lands here.
+        await prisma.analysisRun
+          .update({
+            where: { id: run.id },
+            data: {
+              status: "FAILED",
+              errorMessage:
+                err instanceof Error ? err.message : "Unknown error",
+            },
+          })
+          .catch(() => {});
       }
-    }
+    });
 
     // Notification when batch completes
     const completed = await prisma.analysisRun.count({
@@ -94,14 +137,16 @@ export async function POST(request: NextRequest) {
       where: { batchId, status: "FAILED" },
     });
 
-    await prisma.notification.create({
-      data: {
-        type: "audience_analysis",
-        status: failed === 0 ? "success" : "warning",
-        title: `Bulk audience analysis finished`,
-        message: `${completed} completed, ${failed} failed out of ${runs.length} influencers`,
-      },
-    }).catch(() => {});
+    await prisma.notification
+      .create({
+        data: {
+          type: "audience_analysis",
+          status: failed === 0 ? "success" : "warning",
+          title: `Bulk audience analysis finished`,
+          message: `${completed} completed, ${failed} failed out of ${runs.length} influencers`,
+        },
+      })
+      .catch(() => {});
   });
 
   return NextResponse.json({

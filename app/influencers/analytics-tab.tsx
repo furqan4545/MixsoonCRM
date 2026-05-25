@@ -1,22 +1,31 @@
 "use client";
 
+import {
+  AlertCircle,
+  BarChart3,
+  HelpCircle,
+  Loader2,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  Settings2,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  BarChart,
   Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-  CartesianGrid,
-  ResponsiveContainer,
-  Legend,
 } from "recharts";
-import { BarChart3, HelpCircle, Loader2, Settings2, Play, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import {
   Tooltip as UITooltip,
@@ -50,7 +59,12 @@ interface AnalyticsData {
   commentCount: number;
   avatarsSampled: number;
   lastAnalyzedAt: string;
-  sentiment: { positive: number; negative: number; neutral: number; humorous: number } | null;
+  sentiment: {
+    positive: number;
+    negative: number;
+    neutral: number;
+    humorous: number;
+  } | null;
   commentTopics: CommentTopic[] | null;
   commentSummary: string | null;
 }
@@ -90,8 +104,16 @@ interface AnalyticsTabProps {
 const GENDER_COLORS = ["#3b82f6", "#ec4899", "#9ca3af"]; // blue, pink, gray
 const AGE_COLORS = ["#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ef4444"];
 const ETHNICITY_COLORS = [
-  "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
-  "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16",
+  "#3b82f6",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#ec4899",
+  "#14b8a6",
+  "#f97316",
+  "#6366f1",
+  "#84cc16",
 ];
 
 const MODE_LABELS: Record<AnalysisMode, string> = {
@@ -123,12 +145,15 @@ export default function AnalyticsTab({
   const [progressMsg, setProgressMsg] = useState("");
   const [selectedMode, setSelectedMode] = useState<AnalysisMode>("HYBRID");
   const [showConfig, setShowConfig] = useState(false);
+  // Surfaces the most recent failure (from latestRun.errorMessage or a stalled
+  // SSE drop). Rendered inline with a Retry button — no more silent spinners.
+  const [runError, setRunError] = useState<string | null>(null);
 
   const fetchedRef = useRef(false);
   const eventSourceRef = useRef<EventSource | null>(null);
 
-  // ── Fetch existing analytics ──
-  const fetchAnalytics = useCallback(async () => {
+  // ── Fetch latest analytics + run, drive UI state from it ──
+  const fetchAnalytics = useCallback(async (): Promise<RunStatus | null> => {
     try {
       const res = await fetch(`/api/analytics/${influencerId}`);
       if (!res.ok) throw new Error("Failed to fetch analytics");
@@ -136,32 +161,26 @@ export default function AnalyticsTab({
       setAnalytics(data.analytics);
       setLatestRun(data.latestRun);
 
-      // If there's an active run, connect to SSE
-      if (
-        data.latestRun &&
-        !["COMPLETED", "FAILED"].includes(data.latestRun.status)
-      ) {
-        setAnalyzing(true);
-        connectSSE();
+      if (data.latestRun?.status === "FAILED") {
+        setRunError(data.latestRun.errorMessage ?? "Analysis failed");
+        setAnalyzing(false);
+      } else if (data.latestRun?.status === "COMPLETED") {
+        setRunError(null);
+        setAnalyzing(false);
       }
+
+      return data.latestRun as RunStatus | null;
     } catch (err) {
       console.error("Failed to fetch analytics:", err);
+      return null;
     } finally {
       setLoading(false);
     }
   }, [influencerId]);
 
-  useEffect(() => {
-    if (!fetchedRef.current) {
-      fetchedRef.current = true;
-      fetchAnalytics();
-    }
-    return () => {
-      eventSourceRef.current?.close();
-    };
-  }, [fetchAnalytics]);
-
   // ── SSE connection ──
+  // Forward declare via ref so fetchAnalytics can trigger reconnects without
+  // a circular useCallback dep chain.
   const connectSSE = useCallback(() => {
     eventSourceRef.current?.close();
 
@@ -176,6 +195,7 @@ export default function AnalyticsTab({
 
         if (data.status === "COMPLETED") {
           setAnalyzing(false);
+          setRunError(null);
           es.close();
           eventSourceRef.current = null;
           fetchAnalytics();
@@ -183,21 +203,76 @@ export default function AnalyticsTab({
           toast.success("Audience analysis completed!");
         } else if (data.status === "FAILED") {
           setAnalyzing(false);
+          setRunError(data.errorMessage ?? data.message ?? "Analysis failed");
           es.close();
           eventSourceRef.current = null;
           toast.error(data.errorMessage ?? "Analysis failed");
           fetchAnalytics();
           onAnalysisComplete?.();
+        } else if (data.status === "TIMEOUT") {
+          // Stream timed out but the run might still be alive. Refetch state;
+          // if it's still in progress, reconnect SSE; if it failed (reaped),
+          // surface the error.
+          es.close();
+          eventSourceRef.current = null;
+          fetchAnalytics().then((run) => {
+            if (
+              run &&
+              !["COMPLETED", "FAILED"].includes(run.status) &&
+              eventSourceRef.current === null
+            ) {
+              connectSSE();
+            }
+          });
         }
       } catch {}
     };
 
     es.onerror = () => {
+      // Don't pretend the analysis is done. The SSE socket can drop for many
+      // reasons (network blip, proxy timeout) while the pipeline is still
+      // running server-side. Refetch authoritative state from the DB and
+      // either reconnect (still running), show the error (failed), or clear
+      // (completed).
       es.close();
       eventSourceRef.current = null;
-      setAnalyzing(false);
+      fetchAnalytics().then((run) => {
+        if (!run) {
+          setAnalyzing(false);
+          return;
+        }
+        if (run.status === "FAILED") {
+          setRunError(run.errorMessage ?? "Analysis failed");
+          setAnalyzing(false);
+          toast.error(run.errorMessage ?? "Analysis failed");
+        } else if (run.status === "COMPLETED") {
+          setAnalyzing(false);
+          setRunError(null);
+        } else {
+          // Still in progress — reconnect after a short delay
+          toast.message("Reconnecting to analysis stream...");
+          setTimeout(() => {
+            if (eventSourceRef.current === null) connectSSE();
+          }, 1500);
+        }
+      });
     };
-  }, [influencerId, fetchAnalytics]);
+  }, [influencerId, fetchAnalytics, onAnalysisComplete]);
+
+  useEffect(() => {
+    if (!fetchedRef.current) {
+      fetchedRef.current = true;
+      fetchAnalytics().then((run) => {
+        if (run && !["COMPLETED", "FAILED"].includes(run.status)) {
+          setAnalyzing(true);
+          connectSSE();
+        }
+      });
+    }
+    return () => {
+      eventSourceRef.current?.close();
+    };
+  }, [fetchAnalytics, connectSSE]);
 
   // ── Start analysis ──
   const startAnalysis = async () => {
@@ -205,6 +280,7 @@ export default function AnalyticsTab({
       setAnalyzing(true);
       setProgress(0);
       setProgressMsg("Starting analysis...");
+      setRunError(null);
 
       const res = await fetch("/api/analytics/run", {
         method: "POST",
@@ -220,9 +296,42 @@ export default function AnalyticsTab({
       connectSSE();
     } catch (err) {
       setAnalyzing(false);
-      toast.error(
-        err instanceof Error ? err.message : "Failed to start analysis",
-      );
+      const msg =
+        err instanceof Error ? err.message : "Failed to start analysis";
+      setRunError(msg);
+      toast.error(msg);
+    }
+  };
+
+  // ── Retry the most recent run ──
+  const retryAnalysis = async () => {
+    if (!latestRun) {
+      // No prior run to retry — just kick off a fresh one.
+      return startAnalysis();
+    }
+    try {
+      setAnalyzing(true);
+      setProgress(0);
+      setProgressMsg("Starting retry...");
+      setRunError(null);
+
+      const res = await fetch(`/api/analytics/runs/${latestRun.id}/retry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: selectedMode }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Failed to retry analysis");
+      }
+
+      connectSSE();
+    } catch (err) {
+      setAnalyzing(false);
+      const msg = err instanceof Error ? err.message : "Failed to retry";
+      setRunError(msg);
+      toast.error(msg);
     }
   };
 
@@ -317,7 +426,33 @@ export default function AnalyticsTab({
               style={{ width: `${progress}%` }}
             />
           </div>
-          <p className="text-xs text-muted-foreground">{progressMsg}</p>
+          <p className="text-xs text-muted-foreground">
+            {progressMsg || "Starting..."}{" "}
+            {progress > 0 ? `(${progress}%)` : ""}
+          </p>
+        </div>
+      )}
+
+      {/* Failure banner with retry */}
+      {!analyzing && runError && (
+        <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50/60 p-3 dark:border-red-900/40 dark:bg-red-950/20">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-red-900 dark:text-red-200">
+              Last analysis failed
+            </p>
+            <p className="mt-0.5 break-words text-xs text-red-700/90 dark:text-red-300/90">
+              {runError}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={retryAnalysis}
+            className="flex shrink-0 items-center gap-1.5 rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Retry
+          </button>
         </div>
       )}
 
@@ -329,7 +464,8 @@ export default function AnalyticsTab({
             No audience analytics yet
           </p>
           <p className="mt-1 text-xs text-muted-foreground/70">
-            Click &quot;Analyze&quot; to scrape comments and estimate audience demographics
+            Click &quot;Analyze&quot; to scrape comments and estimate audience
+            demographics
           </p>
         </div>
       )}
@@ -354,47 +490,49 @@ export default function AnalyticsTab({
                 <p className="text-sm font-semibold">{username}</p>
                 <div className="mt-1.5 flex flex-wrap gap-2">
                   {analytics.influencerGender &&
-                    analytics.influencerGender !== "unknown" ? (
-                      <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                        {analytics.influencerGender === "male" ? "Male" : "Female"}
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
-                        Gender: Unknown
-                      </span>
-                    )}
+                  analytics.influencerGender !== "unknown" ? (
+                    <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                      {analytics.influencerGender === "male"
+                        ? "Male"
+                        : "Female"}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                      Gender: Unknown
+                    </span>
+                  )}
                   {analytics.influencerAgeRange &&
-                    analytics.influencerAgeRange !== "unknown" ? (
-                      <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-                        {analytics.influencerAgeRange}
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
-                        Age: Unknown
-                      </span>
-                    )}
+                  analytics.influencerAgeRange !== "unknown" ? (
+                    <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                      {analytics.influencerAgeRange}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                      Age: Unknown
+                    </span>
+                  )}
                   {analytics.influencerEthnicity &&
-                    analytics.influencerEthnicity !== "Unknown" ? (
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
-                        {analytics.influencerEthnicity}
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
-                        Ethnicity: Unknown
-                      </span>
-                    )}
+                  analytics.influencerEthnicity !== "Unknown" ? (
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
+                      {analytics.influencerEthnicity}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                      Ethnicity: Unknown
+                    </span>
+                  )}
                   {analytics.influencerCountry &&
-                    analytics.influencerCountry !== "Unknown" ? (
-                      <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
-                        {analytics.influencerCountry.includes("|")
-                          ? analytics.influencerCountry.split("|")[1]
-                          : analytics.influencerCountry}
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
-                        Country: Unknown
-                      </span>
-                    )}
+                  analytics.influencerCountry !== "Unknown" ? (
+                    <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+                      {analytics.influencerCountry.includes("|")
+                        ? analytics.influencerCountry.split("|")[1]
+                        : analytics.influencerCountry}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                      Country: Unknown
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -416,8 +554,14 @@ export default function AnalyticsTab({
                     <Pie
                       data={[
                         { name: "Male", value: analytics.genderBreakdown.male },
-                        { name: "Female", value: analytics.genderBreakdown.female },
-                        { name: "Unknown", value: analytics.genderBreakdown.unknown },
+                        {
+                          name: "Female",
+                          value: analytics.genderBreakdown.female,
+                        },
+                        {
+                          name: "Unknown",
+                          value: analytics.genderBreakdown.unknown,
+                        },
                       ].filter((d) => d.value > 0)}
                       cx="50%"
                       cy="50%"
@@ -430,13 +574,8 @@ export default function AnalyticsTab({
                         <Cell key={i} fill={GENDER_COLORS[i]} />
                       ))}
                     </Pie>
-                    <Tooltip
-                      formatter={(value: unknown) => `${value}%`}
-                    />
-                    <Legend
-                      iconSize={8}
-                      wrapperStyle={{ fontSize: "11px" }}
-                    />
+                    <Tooltip formatter={(value: unknown) => `${value}%`} />
+                    <Legend iconSize={8} wrapperStyle={{ fontSize: "11px" }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -458,7 +597,11 @@ export default function AnalyticsTab({
                     layout="vertical"
                     margin={{ left: 10, right: 10 }}
                   >
-                    <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} />
+                    <XAxis
+                      type="number"
+                      domain={[0, 100]}
+                      tick={{ fontSize: 10 }}
+                    />
                     <YAxis
                       type="category"
                       dataKey="bracket"
@@ -467,8 +610,11 @@ export default function AnalyticsTab({
                     />
                     <Tooltip formatter={(value: unknown) => `${value}%`} />
                     <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
-                      {Object.entries(analytics.ageBrackets).map(([, ], i) => (
-                        <Cell key={i} fill={AGE_COLORS[i % AGE_COLORS.length]} />
+                      {Object.entries(analytics.ageBrackets).map(([,], i) => (
+                        <Cell
+                          key={i}
+                          fill={AGE_COLORS[i % AGE_COLORS.length]}
+                        />
                       ))}
                     </Bar>
                   </BarChart>
@@ -486,7 +632,11 @@ export default function AnalyticsTab({
                     layout="vertical"
                     margin={{ left: 10, right: 10 }}
                   >
-                    <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} />
+                    <XAxis
+                      type="number"
+                      domain={[0, 100]}
+                      tick={{ fontSize: 10 }}
+                    />
                     <YAxis
                       type="category"
                       dataKey="country"
@@ -502,7 +652,11 @@ export default function AnalyticsTab({
                         return match?.countryName ?? String(label);
                       }}
                     />
-                    <Bar dataKey="percentage" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                    <Bar
+                      dataKey="percentage"
+                      fill="#3b82f6"
+                      radius={[0, 4, 4, 0]}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -532,15 +686,20 @@ export default function AnalyticsTab({
                       >
                         {Object.entries(analytics.ethnicityBreakdown)
                           .filter(([, v]) => v > 0)
-                          .map(([, ], i) => (
+                          .map(([,], i) => (
                             <Cell
                               key={i}
-                              fill={ETHNICITY_COLORS[i % ETHNICITY_COLORS.length]}
+                              fill={
+                                ETHNICITY_COLORS[i % ETHNICITY_COLORS.length]
+                              }
                             />
                           ))}
                       </Pie>
                       <Tooltip formatter={(value: unknown) => `${value}%`} />
-                      <Legend iconSize={8} wrapperStyle={{ fontSize: "11px" }} />
+                      <Legend
+                        iconSize={8}
+                        wrapperStyle={{ fontSize: "11px" }}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -678,14 +837,39 @@ export default function AnalyticsTab({
               </h4>
               <div className="grid grid-cols-4 gap-2">
                 {[
-                  { label: "Positive", value: analytics.sentiment.positive, color: "bg-emerald-100 text-emerald-800", emoji: "👍" },
-                  { label: "Negative", value: analytics.sentiment.negative, color: "bg-red-100 text-red-800", emoji: "👎" },
-                  { label: "Neutral", value: analytics.sentiment.neutral, color: "bg-gray-100 text-gray-800", emoji: "😐" },
-                  { label: "Humorous", value: analytics.sentiment.humorous, color: "bg-amber-100 text-amber-800", emoji: "😂" },
+                  {
+                    label: "Positive",
+                    value: analytics.sentiment.positive,
+                    color: "bg-emerald-100 text-emerald-800",
+                    emoji: "👍",
+                  },
+                  {
+                    label: "Negative",
+                    value: analytics.sentiment.negative,
+                    color: "bg-red-100 text-red-800",
+                    emoji: "👎",
+                  },
+                  {
+                    label: "Neutral",
+                    value: analytics.sentiment.neutral,
+                    color: "bg-gray-100 text-gray-800",
+                    emoji: "😐",
+                  },
+                  {
+                    label: "Humorous",
+                    value: analytics.sentiment.humorous,
+                    color: "bg-amber-100 text-amber-800",
+                    emoji: "😂",
+                  },
                 ].map((s) => (
-                  <div key={s.label} className={`rounded-lg p-3 text-center ${s.color}`}>
+                  <div
+                    key={s.label}
+                    className={`rounded-lg p-3 text-center ${s.color}`}
+                  >
                     <p className="text-lg font-bold">{s.value}%</p>
-                    <p className="text-[10px] font-medium">{s.emoji} {s.label}</p>
+                    <p className="text-[10px] font-medium">
+                      {s.emoji} {s.label}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -699,7 +883,9 @@ export default function AnalyticsTab({
                 Audience Conversation Summary
               </h4>
               <div className="rounded-lg border bg-muted/30 p-4">
-                <p className="text-sm leading-relaxed">{analytics.commentSummary}</p>
+                <p className="text-sm leading-relaxed">
+                  {analytics.commentSummary}
+                </p>
               </div>
             </section>
           )}
@@ -711,46 +897,67 @@ export default function AnalyticsTab({
                 What The Audience Is Talking About
               </h4>
               <div className="space-y-3">
-                {analytics.commentTopics.map((topic: CommentTopic, i: number) => (
-                  <div key={i} className="rounded-lg border p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold">{topic.topic}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          topic.sentiment === "positive" ? "bg-emerald-100 text-emerald-700" :
-                          topic.sentiment === "negative" ? "bg-red-100 text-red-700" :
-                          topic.sentiment === "mixed" ? "bg-amber-100 text-amber-700" :
-                          "bg-gray-100 text-gray-700"
-                        }`}>
-                          {topic.sentiment}
+                {analytics.commentTopics.map(
+                  (topic: CommentTopic, i: number) => (
+                    <div key={i} className="rounded-lg border p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold">
+                            {topic.topic}
+                          </span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                              topic.sentiment === "positive"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : topic.sentiment === "negative"
+                                  ? "bg-red-100 text-red-700"
+                                  : topic.sentiment === "mixed"
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            {topic.sentiment}
+                          </span>
+                        </div>
+                        <span className="text-sm font-bold text-muted-foreground">
+                          {topic.percentage}%
                         </span>
                       </div>
-                      <span className="text-sm font-bold text-muted-foreground">{topic.percentage}%</span>
-                    </div>
-                    {/* Progress bar */}
-                    <div className="mb-2 h-1.5 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${
-                          topic.sentiment === "positive" ? "bg-emerald-500" :
-                          topic.sentiment === "negative" ? "bg-red-500" :
-                          topic.sentiment === "mixed" ? "bg-amber-500" :
-                          "bg-gray-400"
-                        }`}
-                        style={{ width: `${Math.min(topic.percentage, 100)}%` }}
-                      />
-                    </div>
-                    {/* Sample comments */}
-                    {topic.sampleComments?.length > 0 && (
-                      <div className="space-y-1">
-                        {topic.sampleComments.map((comment: string, j: number) => (
-                          <p key={j} className="text-[11px] text-muted-foreground italic truncate">
-                            &ldquo;{comment}&rdquo;
-                          </p>
-                        ))}
+                      {/* Progress bar */}
+                      <div className="mb-2 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            topic.sentiment === "positive"
+                              ? "bg-emerald-500"
+                              : topic.sentiment === "negative"
+                                ? "bg-red-500"
+                                : topic.sentiment === "mixed"
+                                  ? "bg-amber-500"
+                                  : "bg-gray-400"
+                          }`}
+                          style={{
+                            width: `${Math.min(topic.percentage, 100)}%`,
+                          }}
+                        />
                       </div>
-                    )}
-                  </div>
-                ))}
+                      {/* Sample comments */}
+                      {topic.sampleComments?.length > 0 && (
+                        <div className="space-y-1">
+                          {topic.sampleComments.map(
+                            (comment: string, j: number) => (
+                              <p
+                                key={j}
+                                className="text-[11px] text-muted-foreground italic truncate"
+                              >
+                                &ldquo;{comment}&rdquo;
+                              </p>
+                            ),
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ),
+                )}
               </div>
             </section>
           )}
@@ -758,7 +965,10 @@ export default function AnalyticsTab({
           {/* Metadata Footer */}
           <section className="flex flex-wrap items-center gap-3 border-t pt-4 text-[10px] text-muted-foreground">
             <span>
-              Mode: <strong>{MODE_LABELS[analytics.mode as AnalysisMode] ?? analytics.mode}</strong>
+              Mode:{" "}
+              <strong>
+                {MODE_LABELS[analytics.mode as AnalysisMode] ?? analytics.mode}
+              </strong>
             </span>
             <span>|</span>
             <span>{analytics.commentCount} comments analyzed</span>
@@ -818,7 +1028,9 @@ function ConfigPanel({ onClose }: { onClose: () => void }) {
   });
   // Per-field raw string buffer for in-progress typing. Lets the field go
   // empty without snapping back to "0". Commits to numeric config on blur.
-  const [draft, setDraft] = useState<Partial<Record<keyof typeof config, string>>>({});
+  const [draft, setDraft] = useState<
+    Partial<Record<keyof typeof config, string>>
+  >({});
   const [saving, setSaving] = useState(false);
   const loadedRef = useRef(false);
 
@@ -943,7 +1155,10 @@ function ConfigPanel({ onClose }: { onClose: () => void }) {
                       <HelpCircle className="h-3 w-3" />
                     </button>
                   </UITooltipTrigger>
-                  <UITooltipContent side="top" className="max-w-[240px] text-[11px] leading-snug">
+                  <UITooltipContent
+                    side="top"
+                    className="max-w-[240px] text-[11px] leading-snug"
+                  >
                     {f.help}
                   </UITooltipContent>
                 </UITooltip>
@@ -964,9 +1179,10 @@ function ConfigPanel({ onClose }: { onClose: () => void }) {
                   if (raw === undefined) return;
                   // Empty / invalid → snap back to min (don't keep empty on save)
                   const parsed = Number(raw);
-                  const n = Number.isFinite(parsed) && parsed > 0
-                    ? Math.max(f.min, Math.min(f.max, Math.floor(parsed)))
-                    : f.min;
+                  const n =
+                    Number.isFinite(parsed) && parsed > 0
+                      ? Math.max(f.min, Math.min(f.max, Math.floor(parsed)))
+                      : f.min;
                   if (f.key === "commentsPerVideo") {
                     updateCommentsPerVideo(n);
                   } else if (f.key === "avatarsToAnalyze") {
@@ -995,7 +1211,8 @@ function ConfigPanel({ onClose }: { onClose: () => void }) {
         <div className="mt-3 flex items-center justify-between">
           <p className="text-[10px] text-muted-foreground">
             Total comments ≈ {config.videosToSample * config.commentsPerVideo}
-            {" · "}Avatars capped at {config.videosToSample * config.commentsPerVideo}
+            {" · "}Avatars capped at{" "}
+            {config.videosToSample * config.commentsPerVideo}
           </p>
           <button
             onClick={save}

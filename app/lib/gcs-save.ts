@@ -108,6 +108,14 @@ export async function processGcsSave(id: string) {
       importId: id,
     });
 
+    // Tracks per-influencer cache failures so we can refuse to mark the import
+    // COMPLETED when avatars/thumbnails are still on raw expiring CDN URLs.
+    // Without this, a transient 403/timeout silently leaves an influencer with
+    // a tiktokcdn URL that works for a few hours then dies — and the user sees
+    // missing avatars days later with no signal anything went wrong.
+    let avatarCacheFailures = 0;
+    let thumbnailCacheFailures = 0;
+
     await runWithConcurrency(
       importRecord.influencers,
       SAVE_INFLUENCER_CONCURRENCY,
@@ -141,6 +149,14 @@ export async function processGcsSave(id: string) {
                 avatarCached = true;
               } else if (isGcsUrl(influencer.avatarUrl)) {
                 failedGcsSourceCopies += 1;
+              } else {
+                // Source URL is not on GCS and fetch returned null — typically a
+                // 403 from an expiring TikTok CDN signature. Track this so we
+                // don't falsely claim the import is fully cached.
+                avatarCacheFailures += 1;
+                console.warn(
+                  `[save] Avatar cache MISS for @${influencer.username} (source 403/timeout) — URL will expire`,
+                );
               }
             } catch (err) {
               console.error(
@@ -149,6 +165,8 @@ export async function processGcsSave(id: string) {
               );
               if (isGcsUrl(influencer.avatarUrl)) {
                 failedGcsSourceCopies += 1;
+              } else {
+                avatarCacheFailures += 1;
               }
             }
           }
@@ -176,11 +194,15 @@ export async function processGcsSave(id: string) {
                   thumbnailsCached += 1;
                 } else if (isGcsUrl(sourceUrl)) {
                   failedGcsSourceCopies += 1;
+                } else {
+                  thumbnailCacheFailures += 1;
                 }
               } catch (err) {
                 console.error(`Thumbnail GCS error for ${video.id}:`, err);
                 if (isGcsUrl(sourceUrl)) {
                   failedGcsSourceCopies += 1;
+                } else {
+                  thumbnailCacheFailures += 1;
                 }
               }
             },
@@ -250,6 +272,35 @@ export async function processGcsSave(id: string) {
           "Some existing cloud files could not be copied, so old files were kept to avoid broken images.",
         importId: id,
       });
+    }
+
+    // If any avatar/thumbnail failed to cache (source 403/timeout), the import
+    // is NOT fully complete — leaving status=COMPLETED would lie to the user
+    // and the orphaned raw URLs will expire silently. Surface it as DRAFT with
+    // a clear error message so they can hit Save again (which will retry only
+    // the missing ones via the existing isGcsUrl skip logic).
+    const totalCacheFailures = avatarCacheFailures + thumbnailCacheFailures;
+    if (totalCacheFailures > 0) {
+      const errMsg =
+        `${avatarCacheFailures} avatar${avatarCacheFailures === 1 ? "" : "s"} ` +
+        `and ${thumbnailCacheFailures} thumbnail${thumbnailCacheFailures === 1 ? "" : "s"} ` +
+        `could not be cached (source URLs returned 403/timeout — they'll expire).`;
+      await prisma.import.update({
+        where: { id },
+        data: {
+          status: "DRAFT",
+          errorMessage: errMsg,
+        },
+      });
+      await notifyQuiet({
+        type: "import_save",
+        status: "warning",
+        title: `Save partially failed — ${importRecord.sourceFilename}`,
+        message: `${errMsg} Click Save to retry the missing ones (cached items are skipped).`,
+        importId: id,
+      });
+      console.warn(`[save] Import ${id} partial: ${errMsg}`);
+      return;
     }
 
     await prisma.import.update({

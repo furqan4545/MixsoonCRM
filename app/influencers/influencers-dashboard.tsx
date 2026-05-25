@@ -1,27 +1,29 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
 import {
-  Search,
-  SlidersHorizontal,
-  Plus,
-  ChevronRight,
-  ChevronDown,
-  Trash2,
   ArrowRightLeft,
-  Sparkles,
-  Check,
   BarChart3,
+  Check,
+  ChevronDown,
+  ChevronRight,
   FileSpreadsheet,
   Loader2,
+  Plus,
+  Search,
   Share2,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
   UserPlus,
   X,
 } from "lucide-react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { ShareDialog } from "@/components/share-dialog";
-import { Input } from "@/components/ui/input";
+import { ThumbnailImage } from "@/components/thumbnail-image";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -29,11 +31,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ThumbnailImage } from "@/components/thumbnail-image";
-import { toast } from "sonner";
-import Link from "next/link";
-import { InfluencerDetailPanel } from "./influencer-detail-panel";
+import { Input } from "@/components/ui/input";
 import { AddInfluencerDialog } from "./add-influencer-dialog";
+import {
+  BULK_RUN_STORAGE_KEY,
+  BulkAnalysisProgressPanel,
+} from "./bulk-analysis-progress-panel";
+import { InfluencerDetailPanel } from "./influencer-detail-panel";
 
 export interface VideoRow {
   id: string;
@@ -109,7 +113,11 @@ export interface InfluencerRow {
     influencerAgeRange: string | null;
     influencerEthnicity: string | null;
     influencerCountry: string | null;
-    topCountries?: Array<{ country: string; countryName?: string; percentage: number }> | null;
+    topCountries?: Array<{
+      country: string;
+      countryName?: string;
+      percentage: number;
+    }> | null;
   } | null;
   pics: { id: string; name: string | null; email: string }[];
   savedAt: string | null;
@@ -127,8 +135,7 @@ function formatNumber(n: number | null): string {
 function getInitials(name: string | null, username: string): string {
   if (name) {
     const parts = name.split(" ").filter(Boolean);
-    if (parts.length >= 2)
-      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
     return name.substring(0, 2).toUpperCase();
   }
   return username.substring(0, 2).toUpperCase();
@@ -152,7 +159,13 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-type QueueFilter = "ALL" | "APPROVED" | "OKISH" | "REJECTED" | "UNSCORED" | "SAVED";
+type QueueFilter =
+  | "ALL"
+  | "APPROVED"
+  | "OKISH"
+  | "REJECTED"
+  | "UNSCORED"
+  | "SAVED";
 
 const QUEUE_TABS: {
   key: QueueFilter;
@@ -219,11 +232,31 @@ function AiScoreBadge({ score }: { score: number | null }) {
 }
 
 const STAGE_OPTIONS = [
-  { key: "PROSPECT", label: "Prospect", badgeColor: "bg-gray-100 text-gray-700 border-gray-200" },
-  { key: "OUTREACH", label: "Outreach", badgeColor: "bg-orange-100 text-orange-700 border-orange-200" },
-  { key: "NEGOTIATING", label: "Negotiating", badgeColor: "bg-amber-100 text-amber-700 border-amber-200" },
-  { key: "CONTRACTED", label: "Contracted", badgeColor: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  { key: "COMPLETED", label: "Completed", badgeColor: "bg-blue-100 text-blue-700 border-blue-200" },
+  {
+    key: "PROSPECT",
+    label: "Prospect",
+    badgeColor: "bg-gray-100 text-gray-700 border-gray-200",
+  },
+  {
+    key: "OUTREACH",
+    label: "Outreach",
+    badgeColor: "bg-orange-100 text-orange-700 border-orange-200",
+  },
+  {
+    key: "NEGOTIATING",
+    label: "Negotiating",
+    badgeColor: "bg-amber-100 text-amber-700 border-amber-200",
+  },
+  {
+    key: "CONTRACTED",
+    label: "Contracted",
+    badgeColor: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  },
+  {
+    key: "COMPLETED",
+    label: "Completed",
+    badgeColor: "bg-blue-100 text-blue-700 border-blue-200",
+  },
 ] as const;
 
 function StageCell({
@@ -253,7 +286,8 @@ function StageCell({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
-  const current = STAGE_OPTIONS.find((s) => s.key === currentStage) ?? STAGE_OPTIONS[0];
+  const current =
+    STAGE_OPTIONS.find((s) => s.key === currentStage) ?? STAGE_OPTIONS[0];
 
   const toggleOpen = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -353,7 +387,11 @@ function Avatar({
 function CampaignCell({
   campaigns,
 }: {
-  campaigns: { campaignId: string; campaignName: string; campaignStatus: string }[];
+  campaigns: {
+    campaignId: string;
+    campaignName: string;
+    campaignStatus: string;
+  }[];
 }) {
   if (campaigns.length === 0) {
     return <span className="text-muted-foreground text-xs">—</span>;
@@ -385,7 +423,10 @@ function CampaignCell({
       </span>
       {extra > 0 && (
         <span
-          title={campaigns.slice(1).map((c) => c.campaignName).join(", ")}
+          title={campaigns
+            .slice(1)
+            .map((c) => c.campaignName)
+            .join(", ")}
           className="shrink-0 rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground"
         >
           +{extra}
@@ -470,7 +511,9 @@ function AssignedToCell({
               </div>
               <div className="min-w-0 flex-1 leading-tight">
                 <div className="flex items-center gap-1.5">
-                  <p className="truncate text-xs font-medium">{p.name ?? "—"}</p>
+                  <p className="truncate text-xs font-medium">
+                    {p.name ?? "—"}
+                  </p>
                   {isOwner && (
                     <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
                       Owner
@@ -525,7 +568,7 @@ export function InfluencersDashboard({
   const router = useRouter();
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
-  const currentUserName = session?.user?.name ?? session?.user?.email ?? "me";
+  const _currentUserName = session?.user?.name ?? session?.user?.email ?? "me";
   const importIdFilter = searchParams.get("importId");
   const importCsvName = searchParams.get("csv");
   const [deletingImport, setDeletingImport] = useState(false);
@@ -540,7 +583,11 @@ export function InfluencersDashboard({
   const [moving, setMoving] = useState(false);
   const [panelExpanded, setPanelExpanded] = useState(false);
   const [bulkAnalyzing, setBulkAnalyzing] = useState(false);
-  const bulkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Active batchId that the persistent progress panel is tracking. Restored
+  // from localStorage on mount so navigating away mid-run doesn't lose visibility.
+  const [activeBulkBatchId, setActiveBulkBatchId] = useState<string | null>(
+    null,
+  );
 
   // Advanced filters
   const [showFilters, setShowFilters] = useState(false);
@@ -553,7 +600,14 @@ export function InfluencersDashboard({
   const [availableCsvs, setAvailableCsvs] = useState<
     { id: string; sourceFilename: string; influencerCount: number }[] | null
   >(null);
-  const activeFilterCount = [filterCountry, filterLanguage, filterPlatform, filterAudienceCountry, filterMinFollowers, filterMaxFollowers].filter(Boolean).length;
+  const activeFilterCount = [
+    filterCountry,
+    filterLanguage,
+    filterPlatform,
+    filterAudienceCountry,
+    filterMinFollowers,
+    filterMaxFollowers,
+  ].filter(Boolean).length;
 
   // Lazy-load the user's accessible CSVs the first time the filter panel opens
   useEffect(() => {
@@ -563,11 +617,17 @@ export function InfluencersDashboard({
       .then((data) => {
         const list = Array.isArray(data) ? data : [];
         setAvailableCsvs(
-          list.map((i: { id: string; sourceFilename: string; _count?: { influencers: number } }) => ({
-            id: i.id,
-            sourceFilename: i.sourceFilename,
-            influencerCount: i._count?.influencers ?? 0,
-          })),
+          list.map(
+            (i: {
+              id: string;
+              sourceFilename: string;
+              _count?: { influencers: number };
+            }) => ({
+              id: i.id,
+              sourceFilename: i.sourceFilename,
+              influencerCount: i._count?.influencers ?? 0,
+            }),
+          ),
         );
       })
       .catch(() => setAvailableCsvs([]));
@@ -674,15 +734,27 @@ export function InfluencersDashboard({
     }
     if (filterMinFollowers) {
       const min = parseInt(filterMinFollowers, 10);
-      if (!isNaN(min)) list = list.filter((inf) => (inf.followers ?? 0) >= min);
+      if (!Number.isNaN(min))
+        list = list.filter((inf) => (inf.followers ?? 0) >= min);
     }
     if (filterMaxFollowers) {
       const max = parseInt(filterMaxFollowers, 10);
-      if (!isNaN(max)) list = list.filter((inf) => (inf.followers ?? 0) <= max);
+      if (!Number.isNaN(max))
+        list = list.filter((inf) => (inf.followers ?? 0) <= max);
     }
 
     return list;
-  }, [influencers, search, queueFilter, filterCountry, filterLanguage, filterPlatform, filterAudienceCountry, filterMinFollowers, filterMaxFollowers]);
+  }, [
+    influencers,
+    search,
+    queueFilter,
+    filterCountry,
+    filterLanguage,
+    filterPlatform,
+    filterAudienceCountry,
+    filterMinFollowers,
+    filterMaxFollowers,
+  ]);
 
   // Cache loaded influencer details — cleared on any data mutation
   const detailCacheRef = useRef<Map<string, InfluencerRow>>(new Map());
@@ -707,7 +779,7 @@ export function InfluencersDashboard({
     // Otherwise fetch and cache
     let cancelled = false;
     fetch(`/api/influencers/${selectedId}`)
-      .then((res) => res.ok ? res.json() : null)
+      .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!cancelled && data) {
           detailCacheRef.current.set(selectedId, data);
@@ -715,11 +787,15 @@ export function InfluencersDashboard({
         }
       })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [selectedId]);
 
   const selected = selectedId
-    ? (detailData?.id === selectedId ? detailData : null) ?? influencers.find((i) => i.id === selectedId) ?? null
+    ? ((detailData?.id === selectedId ? detailData : null) ??
+      influencers.find((i) => i.id === selectedId) ??
+      null)
     : null;
   // True while showing list-row data (partial) before the full detail fetch resolves.
   const isDetailLoading = !!selectedId && detailData?.id !== selectedId;
@@ -820,7 +896,9 @@ export function InfluencersDashboard({
   }, [campaigns]);
 
   // PIC assignment
-  const [picUsers, setPicUsers] = useState<{ id: string; name: string | null; email: string; role: string }[] | null>(null);
+  const [picUsers, setPicUsers] = useState<
+    { id: string; name: string | null; email: string; role: string }[] | null
+  >(null);
   const [loadingPicUsers, setLoadingPicUsers] = useState(false);
 
   const fetchPicUsers = useCallback(async () => {
@@ -1000,64 +1078,76 @@ export function InfluencersDashboard({
           return;
         }
 
-        const toastId = toast.loading(`Analyzing ${total} influencers...`, {
-          description: `Starting... ${skipped > 0 ? `(${skipped} skipped — already running)` : ""}`,
-          duration: Infinity,
+        toast.info(`Analyzing ${total} influencer${total !== 1 ? "s" : ""}`, {
+          description:
+            skipped > 0
+              ? `${skipped} skipped — already running. Track progress in the panel.`
+              : "Track progress in the bottom-right panel.",
         });
 
-        // Poll for progress
-        bulkPollRef.current = setInterval(async () => {
-          try {
-            const statusRes = await fetch(`/api/analytics/bulk-status/${batchId}`);
-            if (!statusRes.ok) return;
-            const status = await statusRes.json();
-
-            toast.loading(
-              `Analyzing ${total} influencers... (${status.completed}/${total} done)`,
-              {
-                id: toastId,
-                description: status.current
-                  ? `Currently: @${status.current.username} — ${status.current.progressMsg ?? status.current.status}`
-                  : status.failed > 0
-                    ? `${status.completed} completed, ${status.failed} failed`
-                    : `${status.completed} completed`,
-              },
-            );
-
-            if (status.done) {
-              if (bulkPollRef.current) clearInterval(bulkPollRef.current);
-              bulkPollRef.current = null;
-              setBulkAnalyzing(false);
-              setSelectedRows(new Set());
-              window.dispatchEvent(new CustomEvent("analysis-complete"));
-
-              if (status.failed > 0) {
-                toast.warning(`Bulk analysis finished: ${status.completed} completed, ${status.failed} failed`, { id: toastId, duration: 5000 });
-              } else {
-                toast.success(`All ${status.completed} influencers analyzed!`, { id: toastId, duration: 5000 });
-              }
-            }
-          } catch {
-            // Ignore poll errors
-          }
-        }, 3000);
+        // Hand off live tracking to the persistent panel. Persist the batchId so
+        // a page refresh (or navigating between dashboards) still surfaces it.
+        try {
+          window.localStorage.setItem(BULK_RUN_STORAGE_KEY, batchId);
+        } catch {}
+        setActiveBulkBatchId(batchId);
+        setSelectedRows(new Set());
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to start bulk analysis");
+        toast.error(
+          err instanceof Error ? err.message : "Failed to start bulk analysis",
+        );
         setBulkAnalyzing(false);
       }
     },
-    [selectedRows, router],
+    [selectedRows],
   );
 
-  // Cleanup poll on unmount
+  // Restore active batch from localStorage on mount so the panel survives reload
   useEffect(() => {
-    return () => {
-      if (bulkPollRef.current) clearInterval(bulkPollRef.current);
-    };
+    try {
+      const stored = window.localStorage.getItem(BULK_RUN_STORAGE_KEY);
+      if (stored) {
+        setActiveBulkBatchId(stored);
+        setBulkAnalyzing(true);
+      }
+    } catch {}
   }, []);
+
+  const dismissBulkPanel = useCallback(() => {
+    setActiveBulkBatchId(null);
+    setBulkAnalyzing(false);
+    try {
+      window.localStorage.removeItem(BULK_RUN_STORAGE_KEY);
+    } catch {}
+  }, []);
+
+  const handleBulkDone = useCallback(
+    (summary: { completed: number; failed: number }) => {
+      setBulkAnalyzing(false);
+      window.dispatchEvent(new CustomEvent("analysis-complete"));
+      if (summary.failed > 0) {
+        toast.warning(
+          `Bulk analysis finished: ${summary.completed} done, ${summary.failed} failed`,
+          { description: "Use the panel to retry failed runs." },
+        );
+      } else {
+        toast.success(`All ${summary.completed} influencers analyzed!`);
+      }
+    },
+    [],
+  );
 
   return (
     <div className="flex h-full">
+      {/* Persistent bulk-analysis progress panel — survives navigation via localStorage */}
+      {activeBulkBatchId && (
+        <BulkAnalysisProgressPanel
+          batchId={activeBulkBatchId}
+          onDone={handleBulkDone}
+          onDismiss={dismissBulkPanel}
+        />
+      )}
+
       {/* Main table area */}
       <div className="flex-1 overflow-auto">
         <div className="p-6">
@@ -1079,7 +1169,9 @@ export function InfluencersDashboard({
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={moving || deletingImport || influencers.length === 0}
+                    disabled={
+                      moving || deletingImport || influencers.length === 0
+                    }
                     className="gap-1.5 text-xs"
                   >
                     <Sparkles className="h-3 w-3" />
@@ -1088,10 +1180,14 @@ export function InfluencersDashboard({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   {loadingCampaigns && (
-                    <DropdownMenuItem disabled>Loading campaigns…</DropdownMenuItem>
+                    <DropdownMenuItem disabled>
+                      Loading campaigns…
+                    </DropdownMenuItem>
                   )}
                   {campaigns && campaigns.length === 0 && (
-                    <DropdownMenuItem disabled>No campaigns found</DropdownMenuItem>
+                    <DropdownMenuItem disabled>
+                      No campaigns found
+                    </DropdownMenuItem>
                   )}
                   {campaigns?.map((c) => (
                     <DropdownMenuItem
@@ -1116,7 +1212,9 @@ export function InfluencersDashboard({
                 variant="outline"
                 size="sm"
                 disabled={deletingImport}
-                onClick={() => deleteImportWithData(importIdFilter, importCsvName)}
+                onClick={() =>
+                  deleteImportWithData(importIdFilter, importCsvName)
+                }
                 className="gap-1.5 text-xs text-red-700 border-red-300 hover:bg-red-50 dark:text-red-300 dark:border-red-900"
               >
                 {deletingImport ? (
@@ -1140,7 +1238,9 @@ export function InfluencersDashboard({
                 onOpenChange={setShareDialogOpen}
                 resourceType="Import"
                 resourceId={importIdFilter}
-                resourceLabel={importCsvName ? `"${importCsvName}"` : "this CSV"}
+                resourceLabel={
+                  importCsvName ? `"${importCsvName}"` : "this CSV"
+                }
               />
             </div>
           )}
@@ -1148,9 +1248,7 @@ export function InfluencersDashboard({
           {/* Header */}
           <div className="mb-4 flex items-start justify-between">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">
-                Influencers
-              </h1>
+              <h1 className="text-2xl font-bold tracking-tight">Influencers</h1>
               <p className="text-sm text-muted-foreground">
                 {influencers.length} influencer
                 {influencers.length !== 1 ? "s" : ""} in your database
@@ -1167,7 +1265,11 @@ export function InfluencersDashboard({
                 />
               </div>
               <Button
-                variant={activeFilterCount > 0 || importIdFilter ? "default" : "outline"}
+                variant={
+                  activeFilterCount > 0 || importIdFilter
+                    ? "default"
+                    : "outline"
+                }
                 size="default"
                 className="gap-2"
                 onClick={() => setShowFilters(!showFilters)}
@@ -1202,7 +1304,9 @@ export function InfluencersDashboard({
             <div className="mb-4 rounded-lg border bg-muted/30 p-4">
               <div className="flex flex-wrap items-end gap-3">
                 <div className="min-w-[200px]">
-                  <label className="text-xs font-semibold text-muted-foreground">CSV file</label>
+                  <label className="text-xs font-semibold text-muted-foreground">
+                    CSV file
+                  </label>
                   <select
                     value={importIdFilter ?? ""}
                     onChange={(e) => {
@@ -1231,7 +1335,9 @@ export function InfluencersDashboard({
                   </select>
                 </div>
                 <div className="min-w-[140px]">
-                  <label className="text-xs font-semibold text-muted-foreground">Country</label>
+                  <label className="text-xs font-semibold text-muted-foreground">
+                    Country
+                  </label>
                   <select
                     value={filterCountry}
                     onChange={(e) => setFilterCountry(e.target.value)}
@@ -1239,12 +1345,16 @@ export function InfluencersDashboard({
                   >
                     <option value="">All countries</option>
                     {filterOptions.countries.map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div className="min-w-[140px]">
-                  <label className="text-xs font-semibold text-muted-foreground">Language</label>
+                  <label className="text-xs font-semibold text-muted-foreground">
+                    Language
+                  </label>
                   <select
                     value={filterLanguage}
                     onChange={(e) => setFilterLanguage(e.target.value)}
@@ -1252,12 +1362,16 @@ export function InfluencersDashboard({
                   >
                     <option value="">All languages</option>
                     {filterOptions.languages.map((l) => (
-                      <option key={l} value={l}>{l}</option>
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div className="min-w-[140px]">
-                  <label className="text-xs font-semibold text-muted-foreground">Platform</label>
+                  <label className="text-xs font-semibold text-muted-foreground">
+                    Platform
+                  </label>
                   <select
                     value={filterPlatform}
                     onChange={(e) => setFilterPlatform(e.target.value)}
@@ -1265,7 +1379,9 @@ export function InfluencersDashboard({
                   >
                     <option value="">All platforms</option>
                     {filterOptions.platforms.map((p) => (
-                      <option key={p} value={p}>{p}</option>
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1287,7 +1403,9 @@ export function InfluencersDashboard({
                   </select>
                 </div>
                 <div className="min-w-[120px]">
-                  <label className="text-xs font-semibold text-muted-foreground">Min Followers</label>
+                  <label className="text-xs font-semibold text-muted-foreground">
+                    Min Followers
+                  </label>
                   <Input
                     type="number"
                     placeholder="e.g. 10000"
@@ -1298,7 +1416,9 @@ export function InfluencersDashboard({
                   />
                 </div>
                 <div className="min-w-[120px]">
-                  <label className="text-xs font-semibold text-muted-foreground">Max Followers</label>
+                  <label className="text-xs font-semibold text-muted-foreground">
+                    Max Followers
+                  </label>
                   <Input
                     type="number"
                     placeholder="e.g. 1000000"
@@ -1412,7 +1532,9 @@ export function InfluencersDashboard({
                 )}
                 {/* Run AI Filter — shown when unscored influencers are selected */}
                 {selectedUnscoredIds.length >= 1 && (
-                  <DropdownMenu onOpenChange={(open) => open && fetchCampaigns()}>
+                  <DropdownMenu
+                    onOpenChange={(open) => open && fetchCampaigns()}
+                  >
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="outline"
@@ -1426,10 +1548,14 @@ export function InfluencersDashboard({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       {loadingCampaigns && (
-                        <DropdownMenuItem disabled>Loading campaigns…</DropdownMenuItem>
+                        <DropdownMenuItem disabled>
+                          Loading campaigns…
+                        </DropdownMenuItem>
                       )}
                       {campaigns && campaigns.length === 0 && (
-                        <DropdownMenuItem disabled>No campaigns found</DropdownMenuItem>
+                        <DropdownMenuItem disabled>
+                          No campaigns found
+                        </DropdownMenuItem>
                       )}
                       {campaigns?.map((c) => (
                         <DropdownMenuItem
@@ -1468,19 +1594,35 @@ export function InfluencersDashboard({
                       Share ({selectedRows.size})
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
-                    {loadingPicUsers && <DropdownMenuItem disabled>Loading users...</DropdownMenuItem>}
-                    {picUsers && picUsers.length === 0 && <DropdownMenuItem disabled>No users found</DropdownMenuItem>}
+                  <DropdownMenuContent
+                    align="end"
+                    className="max-h-64 overflow-y-auto"
+                  >
+                    {loadingPicUsers && (
+                      <DropdownMenuItem disabled>
+                        Loading users...
+                      </DropdownMenuItem>
+                    )}
+                    {picUsers && picUsers.length === 0 && (
+                      <DropdownMenuItem disabled>
+                        No users found
+                      </DropdownMenuItem>
+                    )}
                     {picUsers
                       ?.filter((u) => u.id !== currentUserId)
                       .map((u) => (
-                        <DropdownMenuItem key={u.id} onClick={() => assignPic(u.id)}>
+                        <DropdownMenuItem
+                          key={u.id}
+                          onClick={() => assignPic(u.id)}
+                        >
                           <div className="flex items-center gap-2">
                             <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[8px] font-bold text-white">
                               {(u.name ?? u.email).charAt(0).toUpperCase()}
                             </div>
                             <span>{u.name ?? u.email}</span>
-                            <span className="text-[10px] text-muted-foreground">{u.role}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {u.role}
+                            </span>
                           </div>
                         </DropdownMenuItem>
                       ))}
@@ -1526,17 +1668,23 @@ export function InfluencersDashboard({
                       className="gap-1.5 text-xs text-purple-700 border-purple-300 hover:bg-purple-50"
                     >
                       <BarChart3 className="h-3 w-3" />
-                      {bulkAnalyzing ? "Analyzing..." : `Analyze Audience (${selectedRows.size})`}
+                      {bulkAnalyzing
+                        ? "Analyzing..."
+                        : `Analyze Audience (${selectedRows.size})`}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => runBulkAnalysis("HYBRID")}>
                       Hybrid (Recommended)
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => runBulkAnalysis("NLP_ONLY")}>
+                    <DropdownMenuItem
+                      onClick={() => runBulkAnalysis("NLP_ONLY")}
+                    >
                       NLP Only (Fastest)
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => runBulkAnalysis("FULL_VISION")}>
+                    <DropdownMenuItem
+                      onClick={() => runBulkAnalysis("FULL_VISION")}
+                    >
                       Full Vision (Most Detailed)
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -1664,7 +1812,10 @@ export function InfluencersDashboard({
                         <td className="px-4 py-3 text-center">
                           <AiScoreBadge score={inf.aiScore} />
                         </td>
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <td
+                          className="px-4 py-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <AssignedToCell
                             pics={inf.pics}
                             influencerId={inf.id}
@@ -1676,7 +1827,10 @@ export function InfluencersDashboard({
                           <StageCell
                             influencerId={inf.id}
                             currentStage={inf.pipelineStage}
-                            onUpdated={() => { clearDetailCache(); router.refresh(); }}
+                            onUpdated={() => {
+                              clearDetailCache();
+                              router.refresh();
+                            }}
                           />
                         </td>
                         <td className="px-2 py-3">
@@ -1697,7 +1851,10 @@ export function InfluencersDashboard({
         <InfluencerDetailPanel
           influencer={selected}
           isDetailLoading={isDetailLoading}
-          onClose={() => { setSelectedId(null); setPanelExpanded(false); }}
+          onClose={() => {
+            setSelectedId(null);
+            setPanelExpanded(false);
+          }}
           expanded={panelExpanded}
           onToggleExpand={() => setPanelExpanded((v) => !v)}
         />
@@ -1720,7 +1877,6 @@ export function InfluencersDashboard({
           }
         }}
       />
-
     </div>
   );
 }

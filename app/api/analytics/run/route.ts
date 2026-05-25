@@ -1,31 +1,39 @@
-import { after, type NextRequest, NextResponse } from "next/server";
+import type { AnalysisMode } from "@prisma/client";
 import { Prisma } from "@prisma/client";
-import { prisma } from "../../../lib/prisma";
+import { after, type NextRequest, NextResponse } from "next/server";
+import { reapStaleRuns } from "@/app/lib/analysis-run-reaper";
 import {
-  analyzeInfluencerProfile,
+  BudgetExceededError,
+  checkBudgetOrThrow,
+} from "@/app/lib/budget-guard";
+import {
+  type AnalysisConfig,
+  type AudienceNlpResult,
   analyzeAudienceComments,
   analyzeCommenterAvatars,
-  scrapeComments,
-  mergeResults,
+  analyzeInfluencerProfile,
   DEFAULT_CONFIG,
-  type AnalysisConfig,
+  mergeResults,
   type ScrapedComment,
-  type AudienceNlpResult,
+  scrapeComments,
 } from "../../../lib/audience-analysis";
-import type { AnalysisMode } from "@prisma/client";
-import { checkBudgetOrThrow, BudgetExceededError } from "@/app/lib/budget-guard";
+import { prisma } from "../../../lib/prisma";
 
 export const maxDuration = 300;
 
 const MIN_VIDEOS = 1; // Allow analysis with even 1 video
-const MIN_COMMENTS = 0; // Analyze whatever is available — even 0 comments (will use profile pic only)
+const _MIN_COMMENTS = 0; // Analyze whatever is available — even 0 comments (will use profile pic only)
 // Cap NLP comment input: 1000 random samples is statistically solid for aggregate
 // breakdowns and prevents giant influencers (5k+ comments) from blowing past 10×
 // the latency/cost of smaller ones. Mirrors how avatars are sampled.
 const NLP_COMMENT_CAP = 1000;
 
-export async function loadConfig(): Promise<AnalysisConfig & { defaultMode: AnalysisMode }> {
-  const cfg = await prisma.analysisConfig.findUnique({ where: { id: "default" } });
+export async function loadConfig(): Promise<
+  AnalysisConfig & { defaultMode: AnalysisMode }
+> {
+  const cfg = await prisma.analysisConfig.findUnique({
+    where: { id: "default" },
+  });
   if (!cfg) {
     return { ...DEFAULT_CONFIG, defaultMode: "HYBRID" };
   }
@@ -51,10 +59,12 @@ async function updateRunStatus(
     errorMessage?: string;
   },
 ) {
-  await prisma.analysisRun.update({
-    where: { id: runId },
-    data: update as Parameters<typeof prisma.analysisRun.update>[0]["data"],
-  }).catch((e) => console.error("[Analytics] Failed to update run status:", e));
+  await prisma.analysisRun
+    .update({
+      where: { id: runId },
+      data: update as Parameters<typeof prisma.analysisRun.update>[0]["data"],
+    })
+    .catch((e) => console.error("[Analytics] Failed to update run status:", e));
 }
 
 export async function runAnalysisPipeline(params: {
@@ -73,7 +83,14 @@ export async function runAnalysisPipeline(params: {
         videos: {
           orderBy: { views: "desc" },
           take: config.videosToSample,
-          select: { id: true, title: true, views: true, username: true, videoUrl: true, tiktokId: true },
+          select: {
+            id: true,
+            title: true,
+            views: true,
+            username: true,
+            videoUrl: true,
+            tiktokId: true,
+          },
         },
       },
     });
@@ -110,7 +127,8 @@ export async function runAnalysisPipeline(params: {
     const videoUrls = influencer.videos
       .map((v) => {
         if (v.videoUrl) return v.videoUrl;
-        if (v.tiktokId) return `https://www.tiktok.com/@${v.username}/video/${v.tiktokId}`;
+        if (v.tiktokId)
+          return `https://www.tiktok.com/@${v.username}/video/${v.tiktokId}`;
         return null;
       })
       .filter((url): url is string => url !== null);
@@ -148,13 +166,17 @@ export async function runAnalysisPipeline(params: {
 
     // ── Low comments: warn but continue — analyze whatever is available ──
     if (scrapedComments.length === 0) {
-      console.log(`[Analytics] No comments scraped for @${influencer.username}, falling back to profile-only analysis`);
+      console.log(
+        `[Analytics] No comments scraped for @${influencer.username}, falling back to profile-only analysis`,
+      );
       await updateRunStatus(runId, {
         progress: 30,
         progressMsg: `No comments found. Analyzing profile picture only...`,
       });
     } else if (scrapedComments.length < 50) {
-      console.log(`[Analytics] Low comment count (${scrapedComments.length}) for @${influencer.username}, results may have low confidence`);
+      console.log(
+        `[Analytics] Low comment count (${scrapedComments.length}) for @${influencer.username}, results may have low confidence`,
+      );
     }
 
     // ── Save comments to DB ──
@@ -209,9 +231,12 @@ export async function runAnalysisPipeline(params: {
       });
 
       const allTexts = scrapedComments.map((c) => c.text);
-      const commentTexts = allTexts.length > NLP_COMMENT_CAP
-        ? [...allTexts].sort(() => Math.random() - 0.5).slice(0, NLP_COMMENT_CAP)
-        : allTexts;
+      const commentTexts =
+        allTexts.length > NLP_COMMENT_CAP
+          ? [...allTexts]
+              .sort(() => Math.random() - 0.5)
+              .slice(0, NLP_COMMENT_CAP)
+          : allTexts;
       console.log(
         `[Analytics] NLP pipeline: ${allTexts.length} comments → sampling ${commentTexts.length} (cap=${NLP_COMMENT_CAP})`,
       );
@@ -221,7 +246,8 @@ export async function runAnalysisPipeline(params: {
           commentTexts,
           config,
           (batchIndex, totalBatches) => {
-            const batchProgress = 40 + Math.round(((batchIndex + 1) / totalBatches) * 30);
+            const batchProgress =
+              40 + Math.round(((batchIndex + 1) / totalBatches) * 30);
             updateRunStatus(runId, {
               progress: batchProgress,
               progressMsg: `Analyzing comments batch ${batchIndex + 1}/${totalBatches}...`,
@@ -248,9 +274,10 @@ export async function runAnalysisPipeline(params: {
         .map((c) => c.avatarUrl)
         .filter((url): url is string => !!url && url.startsWith("http"));
 
-      const avatarsToSample = mode === "FULL_VISION"
-        ? Math.min(300, avatarUrls.length)
-        : Math.min(config.avatarsToAnalyze, avatarUrls.length);
+      const avatarsToSample =
+        mode === "FULL_VISION"
+          ? Math.min(300, avatarUrls.length)
+          : Math.min(config.avatarsToAnalyze, avatarUrls.length);
 
       console.log(
         `[Analytics] Avatar pipeline (mode=${mode}): ${totalComments} comments → ${withAvatar} with avatar field → ${avatarUrls.length} valid http(s) URLs → sampling ${avatarsToSample}`,
@@ -278,7 +305,8 @@ export async function runAnalysisPipeline(params: {
             sampled,
             config.geminiModel,
             (batchIndex, totalBatches) => {
-              const visionProgress = 75 + Math.round(((batchIndex + 1) / totalBatches) * 20);
+              const visionProgress =
+                75 + Math.round(((batchIndex + 1) / totalBatches) * 20);
               updateRunStatus(runId, {
                 progress: visionProgress,
                 progressMsg: `Analyzing avatar batch ${batchIndex + 1}/${totalBatches}...`,
@@ -290,7 +318,10 @@ export async function runAnalysisPipeline(params: {
             `[Analytics] Avatar analysis returned: gender=${JSON.stringify(visionResult.genderBreakdown ?? {})}, ageBrackets=${Object.keys(visionResult.ageBrackets ?? {}).length}, ethnicities=${Object.keys(visionResult.ethnicityBreakdown ?? {}).length}`,
           );
         } catch (err) {
-          console.error("[Analytics] Avatar analysis failed, falling back to NLP only:", err);
+          console.error(
+            "[Analytics] Avatar analysis failed, falling back to NLP only:",
+            err,
+          );
           // Non-fatal — fall back to NLP only
         }
       }
@@ -310,7 +341,8 @@ export async function runAnalysisPipeline(params: {
         status: "FAILED",
         progress: 95,
         progressMsg: "No analyzable data available",
-        errorMessage: "No analyzable data: no comments scraped, no profile picture, and no avatars analyzed",
+        errorMessage:
+          "No analyzable data: no comments scraped, no profile picture, and no avatars analyzed",
       });
       return;
     }
@@ -326,7 +358,12 @@ export async function runAnalysisPipeline(params: {
       reasoning: "No comments available for NLP analysis",
     };
 
-    const merged = mergeResults(mode, profileResult, effectiveNlp, visionResult);
+    const merged = mergeResults(
+      mode,
+      profileResult,
+      effectiveNlp,
+      visionResult,
+    );
 
     await prisma.influencerAnalytics.upsert({
       where: { influencerId },
@@ -348,7 +385,11 @@ export async function runAnalysisPipeline(params: {
         mode,
         confidence: merged.confidence,
         commentCount: scrapedComments.length,
-        avatarsSampled: visionResult ? (mode === "FULL_VISION" ? 300 : config.avatarsToAnalyze) : 0,
+        avatarsSampled: visionResult
+          ? mode === "FULL_VISION"
+            ? 300
+            : config.avatarsToAnalyze
+          : 0,
         lastAnalyzedAt: new Date(),
         analysisRunId: runId,
       },
@@ -369,7 +410,11 @@ export async function runAnalysisPipeline(params: {
         mode,
         confidence: merged.confidence,
         commentCount: scrapedComments.length,
-        avatarsSampled: visionResult ? (mode === "FULL_VISION" ? 300 : config.avatarsToAnalyze) : 0,
+        avatarsSampled: visionResult
+          ? mode === "FULL_VISION"
+            ? 300
+            : config.avatarsToAnalyze
+          : 0,
         lastAnalyzedAt: new Date(),
         analysisRunId: runId,
       },
@@ -392,15 +437,16 @@ export async function runAnalysisPipeline(params: {
     });
 
     // Notification
-    await prisma.notification.create({
-      data: {
-        type: "audience_analysis",
-        status: "success",
-        title: `Audience analysis completed — @${influencer.username}`,
-        message: `Mode: ${mode}, ${scrapedComments.length} comments analyzed, confidence: ${Math.round(merged.confidence * 100)}%`,
-      },
-    }).catch(() => {});
-
+    await prisma.notification
+      .create({
+        data: {
+          type: "audience_analysis",
+          status: "success",
+          title: `Audience analysis completed — @${influencer.username}`,
+          message: `Mode: ${mode}, ${scrapedComments.length} comments analyzed, confidence: ${Math.round(merged.confidence * 100)}%`,
+        },
+      })
+      .catch(() => {});
   } catch (err) {
     console.error("[Analytics] Pipeline error:", err);
     await updateRunStatus(runId, {
@@ -428,14 +474,29 @@ export async function POST(request: NextRequest) {
   };
 
   if (!influencerId) {
-    return NextResponse.json({ error: "influencerId is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "influencerId is required" },
+      { status: 400 },
+    );
   }
 
-  // Check if analysis is already running
+  // Reap any stalled run for this influencer before deciding whether to block.
+  // A run that's been "in progress" for 8+ minutes without a heartbeat is dead
+  // (the after() worker hit maxDuration or Cloud Run reclaimed the container),
+  // and we shouldn't pretend it's still running.
+  await reapStaleRuns({ influencerId });
+
   const existing = await prisma.analysisRun.findFirst({
     where: {
       influencerId,
-      status: { in: ["PENDING", "SCRAPING_COMMENTS", "ANALYZING_COMMENTS", "ANALYZING_FACES"] },
+      status: {
+        in: [
+          "PENDING",
+          "SCRAPING_COMMENTS",
+          "ANALYZING_COMMENTS",
+          "ANALYZING_FACES",
+        ],
+      },
     },
   });
 

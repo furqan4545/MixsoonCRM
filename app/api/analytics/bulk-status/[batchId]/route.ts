@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { reapStaleRuns } from "@/app/lib/analysis-run-reaper";
 import { prisma } from "../../../../lib/prisma";
 
 export async function GET(
@@ -6,6 +7,10 @@ export async function GET(
   { params }: { params: Promise<{ batchId: string }> },
 ) {
   const { batchId } = await params;
+
+  // Lazy reap before reporting status — any orphaned run in this batch becomes
+  // FAILED so `done` can flip true and the UI stops spinning.
+  await reapStaleRuns({ batchId });
 
   const runs = await prisma.analysisRun.findMany({
     where: { batchId },
@@ -32,7 +37,12 @@ export async function GET(
 
   // Find the currently processing one
   const current = runs.find((r) =>
-    ["PENDING", "SCRAPING_COMMENTS", "ANALYZING_COMMENTS", "ANALYZING_FACES"].includes(r.status),
+    [
+      "PENDING",
+      "SCRAPING_COMMENTS",
+      "ANALYZING_COMMENTS",
+      "ANALYZING_FACES",
+    ].includes(r.status),
   );
 
   const done = pending === 0;
